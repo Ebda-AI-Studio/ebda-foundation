@@ -1,0 +1,22 @@
+/* Ebda AI Studio design tokens: night ground, brand gold, metallic greys. No orange (a unit test enforces it). */
+:root {
+  --ebda-night: #0A0B0C;   /* primary background */
+  --ebda-gold:  #B08D57;   /* primary brand colour */
+  --ebda-lift:  #CBA873;   /* secondary brand colour */
+  --ebda-cream: #FAF8F3;   /* surfaces and UI */
+  --ebda-metal-900: #141618;
+  --ebda-metal-700: #2A2D31;
+  --ebda-metal-500: #6B7078;
+  --ebda-metal-300: #A9AEB5;
+  --ebda-metal-100: #E3E5E8;
+  --ebda-font-headline: "Playfair Display", Georgia, "Times New Roman", serif;
+  --ebda-font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ebda-font-arabic: "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
+  --ebda-app-icon-radius: 22.37%;
+  --ebda-radius-sm: 8px;
+  --ebda-radius-md: 12px;
+  --ebda-radius-lg: 20px;
+  --ebda-motion-fast: 150ms;
+  --ebda-motion-base: 240ms;
+  --ebda-ease: cubic-bezier(0.2, 0, 0, 1);
+}

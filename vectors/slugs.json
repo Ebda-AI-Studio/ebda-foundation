@@ -1,0 +1,22 @@
+{
+ "slugify": [
+  { "in": "Almond Plain", "out": "almond-plain" },
+  { "in": "  Freeze-Dried  Natural Kiwi Slices ", "out": "freeze-dried-natural-kiwi-slices" },
+  { "in": "Nuts & Co. — Premium!", "out": "nuts-co-premium" },
+  { "in": "---hello---", "out": "hello" },
+  { "in": "لوز مدخن", "out": "لوز-مدخن" },
+  { "in": "لوز مدخن", "ascii": true, "out": "" },
+  { "in": "!!!", "out": "" }
+ ],
+ "validate": [
+  { "in": "my-shop", "ok": true },
+  { "in": "ab", "code": "SLUG_TOO_SHORT" },
+  { "in": "Amelia", "code": "SLUG_INVALID_CHARS" },
+  { "in": "-shop", "code": "SLUG_INVALID_HYPHEN" },
+  { "in": "my--shop", "code": "SLUG_INVALID_HYPHEN" },
+  { "in": "api", "code": "SLUG_RESERVED" },
+  { "in": "crm", "code": "SLUG_RESERVED" },
+  { "in": "accounts", "code": "SLUG_RESERVED" },
+  { "in": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "code": "SLUG_TOO_LONG" }
+ ]
+}

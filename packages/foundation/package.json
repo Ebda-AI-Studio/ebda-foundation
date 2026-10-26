@@ -1,0 +1,16 @@
+{
+  "name": "@ebda/foundation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The shared base every Ebda AI Studio product starts from (vendored into each product by ebda-foundation sync).",
+  "exports": {
+    "./brand": "./src/brand/index.ts",
+    "./tokens": "./src/tokens/index.ts",
+    "./tokens.css": "./src/tokens/tokens.css",
+    "./phone": "./src/phone/index.ts",
+    "./buyer": "./src/buyer/index.ts",
+    "./text": "./src/text/index.ts",
+    "./slugs": "./src/slugs/index.ts"
+  }
+}
