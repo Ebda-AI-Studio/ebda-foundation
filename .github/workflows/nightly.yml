@@ -1,0 +1,29 @@
+name: Nightly
+
+# The slow tier: scaffolds a throwaway product and runs npm ci, typecheck, test and wrangler deploy --dry-run on it.
+on:
+  schedule:
+    - cron: '41 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  new-product:
+    name: Scaffold a product end to end
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
+      - run: npm ci
+      - run: npm run test:new
+      - run: npm audit --audit-level=low

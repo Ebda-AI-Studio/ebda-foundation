@@ -1,0 +1,25 @@
+{
+  "name": "__NAME__",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "lint:workflows": "node scripts/foundation/workflow-lint.mjs .github/workflows"
+  },
+  "dependencies": {
+    "@ebda/foundation": "file:./foundation",
+    "hono": "4.13.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260730.1",
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.116.0"
+  },
+  "engines": { "node": ">=22" }
+}

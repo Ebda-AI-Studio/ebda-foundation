@@ -1,0 +1,13 @@
+{
+  "name": "__NAME__",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "routes": [{ "pattern": "__HOST__", "custom_domain": true }],
+  "assets": { "directory": "./public" },
+  "vars": { "PRODUCT_ID": "__ID__" },
+  // Placeholders: create the database with `wrangler d1 create __NAME__` and paste its id before the first real deploy.
+  "d1_databases": [{ "binding": "DB", "database_name": "__NAME__", "database_id": "00000000-0000-0000-0000-000000000000" }],
+  "durable_objects": { "bindings": [{ "name": "WORKSPACE", "class_name": "Workspace" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Workspace"] }],
+  "observability": { "enabled": true }
+}

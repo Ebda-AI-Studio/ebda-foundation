@@ -9,6 +9,12 @@
   "bin": {
     "ebda-foundation": "bin/ebda-foundation.mjs"
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:new": "node --test test/new-product.e2e.mjs",
+    "lint:workflows": "node ops/workflow-lint.mjs .github/workflows"
+  },
   "devDependencies": {
     "@types/node": "24.19.2",
     "typescript": "5.9.3",
@@ -16,10 +22,5 @@
   },
   "engines": {
     "node": ">=22"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
-    "lint:workflows": "node ops/workflow-lint.mjs .github/workflows"
   }
 }
