@@ -19,7 +19,7 @@ describe('buyer', () => {
     expect(await buyerKeyProbe(v.secret)).toBe(v.vector);
   });
   it('refuses to probe a weak secret (offline-guessing oracle)', async () => {
-    await expect(buyerKeyProbe('s'.repeat(MIN_PROBE_SECRET_LENGTH - 1))).rejects.toThrow('at least 64');
+    await expect(buyerKeyProbe('s'.repeat(MIN_PROBE_SECRET_LENGTH - 1))).rejects.toThrow('weak probe secret');
     await expect(buyerKeyProbe('')).rejects.toThrow();
     await expect(buyerKeyProbe('s'.repeat(MIN_PROBE_SECRET_LENGTH))).resolves.toMatch(/^[0-9a-f]{16}$/);
   });
