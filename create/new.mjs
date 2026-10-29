@@ -4,7 +4,14 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sync } from '../lib/foundation.mjs';
+import { SRC_ROOT, sync } from '../lib/foundation.mjs';
+
+/** The reserved-slug list of the foundation checkout (parsed from the TS source so this script needs no TS loader). */
+export function reservedSlugs(root = SRC_ROOT) {
+  const src = readFileSync(join(root, 'packages/foundation/src/slugs.ts'), 'utf8');
+  const body = /RESERVED_SLUGS = \[([\s\S]*?)\] as const/.exec(src)?.[1] ?? '';
+  return [...body.matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1]);
+}
 
 const SKELETON = join(dirname(fileURLToPath(import.meta.url)), 'skeleton');
 
@@ -40,6 +47,8 @@ const sh = (cwd, cmd, args, stdio = 'inherit') => execFileSync(cmd, args, { cwd,
 export async function createProduct(argv) {
   const name = argv[0];
   const vars = namesFor(name, opt(argv, '--display'), opt(argv, '--display-ar'));
+  // <slug>.ebda.app is a store host too: an unreserved slug lets a merchant register it first and impersonate the product.
+  if (!reservedSlugs().includes(vars.slug)) throw new Error(`"${vars.slug}" is not in RESERVED_SLUGS: add it (and the product to brand) in a foundation PR first, tag, then run new`);
   const out = resolve(opt(argv, '--out') ?? join(homedir(), 'Desktop/projects/Ebda-AI-Studio/internal-projects', name));
   if (existsSync(out)) throw new Error(`${out} already exists`);
   copyTree(SKELETON, out, vars);

@@ -21,5 +21,7 @@ async function hmacHex(secret: string, message: string): Promise<string> {
 export const MIN_PROBE_SECRET_LENGTH = 64;
 export const BUYER_KEY_PROBE_INPUT = 'suite-buyer-key-probe:v1';
 export async function buyerKeyProbe(secret: string): Promise<string> {
+  // Enforced here, not only advertised: a public probe of a short secret is an offline-guessing oracle. /health callers catch this and omit the field.
+  if (secret.length < MIN_PROBE_SECRET_LENGTH) throw new Error(`buyerKeyProbe needs a secret of at least ${MIN_PROBE_SECRET_LENGTH} characters`);
   return (await hmacHex(secret, BUYER_KEY_PROBE_INPUT)).slice(0, 16);
 }

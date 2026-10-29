@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { BUYER_KEY_PROBE_INPUT, buyerKey, buyerKeyProbe } from './buyer';
+import { BUYER_KEY_PROBE_INPUT, MIN_PROBE_SECRET_LENGTH, buyerKey, buyerKeyProbe } from './buyer';
 
 const read = (f: string) => JSON.parse(readFileSync(new URL(`../../../vectors/${f}`, import.meta.url), 'utf8'));
 
@@ -17,5 +17,10 @@ describe('buyer', () => {
     const v = read('buyer-key-probe.json') as { secret: string; message: string; vector: string };
     expect(v.message).toBe(BUYER_KEY_PROBE_INPUT);
     expect(await buyerKeyProbe(v.secret)).toBe(v.vector);
+  });
+  it('refuses to probe a weak secret (offline-guessing oracle)', async () => {
+    await expect(buyerKeyProbe('s'.repeat(MIN_PROBE_SECRET_LENGTH - 1))).rejects.toThrow('at least 64');
+    await expect(buyerKeyProbe('')).rejects.toThrow();
+    await expect(buyerKeyProbe('s'.repeat(MIN_PROBE_SECRET_LENGTH))).resolves.toMatch(/^[0-9a-f]{16}$/);
   });
 });
