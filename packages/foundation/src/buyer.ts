@@ -1,4 +1,4 @@
-import { isE164 } from '../phone';
+import { isE164 } from './phone';
 
 /** Suite-wide customer key: HMAC-SHA256(secret, E.164) as lowercase hex. Same function in every product. */
 export async function buyerKey(secret: string, e164: string): Promise<string> {

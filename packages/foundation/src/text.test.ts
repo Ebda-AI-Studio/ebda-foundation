@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { foldArabic, indexTokens, phoneDigits } from './index';
+import { foldArabic, indexTokens, phoneDigits } from './text';
 
-const v = JSON.parse(readFileSync(new URL('../../../../vectors/arabic.json', import.meta.url), 'utf8')) as { cases: Array<{ in: string; out: string }> };
+const v = JSON.parse(readFileSync(new URL('../../../vectors/arabic.json', import.meta.url), 'utf8')) as { cases: Array<{ in: string; out: string }> };
 
 describe('text', () => {
   it('foldArabic matches every shared vector', () => {

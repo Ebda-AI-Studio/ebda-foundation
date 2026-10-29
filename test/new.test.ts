@@ -21,7 +21,7 @@ describe('new', () => {
     const out = join(mkdtempSync(join(tmpdir(), 'fnd-new-')), 'ebda-sandbox');
     const r = execFileSync('node', [join(ROOT, 'bin/ebda-foundation.mjs'), 'new', 'ebda-sandbox', '--no-remote', '--no-install', '--out', out], { encoding: 'utf8' });
     expect(r).toContain('Ebda Sandbox created');
-    for (const f of ['package.json', 'wrangler.jsonc', 'CLAUDE.md', 'foundation.lock.json', 'foundation/src/phone/index.ts', 'test/foundation-parity.test.ts', 'src/index.ts', '.github/workflows/ci.yml']) expect(existsSync(join(out, f)), f).toBe(true);
+    for (const f of ['package.json', 'wrangler.jsonc', 'CLAUDE.md', 'foundation.lock.json', 'foundation/phone.ts', 'test/foundation-parity.test.ts', 'src/index.ts', '.github/workflows/ci.yml']) expect(existsSync(join(out, f)), f).toBe(true);
     const wrangler = readFileSync(join(out, 'wrangler.jsonc'), 'utf8');
     expect(wrangler).toContain('"name": "ebda-sandbox"');
     expect(readFileSync(join(out, 'src/index.ts'), 'utf8')).not.toContain('{{');

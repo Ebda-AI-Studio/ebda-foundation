@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { EBDA } from '../brand';
-import { TOKENS, isOrange } from './index';
+import { EBDA } from './brand';
+import { TOKENS, isOrange } from './tokens';
 
 const css = readFileSync(new URL('./tokens.css', import.meta.url), 'utf8');
 const cssVar = (name: string) => new RegExp(`--ebda-${name}:\\s*(#[0-9A-Fa-f]{6})`).exec(css)?.[1];

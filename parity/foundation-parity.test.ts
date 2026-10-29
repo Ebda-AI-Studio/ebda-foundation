@@ -20,7 +20,7 @@ const lock = JSON.parse(readFileSync(join(ROOT, 'foundation.lock.json'), 'utf8')
 const sha = (p: string) => createHash('sha256').update(readFileSync(join(ROOT, p))).digest('hex');
 const walk = (d: string): string[] => (existsSync(d) ? readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)])) : []);
 const vector = (name: string) => JSON.parse(readFileSync(join(ROOT, lock.dir, 'vectors', name), 'utf8'));
-const load = (mod: string) => import(/* @vite-ignore */ pathToFileURL(join(ROOT, lock.dir, 'src', mod, 'index.ts')).href);
+const load = (mod: string) => import(/* @vite-ignore */ pathToFileURL(join(ROOT, lock.dir, `${mod}.ts`)).href);
 
 describe('foundation lock', () => {
   it('every locked file exists and has the locked sha256', () => {

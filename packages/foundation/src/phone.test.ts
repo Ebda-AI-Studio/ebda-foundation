@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { asciiDigits, isE164, isEgyptianNational, normaliseE164, stripBidi } from './index';
+import { asciiDigits, isE164, isEgyptianNational, normaliseE164 } from './phone';
 
-const cases = JSON.parse(readFileSync(new URL('../../../../vectors/phone.json', import.meta.url), 'utf8')) as Array<{ in: string; e164: string | null }>;
+const cases = JSON.parse(readFileSync(new URL('../../../vectors/phone.json', import.meta.url), 'utf8')) as Array<{ in: string; e164: string | null }>;
 
 describe('phone', () => {
   it('matches every shared vector', () => {
@@ -16,7 +16,6 @@ describe('phone', () => {
   });
   it('helpers', () => {
     expect(asciiDigits('٠١۲')).toBe('012');
-    expect(stripBidi('‎+20‏')).toBe('+20');
     expect(isE164('+201001234567')).toBe(true);
     expect(isE164('201001234567')).toBe(false);
     expect(isEgyptianNational('0221234567')).toBe(true);

@@ -21,7 +21,7 @@ Consumers (vendored, sha-pinned): Ebda Store `packages/shared/src/foundation`, E
 
 ## Consumed by vendoring, not a registry
 
-`node bin/ebda-foundation.mjs sync --target <repo> --dir <vendored dir> --parity <test path>` copies the tagged source (no tests) plus `vectors/` into the consumer, stamps `foundationCommit` into the vendored `package.json`, copies `parity/foundation-parity.test.ts`, and writes `foundation.lock.json` (`tag`, `commit`, `dir`, `files` sha256). A consumer never edits vendored files: its parity test fails on any changed, missing or extra file, on a tag/commit mismatch, and on any shared-vector failure.
+`node bin/ebda-foundation.mjs sync --target <repo> --dir <vendored dir> --parity <test path>` copies the tagged source (no tests; flat: `<dir>/phone.ts`, `<dir>/buyer.ts`, …) plus `vectors/` into the consumer, stamps `foundationCommit` into the vendored `package.json`, copies `parity/foundation-parity.test.ts`, and writes `foundation.lock.json` (`tag`, `commit`, `dir`, `files` sha256). A consumer never edits vendored files: its parity test fails on any changed, missing or extra file, on a tag/commit mismatch, and on any shared-vector failure.
 
 ## Commands
 

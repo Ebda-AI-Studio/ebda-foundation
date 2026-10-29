@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BARE_AR, BARE_EN, EBDA, brandName } from './index';
+import { BARE_AR, BARE_EN, EBDA, brandName } from './brand';
 
 describe('brand', () => {
   it('names by locale', () => {

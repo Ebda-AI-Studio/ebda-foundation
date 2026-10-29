@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { RESERVED_SLUGS, isDemoShowroomSlug, isReservedSlug, slugFormatError } from './index';
+import { RESERVED_SLUGS, isDemoShowroomSlug, isReservedSlug, slugFormatError } from './slugs';
 
-const v = JSON.parse(readFileSync(new URL('../../../../vectors/slugs.json', import.meta.url), 'utf8'));
+const v = JSON.parse(readFileSync(new URL('../../../vectors/slugs.json', import.meta.url), 'utf8'));
 
 describe('slugs', () => {
   it('format vectors', () => {

@@ -6,12 +6,12 @@
   "license": "UNLICENSED",
   "type": "module",
   "exports": {
-    "./brand": "./src/brand/index.ts",
-    "./buyer": "./src/buyer/index.ts",
-    "./phone": "./src/phone/index.ts",
-    "./slugs": "./src/slugs/index.ts",
-    "./text": "./src/text/index.ts",
-    "./tokens": "./src/tokens/index.ts",
-    "./tokens.css": "./src/tokens/tokens.css"
+    "./brand": "./src/brand.ts",
+    "./buyer": "./src/buyer.ts",
+    "./phone": "./src/phone.ts",
+    "./slugs": "./src/slugs.ts",
+    "./text": "./src/text.ts",
+    "./tokens": "./src/tokens.ts",
+    "./tokens.css": "./src/tokens.css"
   }
 }

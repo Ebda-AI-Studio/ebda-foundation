@@ -27,27 +27,27 @@ describe('ebda-foundation sync/check', () => {
   it('sync writes the lock and check passes', () => {
     expect(lock.tag).toBe('v0.1.0');
     expect(lock.commit).toMatch(/^[0-9a-f]{40}$/);
-    expect(Object.keys(lock.files)).toContain('vendor/foundation/src/phone/index.ts');
+    expect(Object.keys(lock.files)).toContain('vendor/foundation/phone.ts');
     expect(Object.keys(lock.files).some((f) => f.endsWith('.test.ts') && f.includes('vendor/foundation/'))).toBe(false);
     expect(check(target)).toEqual([]);
   });
   it('editing one byte fails check, naming the file', () => {
-    appendFileSync(join(target, 'vendor/foundation/src/phone/index.ts'), ' ');
-    expect(check(target)).toEqual(['modified: vendor/foundation/src/phone/index.ts']);
+    appendFileSync(join(target, 'vendor/foundation/phone.ts'), ' ');
+    expect(check(target)).toEqual(['modified: vendor/foundation/phone.ts']);
     sync({ target, dir: 'vendor/foundation', parity: 'test/foundation-parity.test.ts', root: src });
     expect(check(target)).toEqual([]);
   });
   it('an extra file under the vendored dir fails check', () => {
-    writeFileSync(join(target, 'vendor/foundation/src/phone/extra.ts'), 'x');
-    expect(check(target)).toEqual(['extra file not in the lock: vendor/foundation/src/phone/extra.ts']);
-    rmSync(join(target, 'vendor/foundation/src/phone/extra.ts'));
+    writeFileSync(join(target, 'vendor/foundation/extra.ts'), 'x');
+    expect(check(target)).toEqual(['extra file not in the lock: vendor/foundation/extra.ts']);
+    rmSync(join(target, 'vendor/foundation/extra.ts'));
   });
   it('a missing file fails check', () => {
     rmSync(join(target, 'vendor/foundation/vectors/slugs.json'));
     expect(check(target)).toEqual(['missing: vendor/foundation/vectors/slugs.json']);
   });
   it('a refused dirty foundation checkout', () => {
-    appendFileSync(join(src, 'packages/foundation/src/phone/index.ts'), '\n');
+    appendFileSync(join(src, 'packages/foundation/src/phone.ts'), '\n');
     expect(() => sync({ target, dir: 'v', parity: 'p.test.ts', root: src })).toThrow(/uncommitted/);
   });
 });

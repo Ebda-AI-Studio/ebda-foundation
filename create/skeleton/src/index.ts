@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { EBDA } from '../foundation/src/brand';
+import { EBDA } from '../foundation/brand';
 import { WorkspaceDO } from './workspace-do';
 
 export { WorkspaceDO };

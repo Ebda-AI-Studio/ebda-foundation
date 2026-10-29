@@ -6,10 +6,6 @@ const E164 = /^\+[1-9]\d{7,14}$/;
 // LRM/RLM, ALM, embeddings/overrides and isolates that WhatsApp's RTL UI adds around numbers.
 const BIDI_MARKS = /[‎‏؜‪-‮⁦-⁩]/g;
 
-export function stripBidi(s: string): string {
-  return s.replace(BIDI_MARKS, '');
-}
-
 /** Arabic-Indic (U+0660-9) and Persian (U+06F0-9) digits turned into 0-9. */
 export function asciiDigits(s: string): string {
   return s
@@ -39,7 +35,7 @@ export function isEgyptianNational(national: string): boolean {
  * not an Egyptian shape returns null rather than becoming +20; a foreign number must carry `+` or `00`.
  */
 export function normaliseE164(input: string, defaultCountry: '20' = '20'): string | null {
-  let s = asciiDigits(stripBidi(input)).replace(/[\s\-().]/g, '');
+  let s = asciiDigits(input.replace(BIDI_MARKS, '')).replace(/[\s\-().]/g, '');
   if (s.startsWith('00')) s = '+' + s.slice(2);
   if (!s.startsWith('+')) {
     if (s.startsWith('0')) {
