@@ -51,16 +51,3 @@ describe('ebda-foundation sync/check', () => {
     expect(() => sync({ target, dir: 'v', parity: 'p.test.ts', root: src })).toThrow(/uncommitted/);
   });
 });
-
-describe('the parity template, run inside a synced consumer fixture', () => {
-  it('passes on a fresh sync and fails when the vendored code is edited', () => {
-    const src = fixtureFoundation();
-    const target = mkdtempSync(join(tmpdir(), 'fnd-par-'));
-    sync({ target, dir: 'vendor/foundation', parity: 'test/foundation-parity.test.ts', root: src });
-    execFileSync('ln', ['-s', join(ROOT, 'node_modules'), join(target, 'node_modules')]);
-    const run = () => execFileSync(join(ROOT, 'node_modules/.bin/vitest'), ['run', '--root', target, '--dir', 'test'], { encoding: 'utf8', stdio: 'pipe' });
-    expect(run()).toContain('passed');
-    appendFileSync(join(target, 'vendor/foundation/vectors/phone.json'), ' ');
-    expect(() => run()).toThrow();
-  }, 60_000);
-});

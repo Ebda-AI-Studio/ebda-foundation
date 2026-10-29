@@ -1,0 +1,8 @@
+# {{displayEn}}: repo rules
+
+Workspace rules: `../../CLAUDE.md` (Ebda AI Studio). Foundation: `foundation/` is vendored from `Whisky-11/ebda-foundation` (see `foundation.lock.json`); never edit it here, change the foundation repo and bump.
+
+- Product name is always "{{displayEn}}" under Ebda AI Studio; never bare "Ebda".
+- Cloudflare only (Workers, D1, Durable Objects with SQLite, R2, Queues). Zod at every edge. Never log raw phone numbers or message bodies.
+- Tests: `npm test`; `npm run typecheck`; `npm audit` must be 0.
+- Launch checklist: `docs/launch.md`. Build guide: the foundation repo's `docs/new-product.md`.
