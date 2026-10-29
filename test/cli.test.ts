@@ -4,7 +4,7 @@ import { appendFileSync, cpSync, mkdtempSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 // @ts-expect-error plain .mjs without types
-import { check, sync } from '../bin/ebda-foundation.mjs';
+import { check, sync } from '../lib/foundation.mjs';
 
 const ROOT = resolve(__dirname, '..');
 const g = (cwd: string, ...a: string[]) => execFileSync('git', a, { cwd, encoding: 'utf8' });

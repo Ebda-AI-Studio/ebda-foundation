@@ -5,7 +5,7 @@ import { appendFileSync, cpSync, mkdtempSync, rmSync, symlinkSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sync } from '../bin/ebda-foundation.mjs';
+import { sync } from '../lib/foundation.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd, encoding: 'utf8' });

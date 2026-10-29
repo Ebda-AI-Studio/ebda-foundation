@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sync } from '../bin/ebda-foundation.mjs';
+import { sync } from '../lib/foundation.mjs';
 
 const SKELETON = join(dirname(fileURLToPath(import.meta.url)), 'skeleton');
 
