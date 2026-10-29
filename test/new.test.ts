@@ -11,7 +11,7 @@ const ROOT = resolve(__dirname, '..');
 describe('new', () => {
   it('derives names', () => {
     expect(namesFor('ebda-crm')).toMatchObject({ slug: 'crm', host: 'crm.ebda.app', displayEn: 'Ebda CRM', displayAr: 'ابدأ CRM' });
-    expect(namesFor('ebda-crm').displayEn).toBe('Ebda Sandbox');
+    expect(namesFor('ebda-sandbox').displayEn).toBe('Ebda Sandbox');
   });
   it('refuses names that are not ebda-<x>', () => {
     expect(() => namesFor('crm')).toThrow(/ebda-crm/);
