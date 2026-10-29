@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { BUYER_KEY_PROBE_INPUT, buyerKey, buyerKeyProbe } from './buyer';
 
-const read = (f: string) => JSON.parse(readFileSync(new URL(`../../../../vectors/${f}`, import.meta.url), 'utf8'));
+const read = (f: string) => JSON.parse(readFileSync(new URL(`../../../vectors/${f}`, import.meta.url), 'utf8'));
 
 describe('buyer', () => {
   it('buyerKey matches every shared vector', async () => {
