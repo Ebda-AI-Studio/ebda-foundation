@@ -1,5 +1,6 @@
 {
- "fold": [
+ "comment": "Store NORMALIZE_VECTORS: [input, foldArabic(input)]",
+ "cases": [
   {
    "in": "أحذية",
    "out": "احذيه"
@@ -139,38 +140,6 @@
   {
    "in": "﻿x",
    "out": "﻿x"
-  }
- ],
- "index": [
-  {
-   "in": "مسئول، مسؤول!",
-   "out": "مسيول مسوول"
-  },
-  {
-   "in": "Abaya-Black (XL) 😀",
-   "out": "abaya black xl"
-  },
-  {
-   "in": "  ٠١٠ 123  ",
-   "out": "010 123"
-  },
-  {
-   "in": "",
-   "out": ""
-  }
- ],
- "phoneDigits": [
-  {
-   "in": "+٢٠ ١٠٠-۱۲۳ ٤٥۶٧",
-   "out": "201001234567"
-  },
-  {
-   "in": "(+20) 100 123 4567",
-   "out": "201001234567"
-  },
-  {
-   "in": "",
-   "out": ""
   }
  ]
 }

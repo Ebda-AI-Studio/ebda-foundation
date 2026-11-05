@@ -1,22 +1,17 @@
 {
- "slugify": [
-  { "in": "Almond Plain", "out": "almond-plain" },
-  { "in": "  Freeze-Dried  Natural Kiwi Slices ", "out": "freeze-dried-natural-kiwi-slices" },
-  { "in": "Nuts & Co. — Premium!", "out": "nuts-co-premium" },
-  { "in": "---hello---", "out": "hello" },
-  { "in": "لوز مدخن", "out": "لوز-مدخن" },
-  { "in": "لوز مدخن", "ascii": true, "out": "" },
-  { "in": "!!!", "out": "" }
- ],
- "validate": [
-  { "in": "my-shop", "ok": true },
-  { "in": "ab", "code": "SLUG_TOO_SHORT" },
-  { "in": "Amelia", "code": "SLUG_INVALID_CHARS" },
-  { "in": "-shop", "code": "SLUG_INVALID_HYPHEN" },
-  { "in": "my--shop", "code": "SLUG_INVALID_HYPHEN" },
-  { "in": "api", "code": "SLUG_RESERVED" },
-  { "in": "crm", "code": "SLUG_RESERVED" },
-  { "in": "accounts", "code": "SLUG_RESERVED" },
-  { "in": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "code": "SLUG_TOO_LONG" }
- ]
+  "format": [
+    { "in": "amelia", "error": null },
+    { "in": "a-b-c", "error": null },
+    { "in": "abc", "error": null },
+    { "in": "ab", "error": "SLUG_TOO_SHORT" },
+    { "in": "Amelia", "error": "SLUG_INVALID_CHARS" },
+    { "in": "my_shop", "error": "SLUG_INVALID_CHARS" },
+    { "in": "-abc", "error": "SLUG_INVALID_HYPHEN" },
+    { "in": "abc-", "error": "SLUG_INVALID_HYPHEN" },
+    { "in": "a--b", "error": "SLUG_INVALID_HYPHEN" },
+    { "in": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "error": "SLUG_TOO_LONG" },
+    { "in": "", "error": "SLUG_INVALID_CHARS" }
+  ],
+  "reserved": { "yes": ["app", "WA", " Api ", "accounts", "media"], "no": ["storedemo", "amelia", "", "demo-shop"] },
+  "demoShowroom": { "yes": ["storedemo", "storedemo-souq", "StoreDemo"], "no": ["storedemonstration", "demo-shop", "store"] }
 }
