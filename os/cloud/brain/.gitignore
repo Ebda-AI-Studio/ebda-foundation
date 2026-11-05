@@ -1,0 +1,5 @@
+node_modules/
+.wrangler/
+# rendered by scripts/deploy.sh from wrangler.jsonc + os.env + ~/.ebda-os.local.env; holds per-machine ids
+wrangler.deploy.jsonc
+dist/

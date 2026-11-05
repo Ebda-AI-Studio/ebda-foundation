@@ -82,3 +82,44 @@ jobs:
       - name: OS suites (string + literal guards, config parity, ops suites, Linux smoke)
         if: steps.chg.outputs.changed == 'true'
         run: bash os/tests/run-all.sh --quiet
+
+  # OS brain Worker (os/cloud/brain): typecheck, vitest on workerd, npm audit. Affected-only like `os`: on a PR it does nothing
+  # unless os/cloud/ or this workflow changed. Its own lockfile; ~/.npm persists on Umbra, the remote cache is for hosted runners.
+  brain:
+    name: OS brain Worker (typecheck, workerd tests, audit)
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    defaults:
+      run:
+        working-directory: os/cloud/brain
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Did os/cloud/ change?
+        id: chg
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ] && ! git diff --name-only "$BASE"...HEAD | grep -Eq '^(os/cloud/|\.github/workflows/ci\.yml$)'; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "os/cloud/ untouched - skipping"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.chg.outputs.changed == 'true'
+        with:
+          node-version: 22
+          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
+          cache-dependency-path: os/cloud/brain/package-lock.json
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm ci
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm run typecheck
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm test
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm audit --audit-level=low

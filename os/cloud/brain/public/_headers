@@ -1,0 +1,6 @@
+/dash/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cache-Control: no-cache

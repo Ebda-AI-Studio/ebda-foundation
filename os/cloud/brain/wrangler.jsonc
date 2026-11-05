@@ -1,0 +1,42 @@
+// Ebda OS brain. This file is the TEMPLATE: the values written as __PLACEHOLDER__ are filled by scripts/deploy.sh from
+// os/config/os.env and ~/.ebda-os.local.env into wrangler.deploy.jsonc (gitignored). Never put ids or secrets here.
+// account_id is NOT set here: deploy.sh exports CLOUDFLARE_ACCOUNT_ID from OS_CF_ACCOUNT_ID (the personal account).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ebda-os-brain",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "observability": { "enabled": true, "head_sampling_rate": 0.2 },
+
+  // Dashboard: static files under public/dash/ (served at /dash/). /api/* and every machine path reach the Worker.
+  "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "none", "run_worker_first": ["/api/*", "/github/*", "/telegram/*", "/hands/*", "/findings", "/pending", "/health"] },
+
+  // One SQLite-backed Durable Object holds the pipeline: findings, jobs, runs, questions, messages, counters.
+  "durable_objects": { "bindings": [{ "name": "BRAIN", "class_name": "BrainDO" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BrainDO"] }],
+
+  // KV only where eventual consistency is fine: the Mac fallback queue (/pending) and the advisory ETag/KEV cache.
+  "kv_namespaces": [{ "binding": "EVENTS", "id": "__BRAIN_KV_ID__" }],
+
+  // Cron Triggers (UTC). Keep in sync with CRONS in src/schedule.ts (test/config.test.ts enforces it).
+  // No weekday field is used: on Cloudflare 1 = Sunday and 0 is rejected, so a weekday cron needs care.
+  "triggers": { "crons": ["*/5 * * * *", "7 * * * *", "30 21 * * *", "0 5 * * *"] },
+
+  "vars": {
+    "OS_ORGS": "__OS_ORGS__",
+    "HEALTH_TARGETS": "[{\"url\":\"https://api.ebda.app/health\",\"kind\":\"api\"},{\"url\":\"https://ebda.app/\",\"kind\":\"page\"}]",
+    "HEALTH_FAIL_BUDGET": "3",
+    "MESSAGE_BUDGET_PER_DAY": "3",
+    "URGENT_RUNS_PER_DAY": "3",
+    "URGENT_RUN_CAP_MIN": "30",
+    "QUESTION_DEADLINE_HOURS": "24",
+    "USAGE_WEEKLY_THRESHOLD_PCT": "80",
+    "HANDS_PROVIDER": "stub",
+    "ACCESS_TEAM_DOMAIN": "__ACCESS_TEAM_DOMAIN__",
+    "ACCESS_AUD": "__ACCESS_AUD__"
+  }
+  // Secrets (wrangler secret put, never here): GH_WEBHOOK_SECRET, RELAY_SECRET, GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
+  // TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, HANDS_TOKEN, INGEST_TOKEN. See README.md.
+}
