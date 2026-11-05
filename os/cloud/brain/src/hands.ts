@@ -4,6 +4,8 @@
 // HandsProvider.start(batch). The provider starts ONE run (a Cloudflare Container/Sandbox by default, the Mac when awake)
 // that pulls the batch from GET /hands/runs/:runId (Bearer HANDS_TOKEN), works each job in its own worktree, and posts
 // back POST /hands/jobs/:jobId/outcome and POST /hands/usage. Nothing else in the brain starts a run.
+import { selectProvider } from '../../hands/providers/index.mjs';
+import type { Env } from './env';
 import type { Finding, MergePolicy } from './findings';
 
 export type RunKind = 'urgent' | 'nightly';
@@ -39,6 +41,9 @@ export interface RunRef {
 
 export interface HandsProvider {
   readonly name: string;
+  /** pull-only providers (mac-local) are never started by the brain: the Mac claims queued work itself */
+  readonly pullOnly?: boolean;
+  /** a throw is recorded as a failed run (the jobs stay queued); it never aborts the brain tick */
   start(batch: HandsBatch): Promise<RunRef>;
 }
 
@@ -72,11 +77,13 @@ export class StubHandsProvider implements HandsProvider {
   }
 }
 
-export function providerFor(name: string): HandsProvider {
-  // 4b registers 'cloudflare-sandbox' and 'mac-local' here. Unknown names fall back to the stub (records only),
-  // so a typo in HANDS_PROVIDER can never start an unexpected runner.
-  switch (name) {
-    default:
-      return new StubHandsProvider();
-  }
+/**
+ * Provider by config (HANDS_PROVIDER). The real providers live in os/cloud/hands/providers/ (Worker-compatible ESM):
+ * cloudflare-sandbox (default from Task 7), mac-local (pull-only), github-actions (selectable only when explicitly
+ * enabled and configured). Unknown or not-configured names fall back to the stub (records only), so a typo in
+ * HANDS_PROVIDER can never start an unexpected runner.
+ */
+export function providerFor(name: string, env: Partial<Env> = {}): HandsProvider {
+  const { provider } = selectProvider(name, env as Record<string, unknown>);
+  return (provider as HandsProvider | null) ?? new StubHandsProvider();
 }

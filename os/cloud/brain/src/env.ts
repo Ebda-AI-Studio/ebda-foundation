@@ -19,6 +19,16 @@ export interface Env {
   QUESTION_DEADLINE_HOURS: string;
   USAGE_WEEKLY_THRESHOLD_PCT: string;
   HANDS_PROVIDER: string;
+  /** cloudflare-sandbox: the brain's public URL the container calls back (rendered from OS_BRAIN_HOST) */
+  HANDS_BRAIN_URL?: string;
+  /** cloudflare-sandbox: wall-clock cap of a nightly container run (urgent runs use URGENT_RUN_CAP_MIN) */
+  HANDS_NIGHTLY_RUN_CAP_MIN?: string;
+  /** cloudflare-sandbox: the HandsContainer Durable Object (Container-enabled). Absent until Task 7 configures it. */
+  HANDS_CONTAINER?: DurableObjectNamespace;
+  /** github-actions provider: disabled unless 'true' AND repo/workflow/token are set (Actions minutes are CI only) */
+  HANDS_GITHUB_ACTIONS_ENABLED?: string;
+  HANDS_GITHUB_ACTIONS_REPO?: string;
+  HANDS_GITHUB_ACTIONS_WORKFLOW?: string;
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
   // secrets
@@ -30,6 +40,13 @@ export interface Env {
   TELEGRAM_WEBHOOK_SECRET?: string;
   HANDS_TOKEN?: string;
   INGEST_TOKEN?: string;
+  /** passed into the hands container at start, never baked into the image */
+  CLAUDE_CODE_OAUTH_TOKEN?: string;
+  HANDS_GH_TOKEN?: string;
+  HANDS_CONFIG_JSON?: string;
+  HANDS_GIT_NAME?: string;
+  HANDS_GIT_EMAIL?: string;
+  HANDS_GITHUB_ACTIONS_TOKEN?: string;
 }
 
 /** Integer var with a fallback; a malformed value never becomes NaN or 0 silently. */

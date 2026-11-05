@@ -21,6 +21,7 @@ import { watchAdvisories } from './watchers/advisories';
 import { checkAll, parseTargets } from './watchers/health';
 
 export { BrainDO } from './brain-do';
+export { HandsContainer } from './hands-container';
 
 const MAX_BODY = 5 * 1024 * 1024;
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };

@@ -37,10 +37,16 @@
     "URGENT_RUN_CAP_MIN": "30",
     "QUESTION_DEADLINE_HOURS": "24",
     "USAGE_WEEKLY_THRESHOLD_PCT": "80",
+    // stub until Task 7: then cloudflare-sandbox (needs the containers block, see os/cloud/hands/README.md). mac-local is
+    // pull-only; github-actions is refused unless HANDS_GITHUB_ACTIONS_ENABLED=true (Actions minutes are CI only).
     "HANDS_PROVIDER": "stub",
+    "HANDS_NIGHTLY_RUN_CAP_MIN": "90",
+    // the brain's own public URL the hands container calls back (rendered from OS_BRAIN_HOST)
+    "HANDS_BRAIN_URL": "__HANDS_BRAIN_URL__",
     "ACCESS_TEAM_DOMAIN": "__ACCESS_TEAM_DOMAIN__",
     "ACCESS_AUD": "__ACCESS_AUD__"
   }
   // Secrets (wrangler secret put, never here): GH_WEBHOOK_SECRET, RELAY_SECRET, GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
-  // TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, HANDS_TOKEN, INGEST_TOKEN. See README.md.
+  // TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, HANDS_TOKEN, INGEST_TOKEN; hands container (Task 7): CLAUDE_CODE_OAUTH_TOKEN,
+  // HANDS_GH_TOKEN, HANDS_CONFIG_JSON, HANDS_GIT_NAME, HANDS_GIT_EMAIL. See README.md and os/cloud/hands/README.md.
 }

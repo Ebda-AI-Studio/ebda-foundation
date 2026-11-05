@@ -27,7 +27,7 @@ BrainDO ──► Telegram (≤ 3/day + 1 digest, deduped)        dashboard /das
 | Telegram | `src/telegram.ts` | Hard daily ceiling: `MESSAGE_BUDGET_PER_DAY` (3) normal messages (questions) + `URGENT_MESSAGE_BUDGET_PER_DAY` (3) urgent-class messages (urgent outcomes, unhealed P1, one per incident) = at most 6, plus one digest. Same dedupe key never twice; overflow rolls into the digest. A failed urgent-class send is retried by the DO alarm (tries at t, +5, +15 min), then rolls into the digest marked "delivery failed". Plain text only. |
 | Questions | `BrainDO.flushQuestions/answerQuestion` | Options `proceed / hold`, default, deadline (`QUESTION_DEADLINE_HOURS`, 24). Reversible (a PR) → silence = default `proceed` after the deadline. Destructive → default `hold` and nothing ever happens on silence. Answers: Telegram buttons (`/telegram/webhook`) or the dashboard. |
 | Metrics | `BrainDO.actedOn/selfCheck` | acted = dispatched to the hands, asked as a question, or resolved. Acted-on ratio = acted / raised (24 h and 7 d). A finding unacted 24 h after it was raised is an OS bug: counted on the dashboard and in the digest, never its own message. |
-| Usage guard | `src/usage.ts` | The hands report `POST /hands/usage {weeklyUsedPct, resetsAt?}` after each job. The brain refuses to start any run (urgent, nightly, Mac claim) when the last report is ≥ `USAGE_WEEKLY_THRESHOLD_PCT` (80) and not past `resetsAt`. No report / report older than 7 days → allowed and labelled `usage-unknown`. usage-unknown is allowed only while the hands provider is the stub; registering a real provider (4b) comes with the hands enforcing the threshold between jobs. |
+| Usage guard | `src/usage.ts` | The hands report `POST /hands/usage {weeklyUsedPct, resetsAt?}` after each job. The brain refuses to start any run (urgent, nightly, Mac claim) when the last report is ≥ `USAGE_WEEKLY_THRESHOLD_PCT` (80) and not past `resetsAt`. No report / report older than 7 days → allowed and labelled `usage-unknown`. usage-unknown starts a run; the hands then refuse every job on unknown or over-threshold usage before any work (`os/cloud/hands/lib/usage-guard.mjs`, tested), so unknown is never unguarded. |
 | Dashboard | `public/dash/`, `GET /api/state` | Static assets (en + ar, RTL by logical properties, night + gold `#B08D57`, no orange), CSP via `public/_headers`. `/api/*` verifies the Access JWT itself (RS256, aud, iss, exp) and fails closed (503) until Access is configured. |
 
 ### Contract for the hands (Task 4b)
@@ -35,8 +35,12 @@ BrainDO ──► Telegram (≤ 3/day + 1 digest, deduped)        dashboard /das
 `src/hands.ts` is the whole interface: `HandsProvider { name; start(batch: HandsBatch): Promise<RunRef> }`,
 `HandsBatch { runId, kind, jobs: HandsJob[], perJobCapMin, usageThresholdPct, createdAt }`,
 `JobOutcome { status: merged|pr_opened|fix_deployed|could_not_fix|skipped_usage|timed_out, prUrl?, note? }`.
-4a ships `StubHandsProvider` (records only); 4b registers `cloudflare-sandbox` and `mac-local` in `providerFor()` and
-switches `HANDS_PROVIDER`. A run pulls its batch with `GET /hands/runs/:runId`, reports each job with
+4a shipped `StubHandsProvider` (records only); 4b (`os/cloud/hands/`) wires `providerFor(HANDS_PROVIDER, env)` to the
+real providers in `os/cloud/hands/providers/`: `cloudflare-sandbox` (the `HandsContainer` DO in `src/hands-container.ts`,
+one container per lane, capped), `mac-local` (pull-only: the brain starts nothing, the Mac claims), `github-actions`
+(refused unless explicitly enabled; Actions minutes are CI only). The committed value stays `stub` until Task 7.
+A provider that throws is recorded as a `failed` run, its jobs stay queued, and the tick goes on. A nightly
+`pr_opened` outcome whose note starts with `question:` (a PR the hands may not merge) sends ONE review question. A run pulls its batch with `GET /hands/runs/:runId`, reports each job with
 `POST /hands/jobs/:jobId/outcome`, reports usage with `POST /hands/usage`; the Mac claims queued nightly work itself with
 `POST /hands/claim {provider:'mac-local', max}`. All with `Authorization: Bearer $HANDS_TOKEN`. `skipped_usage` puts the
 job back in the queue. A merge happens only if `mergePolicy === 'auto-when-gate-green'` and the repo's merge gate is green.
@@ -58,7 +62,7 @@ Estimates for a normal day (inferred from the schedule, not measured):
 | KV writes / reads | ~100 / ~200 | ~3 k / ~6 k | 1 M / 10 M |
 | Outbound: health checks / GitHub API (mostly 304) / KEV | 576 / ≤ 48 / 1 | | free |
 | Telegram messages | ≤ 6 (3 normal + 3 urgent) + 1 digest; ≤ 3 on a normal day | | |
-| Hands runs | 1 nightly + ≤ 3 urgent | | (4b: container minutes) |
+| Hands runs | 1 nightly + ≤ 3 urgent | | container estimate in `os/cloud/hands/README.md` (memory-bound, ~$0.55/month typical) |
 | GitHub Actions minutes used by the OS | 0 | 0 | |
 
 Frugal rules in code: non-`completed` webhook deliveries return before any storage call; health fetches stay out of the

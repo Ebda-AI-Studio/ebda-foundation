@@ -99,7 +99,7 @@ export class BrainDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
-    this.hands = providerFor(env.HANDS_PROVIDER ?? 'stub');
+    this.hands = providerFor(env.HANDS_PROVIDER ?? 'stub', env);
     this.policy = policyFrom(env);
     ctx.blockConcurrencyWhile(async () => this.migrate());
   }
@@ -439,10 +439,27 @@ export class BrainDO extends DurableObject<Env> {
     return usageGuard(this.getMeta<UsageReport>('usage'), this.policy.usageThresholdPct, now);
   }
 
-  private async startRun(kind: RunKind, jobs: HandsJob[], capMin: number, now: number, provider: HandsProvider = this.hands): Promise<HandsBatch> {
+  /**
+   * Starts one run. A provider that throws (container binding missing, container busy, API error) never aborts the
+   * caller: the run is recorded as 'failed' (it counts toward the urgent daily cap, so a broken provider is retried at
+   * most URGENT_RUNS_PER_DAY times a day), the jobs stay queued, and null is returned.
+   */
+  private async startRun(kind: RunKind, jobs: HandsJob[], capMin: number, now: number, provider: HandsProvider = this.hands): Promise<HandsBatch | null> {
     const runId = uid('run');
     const batch: HandsBatch = { runId, kind, jobs, perJobCapMin: capMin, usageThresholdPct: this.policy.usageThresholdPct, createdAt: now };
-    const ref = await provider.start(batch);
+    let ref: Awaited<ReturnType<HandsProvider['start']>>;
+    try {
+      ref = await provider.start(batch);
+    } catch (e) {
+      const error = String((e as Error)?.message ?? e).slice(0, 300);
+      this.sql.exec(
+        `INSERT INTO runs (id, kind, provider, external_id, status, day, started_at, cap_min, finished_at) VALUES (?, ?, ?, NULL, 'failed', ?, ?, ?, ?)`,
+        runId, kind, provider.name, dayKey(now), now, capMin, now,
+      );
+      this.setMeta('hands:start-failed', { at: now, runId, provider: provider.name, error });
+      console.error('hands provider failed to start', provider.name, error);
+      return null;
+    }
     this.sql.exec(
       `INSERT INTO runs (id, kind, provider, external_id, status, day, started_at, cap_min) VALUES (?, ?, ?, ?, 'running', ?, ?, ?)`,
       runId, kind, ref.provider, ref.externalId ?? null, dayKey(now), now, capMin,
@@ -468,8 +485,9 @@ export class BrainDO extends DurableObject<Env> {
     if (this.row(`SELECT 1 FROM runs WHERE kind = 'urgent' AND status = 'running'`)) return; // one at a time; the rest wait
     const today = Number(this.row(`SELECT COUNT(*) AS n FROM runs WHERE kind = 'urgent' AND day = ?`, dayKey(now))?.n ?? 0);
     const guard = this.usage(now);
-    if (today >= this.policy.urgentRunsPerDay || !guard.allowed) {
-      const why = !guard.allowed ? guard.reason : `urgent cap ${this.policy.urgentRunsPerDay}/day reached`;
+    const pullOnly = this.hands.pullOnly === true;
+    if (today >= this.policy.urgentRunsPerDay || !guard.allowed || pullOnly) {
+      const why = pullOnly ? `hands provider ${this.hands.name} is pull-only` : !guard.allowed ? guard.reason : `urgent cap ${this.policy.urgentRunsPerDay}/day reached`;
       for (const j of queued) {
         // queued for the nightly batch and messaged ONCE per issue
         this.sql.exec(`UPDATE jobs SET lane = 'nightly' WHERE id = ?`, j.id);
@@ -484,12 +502,14 @@ export class BrainDO extends DurableObject<Env> {
   async runNightly(now: number = Date.now()): Promise<{ started: boolean; jobs: number; reason: string; runId?: string }> {
     const jobs = this.jobsFor(`j.status = 'queued' AND j.lane = 'nightly' ORDER BY j.created_at LIMIT ${NIGHTLY_MAX_JOBS}`);
     if (!jobs.length) return { started: false, jobs: 0, reason: 'queue empty: no container started' };
+    if (this.hands.pullOnly) return { started: false, jobs: jobs.length, reason: `hands provider ${this.hands.name} is pull-only: the Mac claims the queue` };
     const guard = this.usage(now);
     if (!guard.allowed) {
       this.setMeta('usage:refused', { at: now, reason: guard.reason, jobs: jobs.length });
       return { started: false, jobs: jobs.length, reason: guard.reason };
     }
     const b = await this.startRun('nightly', jobs, 45, now);
+    if (!b) return { started: false, jobs: jobs.length, reason: `hands provider ${this.hands.name} failed to start; jobs stay queued` };
     return { started: true, jobs: jobs.length, reason: guard.reason, runId: b.runId };
   }
 
@@ -501,7 +521,7 @@ export class BrainDO extends DurableObject<Env> {
     const jobs = this.jobsFor(`j.status = 'queued' AND j.lane = 'nightly' ORDER BY j.created_at LIMIT ${n}`);
     if (!jobs.length) return { refused: 'queue empty' };
     const recorder: HandsProvider = { name: providerName, start: async (b) => ({ runId: b.runId, provider: providerName, startedAt: now }) };
-    return this.startRun('nightly', jobs, 45, now, recorder);
+    return (await this.startRun('nightly', jobs, 45, now, recorder)) ?? { refused: 'could not record the run' };
   }
 
   getRun(runId: string): HandsBatch | null {
@@ -534,6 +554,9 @@ export class BrainDO extends DurableObject<Env> {
       if (j.lane === 'urgent') {
         const what = { merged: 'fixed and merged', pr_opened: 'PR opened, needs your review', fix_deployed: 'fix deployed', could_not_fix: 'could NOT fix', timed_out: 'could NOT fix in time', skipped_usage: '' }[o.status];
         await this.emit({ dedupeKey: `outcome:${jobId}`, kind: 'urgent-outcome', text: `Ebda OS urgent: ${what}\n${j.title}${o.prUrl ? `\n${o.prUrl}` : ''}${o.note ? `\n${o.note}` : ''}` }, now);
+      } else if (o.status === 'pr_opened' && o.note?.startsWith('question:')) {
+        // the hands left a PR they may not merge (not a pre-approved class, or the gate was not green): ONE question
+        await this.emit({ dedupeKey: `pr-review:${jobId}`, kind: 'question', text: `Ebda OS: PR needs your review\n${j.title}${o.prUrl ? `\n${o.prUrl}` : ''}\n${o.note.slice('question:'.length).trim()}` }, now);
       }
     }
     if (j.run_id && !this.row(`SELECT 1 FROM jobs WHERE run_id = ? AND status = 'running'`, j.run_id)) {

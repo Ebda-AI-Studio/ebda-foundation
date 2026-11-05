@@ -1,0 +1,45 @@
+{
+  "_comment": "Fixture for run-batch.mjs --dry-run. finding.detail.dryRun scripts the fake leaves (claude: fix|cannot|nochange, tests: pass|fail, gate: green|red).",
+  "config": {
+    "jobCapMin": 45,
+    "runCapMin": 90,
+    "repos": {
+      "example-org/example-app": {
+        "defaultBranch": "main",
+        "install": ["npm", "ci", "--ignore-scripts"],
+        "test": ["npm", "run", "test:affected"],
+        "mergeGate": ["bash", "{os_home}/ops/merge-gate.sh", "{pr}", "{sha}", "--repo", "{repo}", "--workflows", "{dir}/.github/workflows"]
+      }
+    }
+  },
+  "batch": {
+    "runId": "run_dryrun0000000001",
+    "kind": "nightly",
+    "perJobCapMin": 45,
+    "usageThresholdPct": 80,
+    "createdAt": 1793952000000,
+    "jobs": [
+      {
+        "id": "job_docs000000000001",
+        "fingerprint": "f1",
+        "lane": "nightly",
+        "mergePolicy": "auto-when-gate-green",
+        "finding": { "source": "watcher", "kind": "docs", "key": "readme-link", "title": "Broken link in README", "repo": "example-org/example-app", "detail": { "dryRun": { "claude": "fix", "tests": "pass", "gate": "green" } } }
+      },
+      {
+        "id": "job_code000000000002",
+        "fingerprint": "f2",
+        "lane": "nightly",
+        "mergePolicy": "pr-and-question",
+        "finding": { "source": "ci", "kind": "ci-failure", "key": "example-org/example-app:CI", "title": "CI failing on main", "repo": "example-org/example-app", "detail": { "dryRun": { "claude": "fix", "tests": "pass" } } }
+      },
+      {
+        "id": "job_cant000000000003",
+        "fingerprint": "f3",
+        "lane": "nightly",
+        "mergePolicy": "auto-when-gate-green",
+        "finding": { "source": "watcher", "kind": "lint", "key": "lint-1", "title": "Lint error", "repo": "example-org/example-app", "detail": { "dryRun": { "claude": "cannot" } } }
+      }
+    ]
+  }
+}
