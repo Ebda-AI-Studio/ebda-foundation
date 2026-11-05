@@ -1,0 +1,17 @@
+{
+  "name": "@ebda/foundation",
+  "version": "0.1.0",
+  "foundationCommit": "0000000000000000000000000000000000000000",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    "./brand": "./src/brand.ts",
+    "./buyer": "./src/buyer.ts",
+    "./phone": "./src/phone.ts",
+    "./slugs": "./src/slugs.ts",
+    "./text": "./src/text.ts",
+    "./tokens": "./src/tokens.ts",
+    "./tokens.css": "./src/tokens.css"
+  }
+}
