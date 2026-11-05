@@ -1,9 +1,10 @@
 // Telegram policy (memory feedback-os-acts-not-pings): the OS acts first and messages only for
 //   (1) a P1 the OS could not heal (once per issue), (2) the outcome of an urgent run (one message per run),
 //   (3) a decision only Ahmad can make (options + default + deadline), (4) ONE daily digest of outcomes.
-// Budget: questions share MESSAGE_BUDGET_PER_DAY (default 3) with every other non-digest message; urgent-class messages
-// (urgent-outcome, p1-unhealed) are already capped by URGENT_RUNS_PER_DAY and the per-issue dedupe, so they are never
-// deferred. A deduped key is never sent twice. Anything over budget rolls into the next digest.
+// Budget (controller ruling 4a-I2): a HARD daily ceiling of MESSAGE_BUDGET_PER_DAY (3) normal messages (questions) plus
+// URGENT_MESSAGE_BUDGET_PER_DAY (3) urgent-class messages (urgent-outcome, p1-unhealed), so at most 6 a day plus the one
+// digest. Unhealed-P1 notices are one per incident fingerprint. A deduped key is never sent twice. Anything over its
+// bucket rolls into the next digest.
 // Credentials: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID Worker secrets only.
 
 export type MsgKind = 'urgent-outcome' | 'p1-unhealed' | 'question' | 'digest';
@@ -17,12 +18,22 @@ export interface Outgoing {
 
 export type Admission = 'send' | 'duplicate' | 'defer';
 
-/** Pure admission rule. `sentToday` counts non-digest messages already sent on this (UTC) day. */
-export function admit(kind: MsgKind, alreadySent: boolean, sentToday: number, digestSentToday: boolean, budget: number): Admission {
+export const URGENT_KINDS: ReadonlySet<MsgKind> = new Set(['urgent-outcome', 'p1-unhealed']);
+
+export interface DayCounts {
+  /** normal (non-urgent, non-digest) messages already sent today */
+  normal: number;
+  /** urgent-class messages already sent today */
+  urgent: number;
+  digest: boolean;
+}
+
+/** Pure admission rule; days are UTC. Total non-digest messages per day <= normalBudget + urgentBudget. */
+export function admit(kind: MsgKind, alreadySent: boolean, day: DayCounts, normalBudget: number, urgentBudget: number): Admission {
   if (alreadySent) return 'duplicate';
-  if (kind === 'digest') return digestSentToday ? 'duplicate' : 'send';
-  if (kind === 'urgent-outcome' || kind === 'p1-unhealed') return 'send';
-  return sentToday < budget ? 'send' : 'defer';
+  if (kind === 'digest') return day.digest ? 'duplicate' : 'send';
+  if (URGENT_KINDS.has(kind)) return day.urgent < urgentBudget ? 'send' : 'defer';
+  return day.normal < normalBudget ? 'send' : 'defer';
 }
 
 /** UTC day key, e.g. 2026-11-05. */
@@ -87,7 +98,7 @@ export interface DigestInput {
   acted24h: number;
   ratio7d: number | null;
   pendingQuestions: Array<{ id: string; text: string; defaultOption: string }>;
-  rolledUp: string[];
+  rolledUp: Array<{ text: string; failed: boolean }>;
   osBugs: number;
   usageNote: string | null;
 }
@@ -110,8 +121,8 @@ export function digestMessage(d: DigestInput): Outgoing {
     for (const q of d.pendingQuestions.slice(0, 10)) lines.push(`- ${q.text} (default "${q.defaultOption}")`);
   }
   if (d.rolledUp.length) {
-    lines.push('', 'Rolled up (over budget):');
-    for (const t of d.rolledUp.slice(0, 10)) lines.push(`- ${t.split('\n')[0]}`);
+    lines.push('', 'Rolled up (over budget or not delivered):');
+    for (const r of d.rolledUp.slice(0, 10)) lines.push(`- ${r.failed ? '[delivery failed] ' : ''}${r.text.split('\n').slice(0, 2).join(' / ')}`);
   }
   return { dedupeKey: `digest:${d.day}`, kind: 'digest', text: lines.join('\n') };
 }

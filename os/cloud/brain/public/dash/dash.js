@@ -15,7 +15,7 @@
       irreversible: 'Irreversible: nothing happens until you answer.', noRuns: 'No hands runs yet.', noHealth: 'No health check yet.',
       noFindings: 'No findings yet.', up: 'Up', down: 'Down', answered: 'Recorded.', failed: 'Could not load the dashboard. Check your Access session and try again.',
       lanes: { urgent: 'Urgent', nightly: 'Tonight', question: 'Needs you' }, opt: { proceed: 'Go ahead', hold: 'Hold' },
-      status: { open: 'Open', queued: 'Queued', question: 'Asked you', dispatched: 'Being fixed', done: 'Done', failed: 'Not fixed', held: 'On hold', resolved: 'Resolved', running: 'Running', timed_out: 'Timed out' },
+      status: { open: 'Open', queued: 'Queued', question: 'Asked you', dispatched: 'Being fixed', waiting: 'PR open', done: 'Done', failed: 'Not fixed', held: 'On hold', resolved: 'Resolved', running: 'Running', timed_out: 'Timed out' },
     },
     ar: {
       title: 'تشغيل Ebda OS', subtitle: 'هنا هتلاقي اللي النظام لاحظه، واللي عمله فيه، واللي مستني قرارك.', now: 'دلوقتي',
@@ -29,7 +29,7 @@
       irreversible: 'ده قرار مينفعش يترجع فيه، فمش هيحصل أي حاجة غير لما ترد.', noRuns: 'لسه مفيش تشغيلات.', noHealth: 'لسه مفيش فحص صحة.',
       noFindings: 'لسه مفيش ملاحظات.', up: 'شغال', down: 'واقع', answered: 'اتسجل ردك.', failed: 'معرفناش نحمّل اللوحة. اتأكد من جلسة الدخول وجرب تاني.',
       lanes: { urgent: 'عاجل', nightly: 'الليلة', question: 'محتاجك' }, opt: { proceed: 'كمّل', hold: 'استنى' },
-      status: { open: 'مفتوحة', queued: 'في الطابور', question: 'اتسألت فيها', dispatched: 'بتتصلح', done: 'خلصت', failed: 'متصلحتش', held: 'متوقفة', resolved: 'اتحلت', running: 'شغال', timed_out: 'الوقت خلص' },
+      status: { open: 'مفتوحة', queued: 'في الطابور', question: 'اتسألت فيها', dispatched: 'بتتصلح', waiting: 'الـPR مفتوح', done: 'خلصت', failed: 'متصلحتش', held: 'متوقفة', resolved: 'اتحلت', running: 'شغال', timed_out: 'الوقت خلص' },
     },
   };
   let lang = 'en';

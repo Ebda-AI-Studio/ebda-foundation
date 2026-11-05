@@ -47,12 +47,14 @@ export function classifyFinding(f: Finding): Classification {
 
   // (2) security advisories: urgent only when deployed AND (critical OR known-exploited).
   if (ADVISORY_KINDS.has(kind)) {
-    const deployed = f.deployed !== false && f.depScope !== 'development';
+    // deployed only when the source says so (the advisory watcher sets it from DEPLOYED_REPOS); unknown = not deployed,
+    // so a critical alert in a library or tool repo waits for the nightly batch instead of spending an urgent run
+    const deployed = f.deployed === true && f.depScope !== 'development';
     const critical = typeof f.cvss === 'number' && f.cvss >= URGENT_CVSS;
     if (deployed && (critical || f.kev === true)) {
       return { lane: 'urgent', reason: f.kev ? 'known-exploited (CISA KEV) issue in deployed code' : `critical (CVSS ${f.cvss}) issue in deployed code`, mergePolicy: 'pr-and-question' };
     }
-    const why = !deployed ? 'not deployed (development-only or not shipped)' : `CVSS ${f.cvss ?? 'unknown'} below ${URGENT_CVSS} and not KEV`;
+    const why = !deployed ? 'not deployed (development-only, or repo not in DEPLOYED_REPOS)' : `CVSS ${f.cvss ?? 'unknown'} below ${URGENT_CVSS} and not KEV`;
     // a plain version bump is pre-approved; anything that touches sensitive areas still needs the question
     const sensitive = matches(DESTRUCTIVE, f) || matches(SENSITIVE, f);
     return { lane: 'nightly', reason: `advisory ${why}`, mergePolicy: sensitive ? 'pr-and-question' : 'auto-when-gate-green' };

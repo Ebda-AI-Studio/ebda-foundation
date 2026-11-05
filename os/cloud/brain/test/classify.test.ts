@@ -23,18 +23,24 @@ describe('classifyFinding: urgent class (1) outage / money path', () => {
 
 describe('classifyFinding: urgent class (2) critical / KEV in deployed code', () => {
   it('CVSS 9.8 runtime dependency -> urgent', () => {
-    expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 9.8, depScope: 'runtime' })).lane).toBe('urgent');
+    expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 9.8, depScope: 'runtime', deployed: true })).lane).toBe('urgent');
   });
   it('CVSS exactly 9.0 runtime -> urgent (boundary)', () => {
-    expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 9.0, depScope: 'runtime' })).lane).toBe('urgent');
+    expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 9.0, depScope: 'runtime', deployed: true })).lane).toBe('urgent');
   });
   it('KEV-listed CVSS 6.5 runtime -> urgent', () => {
-    const c = classifyFinding(f({ kind: 'dependency-advisory', cvss: 6.5, kev: true, depScope: 'runtime' }));
+    const c = classifyFinding(f({ kind: 'dependency-advisory', cvss: 6.5, kev: true, depScope: 'runtime', deployed: true }));
     expect(c.lane).toBe('urgent');
     expect(c.reason).toMatch(/KEV/);
   });
-  it('unknown scope is treated as deployed (fail toward acting)', () => {
-    expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 9.1, depScope: 'unknown' })).lane).toBe('urgent');
+  it('unknown scope in a deployed repo -> urgent', () => {
+    expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 9.1, depScope: 'unknown', deployed: true })).lane).toBe('urgent');
+  });
+  it('near miss: deployed unknown (unset) is NOT deployed -> nightly', () => {
+    expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 9.8, kev: true, depScope: 'runtime' })).lane).toBe('nightly');
+  });
+  it('near miss: KEV-listed dev-only dependency in a deployed repo -> nightly', () => {
+    expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 9.8, kev: true, depScope: 'development', deployed: true })).lane).toBe('nightly');
   });
   it('near miss: CVSS 8.8 dev-only dependency -> nightly, auto-merge allowed (plain bump)', () => {
     const c = classifyFinding(f({ kind: 'dependency-advisory', cvss: 8.8, depScope: 'development' }));
@@ -44,7 +50,7 @@ describe('classifyFinding: urgent class (2) critical / KEV in deployed code', ()
     expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 9.8, depScope: 'development' })).lane).toBe('nightly');
   });
   it('near miss: CVSS 8.9 runtime, not KEV -> nightly', () => {
-    expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 8.9, depScope: 'runtime' })).lane).toBe('nightly');
+    expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 8.9, depScope: 'runtime', deployed: true })).lane).toBe('nightly');
   });
   it('near miss: KEV-listed but in a repo that is not deployed -> nightly', () => {
     expect(classifyFinding(f({ kind: 'dependency-advisory', cvss: 9.8, kev: true, depScope: 'runtime', deployed: false })).lane).toBe('nightly');

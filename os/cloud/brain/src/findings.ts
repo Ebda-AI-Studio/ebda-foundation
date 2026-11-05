@@ -16,7 +16,8 @@ export interface Finding {
   repo?: string;
   url?: string;
   severity?: 'P1' | 'P2' | 'P3';
-  /** advisories: CVSS base score, CISA KEV listing, dependency scope, and whether the affected code is deployed */
+  /** advisories: CVSS base score, CISA KEV listing, dependency scope, and whether the affected code is deployed
+   *  (true only when known: the advisory watcher sets it from DEPLOYED_REPOS; unset counts as not deployed) */
   cvss?: number;
   kev?: boolean;
   depScope?: 'runtime' | 'development' | 'unknown';
@@ -37,6 +38,16 @@ export interface Classification {
 /** sha-256 over source|kind|key, first 32 hex chars. The dedupe identity of a finding. */
 export async function fingerprint(f: Pick<Finding, 'source' | 'kind' | 'key'>): Promise<string> {
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${f.source}|${f.kind}|${f.key}`));
+  return hexEncode(d).slice(0, 32);
+}
+
+/**
+ * The evidence of a finding: the facts that would make a re-sighting a NEW occurrence (a different failing commit, a
+ * new outage streak, a changed score / KEV listing / scope). Titles and counters are excluded on purpose.
+ */
+export async function evidenceOf(f: Finding): Promise<string> {
+  const e = { cvss: f.cvss ?? null, kev: f.kev ?? null, depScope: f.depScope ?? null, deployed: f.deployed ?? null, severity: f.severity ?? null, touches: [...(f.touches ?? [])].sort(), detail: f.detail ?? null };
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(e)));
   return hexEncode(d).slice(0, 32);
 }
 

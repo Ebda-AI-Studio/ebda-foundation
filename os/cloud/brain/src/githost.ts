@@ -13,13 +13,13 @@ export interface AlertPage {
 export interface GitHost {
   readonly name: string;
   /** Open dependency security alerts for one org. Conditional on etag: a 304 costs no rate limit and returns notModified. */
-  openDependencyAlerts(org: string, etag: string | null, kev: ReadonlySet<string>): Promise<AlertPage>;
+  openDependencyAlerts(org: string, etag: string | null, kev: ReadonlySet<string>, deployedRepos: ReadonlySet<string>): Promise<AlertPage>;
 }
 
 const MAX_PAGES = 5;
 
 /** Map one GitHub Dependabot alert to a finding. Exported for tests. */
-export function alertToFinding(a: any, kev: ReadonlySet<string>): Finding | null {
+export function alertToFinding(a: any, kev: ReadonlySet<string>, deployedRepos: ReadonlySet<string> = new Set()): Finding | null {
   const repo = a?.repository?.full_name;
   const ghsa = a?.security_advisory?.ghsa_id;
   if (typeof repo !== 'string' || typeof ghsa !== 'string') return null;
@@ -37,6 +37,7 @@ export function alertToFinding(a: any, kev: ReadonlySet<string>): Finding | null
     ...(score !== undefined ? { cvss: score } : {}),
     kev: cve ? kev.has(cve) : false,
     depScope: scope,
+    deployed: deployedRepos.has(repo),
     detail: { ecosystem: a?.dependency?.package?.ecosystem ?? null, manifest: a?.dependency?.manifest_path ?? null, cve },
   };
 }
@@ -50,7 +51,7 @@ export class GitHubHost implements GitHost {
   readonly name = 'github';
   constructor(private token: string, private fetchImpl: typeof fetch = fetch) {}
 
-  async openDependencyAlerts(org: string, etag: string | null, kev: ReadonlySet<string>): Promise<AlertPage> {
+  async openDependencyAlerts(org: string, etag: string | null, kev: ReadonlySet<string>, deployedRepos: ReadonlySet<string>): Promise<AlertPage> {
     const headers: Record<string, string> = {
       authorization: `Bearer ${this.token}`,
       accept: 'application/vnd.github+json',
@@ -70,7 +71,7 @@ export class GitHubHost implements GitHost {
       first = false;
       pages++;
       for (const a of (await r.json()) as unknown[]) {
-        const f = alertToFinding(a, kev);
+        const f = alertToFinding(a, kev, deployedRepos);
         if (f) alerts.push(f);
       }
       url = nextLink(r.headers.get('link'));

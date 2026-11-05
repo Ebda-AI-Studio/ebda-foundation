@@ -26,9 +26,13 @@
 
   "vars": {
     "OS_ORGS": "__OS_ORGS__",
+    // owner/name list of repos whose code is deployed (from OS_BRAIN_DEPLOYED_REPOS); an advisory is urgent only there
+    "DEPLOYED_REPOS": "__DEPLOYED_REPOS__",
+    // live public endpoints only (both answered 200 on 2026-11-05); override with OS_BRAIN_HEALTH_TARGETS at deploy
     "HEALTH_TARGETS": "[{\"url\":\"https://api.ebda.app/health\",\"kind\":\"api\"},{\"url\":\"https://ebda.app/\",\"kind\":\"page\"}]",
     "HEALTH_FAIL_BUDGET": "3",
     "MESSAGE_BUDGET_PER_DAY": "3",
+    "URGENT_MESSAGE_BUDGET_PER_DAY": "3",
     "URGENT_RUNS_PER_DAY": "3",
     "URGENT_RUN_CAP_MIN": "30",
     "QUESTION_DEADLINE_HOURS": "24",

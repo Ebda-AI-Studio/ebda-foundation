@@ -46,14 +46,14 @@ describe('dedupe', () => {
     expect(s.jobs.queuedNightly).toBe(1);
     expect(s.findings.recent[0]).toMatchObject({ seen_count: 2 });
   });
-  it('a recurrence after a terminal state reopens the same row instead of a second finding', async () => {
+  it('a recurrence after the cool-down with new evidence reopens the same row instead of a second finding', async () => {
     const h = await harness();
     const f = finding({ key: 'recur' });
     await h.run((b) => b.ingestFinding(f, T0));
     await h.run((b) => b.resolveFinding(f, 'fixed upstream', T0 + MIN));
-    const again = await h.run((b) => b.ingestFinding(f, T0 + 2 * MIN));
+    const again = await h.run((b) => b.ingestFinding({ ...f, detail: { sha: 'new' } }, T0 + 25 * HOUR));
     expect(again).toMatchObject({ deduped: false, reopened: true });
-    const s = await h.run((b) => b.state(T0 + 2 * MIN));
+    const s = await h.run((b) => b.state(T0 + 25 * HOUR));
     expect(s.findings.recent).toHaveLength(1);
   });
 });
@@ -131,11 +131,14 @@ describe('urgent lane (Amendment A.1)', () => {
     await h.run((b) => b.tick(T0 + 40 * MIN));
     await h.run((b) => b.tick(T0 + 45 * MIN));
     expect(h.hands.started).toHaveLength(3);
-    const p1 = h.sent.filter((m) => /not handled yet/.test(m.text));
-    expect(p1).toHaveLength(1);
-    expect(p1[0]!.text).toMatch(/urgent cap 3\/day/);
+    // the 3 urgent outcome messages used the urgent bucket: the 4th issue's notice rolls into the digest instead
+    expect(h.sent.filter((m) => /urgent:/.test(m.text))).toHaveLength(3);
+    expect(h.sent.filter((m) => /not handled yet/.test(m.text))).toHaveLength(0);
     const s = await h.run((b) => b.state(T0 + 45 * MIN));
     expect(s.jobs).toMatchObject({ queuedUrgent: 0, queuedNightly: 1 });
+    expect(s.messages.deferred).toBe(1);
+    await h.run((b) => b.digest(T0 + 50 * MIN));
+    expect(h.sent.at(-1)!.text).toMatch(/urgent cap 3\/day/);
   });
 
   it('a run with no outcome past its cap is timed out, reported once, and frees the slot', async () => {
@@ -257,5 +260,135 @@ describe('CI watcher (webhook inbox) and health watcher', () => {
     expect(s.findings.recent[0]).toMatchObject({ kind: 'money-path-broken', lane: 'urgent' });
     const up = [{ ...down[0]!, ok: true, status: 200 }];
     expect((await h.run((b) => b.observeHealth(up, T0 + 20 * MIN))).recovered).toEqual(['https://shop/checkout']);
+  });
+});
+
+describe('fix round 1: re-sighting, promotion, message ceiling, retries', () => {
+  const advisory = (x: Partial<Finding> = {}): Finding => ({ source: 'advisory', kind: 'dependency-advisory', key: 'o/r#GHSA-x', title: 'lib GHSA-x', repo: 'o/r', cvss: 7.5, depScope: 'runtime', deployed: true, ...x });
+
+  it('I-1: re-sighting an advisory whose fix PR is open creates no new job', async () => {
+    const h = await harness();
+    await h.run((b) => b.ingestFinding(advisory(), T0));
+    await h.run((b) => b.runNightly(T0 + HOUR));
+    await h.run((b) => b.recordOutcome(h.hands.started[0]!.jobs[0]!.id, { status: 'pr_opened', prUrl: 'https://pr/9' }, T0 + 2 * HOUR));
+    for (const t of [3, 30, 60]) {
+      const r = await h.run((b) => b.ingestFinding(advisory({ cvss: 8.1 }), T0 + t * HOUR)); // even with changed evidence
+      expect(r).toMatchObject({ deduped: true, jobId: null });
+    }
+    expect(await h.run((b) => b.runNightly(T0 + 61 * HOUR))).toMatchObject({ started: false });
+    expect((await h.run((b) => b.state(T0 + 61 * HOUR))).findings.recent[0]).toMatchObject({ status: 'waiting', seen_count: 4 });
+  });
+
+  it('I-1: a held decision is not re-asked when the finding is seen again', async () => {
+    const h = await harness();
+    const f = finding({ kind: 'auth-cookie', key: 'held-1' });
+    await h.run((b) => b.ingestFinding(f, T0));
+    await h.run((b) => b.tick(T0));
+    const q = (await h.run((b) => b.state(T0))).questions[0]!;
+    await h.run((b) => b.answerQuestion(q.id, 'hold', T0 + HOUR));
+    expect(await h.run((b) => b.ingestFinding({ ...f, detail: { new: 1 } }, T0 + 48 * HOUR))).toMatchObject({ deduped: true });
+    expect((await h.run((b) => b.state(T0 + 48 * HOUR))).questions).toHaveLength(0);
+  });
+
+  it('I-1: a resolved finding reopens only after the cool-down AND with changed evidence', async () => {
+    const h = await harness();
+    const ci = (sha: string): Finding => ({ source: 'ci', kind: 'ci-failure', key: 'o/r:CI', title: 'CI red', repo: 'o/r', detail: { sha } });
+    await h.run((b) => b.ingestFinding(ci('a'), T0));
+    await h.run((b) => b.resolveFinding(ci('a'), 'CI green again', T0 + HOUR));
+    expect(await h.run((b) => b.ingestFinding(ci('b'), T0 + 2 * HOUR))).toMatchObject({ deduped: true }); // inside 24 h
+    expect(await h.run((b) => b.ingestFinding(ci('b'), T0 + 26 * HOUR))).toMatchObject({ deduped: false, reopened: true });
+    await h.run((b) => b.resolveFinding(ci('b'), 'CI green again', T0 + 27 * HOUR));
+    expect(await h.run((b) => b.ingestFinding(ci('b'), T0 + 60 * HOUR))).toMatchObject({ deduped: true }); // same evidence
+  });
+
+  it('I-1: a persistent outage over 1 h is ONE incident and ONE urgent run', async () => {
+    const h = await harness();
+    const down = [{ url: 'https://api.test/health', kind: 'api' as const, ok: false, status: 503, ms: 5 }];
+    for (let i = 0; i <= 14; i++) {
+      const t = T0 + i * 5 * MIN;
+      await h.run((b) => b.observeHealth(down, t));
+      await h.run((b) => b.tick(t));
+      if (i === 4) await h.run((b) => b.recordOutcome(h.hands.started[0]!.jobs[0]!.id, { status: 'could_not_fix' }, t));
+    }
+    expect(h.hands.started).toHaveLength(1);
+    expect(h.sent.filter((m) => /urgent: could NOT fix/.test(m.text))).toHaveLength(1);
+    // recovery then a NEW streak after the cool-down is a new incident
+    await h.run((b) => b.observeHealth([{ ...down[0]!, ok: true, status: 200 }], T0 + 2 * HOUR));
+    for (let i = 0; i < 3; i++) await h.run((b) => b.observeHealth(down, T0 + 9 * HOUR + i * 5 * MIN));
+    await h.run((b) => b.tick(T0 + 9 * HOUR + 10 * MIN));
+    expect(h.hands.started).toHaveLength(2);
+  });
+
+  it('I-2: a flood of 10 distinct urgent findings sends at most 6 messages; the rest go to the digest', async () => {
+    const h = await harness();
+    for (let i = 0; i < 10; i++) await h.run((b) => b.ingestFinding({ source: 'health', kind: 'prod-outage', key: `u${i}`, title: `site ${i} down`, selfHealExhausted: true }, T0));
+    for (let i = 0; i < 2; i++) await h.run((b) => b.ingestFinding(finding({ kind: 'payout-x', key: `q${i}`, title: `payout ${i}` }), T0));
+    for (let i = 0; i < 6; i++) {
+      const t = T0 + i * 10 * MIN;
+      await h.run((b) => b.tick(t));
+      const running = h.hands.started.at(-1);
+      if (running && i < 3) await h.run((b) => b.recordOutcome(running.jobs[0]!.id, { status: 'could_not_fix' }, t + MIN));
+    }
+    const nonDigest = h.sent.length;
+    expect(nonDigest).toBeLessThanOrEqual(6);
+    expect((await h.run((b) => b.state(T0 + HOUR))).messages.deferred).toBeGreaterThanOrEqual(7);
+    expect(await h.run((b) => b.digest(T0 + 2 * HOUR))).toBe('sent');
+    expect(h.sent.at(-1)!.text).toMatch(/Rolled up/);
+  });
+
+  it('I-3: a nightly advisory newly listed in CISA KEV is promoted to urgent and gets one urgent run', async () => {
+    const h = await harness();
+    expect((await h.run((b) => b.ingestFinding(advisory(), T0))).lane).toBe('nightly');
+    const r = await h.run((b) => b.ingestFinding(advisory({ kev: true }), T0 + HOUR));
+    expect(r).toMatchObject({ deduped: true, lane: 'urgent' });
+    await h.run((b) => b.tick(T0 + HOUR));
+    await h.run((b) => b.tick(T0 + HOUR + 5 * MIN));
+    expect(h.hands.started).toHaveLength(1);
+    expect(h.hands.started[0]).toMatchObject({ kind: 'urgent' });
+    // never demoted: the KEV listing disappearing does not move the in-flight job back
+    expect((await h.run((b) => b.ingestFinding(advisory({ kev: false }), T0 + 2 * HOUR))).lane).toBe('urgent');
+  });
+
+  it('I-3: a dev-only KEV advisory stays nightly', async () => {
+    const h = await harness();
+    await h.run((b) => b.ingestFinding(advisory({ depScope: 'development' }), T0));
+    expect((await h.run((b) => b.ingestFinding(advisory({ depScope: 'development', kev: true }), T0 + HOUR))).lane).toBe('nightly');
+  });
+
+  it('I-5: a failed urgent-outcome send is retried (3 tries over 15 min), then rolls into the digest marked delivery failed', async () => {
+    const h = await harness();
+    // real-time base: the DO alarm uses the wall clock, so a past base would let it fire during the test
+    const B = Date.now();
+    let fail = true;
+    await h.run((b) => {
+      const ok = b.fetchImpl;
+      b.fetchImpl = ((u: RequestInfo | URL, i?: RequestInit) => (fail ? Promise.resolve(new Response('down', { status: 502 })) : ok(u, i))) as typeof fetch;
+    });
+    await h.run((b) => b.ingestFinding({ source: 'health', kind: 'prod-outage', key: 'r1', title: 'r1 down', selfHealExhausted: true }, B));
+    await h.run((b) => b.tick(B));
+    await h.run((b) => b.recordOutcome(h.hands.started[0]!.jobs[0]!.id, { status: 'fix_deployed' }, B + MIN));
+    expect(await h.run((b) => b.retryFailed(B + 2 * MIN))).toEqual({ sent: 0, undelivered: 0 }); // not due yet
+    expect(await h.run((b) => b.retryFailed(B + 6 * MIN))).toEqual({ sent: 0, undelivered: 0 }); // try 2 failed
+    expect(await h.run((b) => b.retryFailed(B + 16 * MIN))).toEqual({ sent: 0, undelivered: 1 }); // try 3 failed
+    fail = false;
+    await h.run((b) => b.digest(B + HOUR));
+    expect(h.sent.at(-1)!.text).toMatch(/\[delivery failed\] Ebda OS urgent: fix deployed/);
+  });
+
+  it('I-5: a retry that succeeds is delivered once, and the DO alarm drives it', async () => {
+    const h = await harness();
+    let calls = 0;
+    await h.run((b) => {
+      const ok = b.fetchImpl;
+      b.fetchImpl = ((u: RequestInfo | URL, i?: RequestInit) => (++calls === 1 ? Promise.resolve(new Response('x', { status: 500 })) : ok(u, i))) as typeof fetch;
+    });
+    const now = Date.now();
+    await h.run((b) => b.ingestFinding({ source: 'health', kind: 'prod-outage', key: 'r2', title: 'r2 down', selfHealExhausted: true }, now));
+    await h.run((b) => b.tick(now));
+    await h.run((b) => b.recordOutcome(h.hands.started[0]!.jobs[0]!.id, { status: 'merged' }, now));
+    const alarmAt = await h.run((_b) => 0).then(() => runInDurableObject(h.stub, (_i, st) => st.storage.getAlarm()));
+    expect(alarmAt).toBe(now + 5 * MIN);
+    expect(await h.run((b) => b.retryFailed(now + 5 * MIN))).toEqual({ sent: 1, undelivered: 0 });
+    expect(h.sent.filter((m) => /urgent: fixed and merged/.test(m.text))).toHaveLength(1);
   });
 });

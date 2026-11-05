@@ -13,6 +13,12 @@ export function orgsFrom(env: Pick<Env, 'OS_ORGS'>): string[] {
   return env.OS_ORGS.split(/[\s,]+/).filter(Boolean).slice(0, 10);
 }
 
+/** Repos whose code is deployed (owner/name), from the DEPLOYED_REPOS var rendered by deploy.sh. */
+export function deployedReposFrom(env: Pick<Env, 'DEPLOYED_REPOS'>): Set<string> {
+  if (isPlaceholder(env.DEPLOYED_REPOS)) return new Set();
+  return new Set((env.DEPLOYED_REPOS ?? '').split(/[\s,]+/).filter(Boolean));
+}
+
 export interface AdvisoryRunSummary {
   at: number;
   skipped?: string;
@@ -31,13 +37,14 @@ export async function watchAdvisories(env: Env, brain: DurableObjectStub<BrainDO
   await env.EVENTS.put('adv:last-run', String(now));
   const kev = await loadKev(env.EVENTS, now, fetchImpl);
   const gh = host ?? new GitHubHost(env.GITHUB_TOKEN!, fetchImpl);
+  const deployed = deployedReposFrom(env);
   for (const org of orgsFrom(env)) {
     const cacheKey = `adv:etag:${org}`;
     const cached = await env.EVENTS.get<{ etag: string | null; kevSize: number }>(cacheKey, 'json');
     // a changed KEV list can change urgency without the alert list changing: re-read in full then
     const etag = cached && cached.kevSize === kev.size ? cached.etag : null;
     try {
-      const page = await gh.openDependencyAlerts(org, etag, kev);
+      const page = await gh.openDependencyAlerts(org, etag, kev, deployed);
       if (page.notModified) {
         summary.orgs.push({ org, notModified: true });
         continue;

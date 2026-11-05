@@ -7,7 +7,8 @@
 #   OS_BRAIN_KV_ID          id of the KV namespace created for the brain (README step 2)
 #   OS_BRAIN_HOST           the brain's hostname on a zone in that account (custom domain; workers.dev stays off)
 # Optional: OS_BRAIN_ACCESS_TEAM_DOMAIN + OS_BRAIN_ACCESS_AUD (until set, /api/* answers 503 = fail closed),
-#           OS_BRAIN_HEALTH_TARGETS (JSON list, replaces the default health targets).
+#           OS_BRAIN_HEALTH_TARGETS (JSON list, replaces the default health targets),
+#           OS_BRAIN_DEPLOYED_REPOS (space/comma list of owner/name; until set no advisory is urgent).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=/dev/null
@@ -27,6 +28,7 @@ t = open(src, encoding="utf-8").read()
 sub = {
     "__BRAIN_KV_ID__": os.environ["OS_BRAIN_KV_ID"],
     "__OS_ORGS__": os.environ["OS_BRAIN_ORGS"],
+    "__DEPLOYED_REPOS__": os.environ.get("OS_BRAIN_DEPLOYED_REPOS") or "__DEPLOYED_REPOS__",
     "__ACCESS_TEAM_DOMAIN__": os.environ.get("OS_BRAIN_ACCESS_TEAM_DOMAIN") or "__ACCESS_TEAM_DOMAIN__",
     "__ACCESS_AUD__": os.environ.get("OS_BRAIN_ACCESS_AUD") or "__ACCESS_AUD__",
 }

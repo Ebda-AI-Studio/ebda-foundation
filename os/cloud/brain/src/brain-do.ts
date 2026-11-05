@@ -10,9 +10,9 @@ import { DurableObject } from 'cloudflare:workers';
 import { classifyFinding } from './classify';
 import type { Env, Policy } from './env';
 import { policyFrom } from './env';
-import { fingerprint, type Finding, type Lane, type MergePolicy } from './findings';
+import { evidenceOf, fingerprint, type Finding, type Lane, type MergePolicy } from './findings';
 import { providerFor, type HandsBatch, type HandsJob, type HandsProvider, type JobOutcome, type RunKind, type UsageReport } from './hands';
-import { admit, dayKey, digestMessage, questionMessage, sendTelegram, type Outgoing } from './telegram';
+import { admit, dayKey, digestMessage, questionMessage, sendTelegram, URGENT_KINDS, type MsgKind, type Outgoing } from './telegram';
 import { usageGuard } from './usage';
 import type { AdvisoryRunSummary } from './watchers/advisories';
 
@@ -20,7 +20,16 @@ const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
 export const NIGHTLY_MAX_JOBS = 25;
 export const UNACTED_LIMIT_MS = DAY;
-const TERMINAL = new Set(['done', 'failed', 'held', 'resolved']);
+/** In flight: a re-sighting only updates last_seen (and may promote the lane, never demote it). `waiting` = fix PR open. */
+const ACTIVE = new Set(['open', 'queued', 'question', 'dispatched', 'waiting']);
+/** Re-sighting rules after a finding left the active set (controller ruling 4a-I1):
+ *  - held (Ahmad said hold): never reopened by a re-sighting; only a resolution clears it.
+ *  - done / failed / resolved: reopened only after the cool-down AND only when the evidence changed. A persistent outage
+ *    keeps one incident id as its evidence, so it is ONE urgent run, then the outcome message, never a run per tick. */
+export const COOLDOWN_MS = 24 * HOUR;
+export const URGENT_COOLDOWN_MS = 6 * HOUR;
+/** Failed urgent-class sends: tries at t, t+5 min, t+15 min, then "undelivered" and rolled into the digest. */
+export const RETRY_BACKOFF_MS = [5 * 60000, 10 * 60000];
 
 type Row = Record<string, SqlStorageValue>;
 
@@ -101,7 +110,8 @@ export class BrainDO extends DurableObject<Env> {
         fp TEXT PRIMARY KEY, source TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, title TEXT NOT NULL,
         repo TEXT, url TEXT, data TEXT NOT NULL, lane TEXT NOT NULL, reason TEXT NOT NULL, merge_policy TEXT NOT NULL,
         status TEXT NOT NULL, first_seen INTEGER NOT NULL, raised_at INTEGER NOT NULL, last_seen INTEGER NOT NULL,
-        seen_count INTEGER NOT NULL DEFAULT 1, reopened INTEGER NOT NULL DEFAULT 0, acted_at INTEGER, closed_at INTEGER, outcome TEXT);
+        seen_count INTEGER NOT NULL DEFAULT 1, reopened INTEGER NOT NULL DEFAULT 0, acted_at INTEGER, closed_at INTEGER, outcome TEXT,
+        evidence TEXT NOT NULL DEFAULT '');
       CREATE INDEX IF NOT EXISTS findings_status ON findings(status, raised_at);
       CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY, fp TEXT NOT NULL, lane TEXT NOT NULL, merge_policy TEXT NOT NULL, status TEXT NOT NULL,
@@ -116,7 +126,7 @@ export class BrainDO extends DurableObject<Env> {
         sent_at INTEGER, deadline INTEGER, answered_at INTEGER, answer TEXT);
       CREATE TABLE IF NOT EXISTS messages (
         dedupe_key TEXT PRIMARY KEY, kind TEXT NOT NULL, day TEXT NOT NULL, status TEXT NOT NULL, text TEXT NOT NULL,
-        at INTEGER NOT NULL, reason TEXT);
+        at INTEGER NOT NULL, reason TEXT, attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER);
       CREATE INDEX IF NOT EXISTS messages_day ON messages(day, status);
       CREATE TABLE IF NOT EXISTS events (
         id TEXT PRIMARY KEY, slug TEXT NOT NULL, sha TEXT NOT NULL, workflow TEXT NOT NULL, branch TEXT NOT NULL,
@@ -143,25 +153,36 @@ export class BrainDO extends DurableObject<Env> {
   // ---------- findings ----------
   async ingestFinding(f: Finding, now: number = Date.now()): Promise<IngestResult> {
     const fp = await fingerprint(f);
+    const evidence = await evidenceOf(f);
     const c = classifyFinding(f);
-    const existing = this.row('SELECT status, lane, reason FROM findings WHERE fp = ?', fp);
-    if (existing && !TERMINAL.has(String(existing.status))) {
-      this.sql.exec('UPDATE findings SET last_seen = ?, seen_count = seen_count + 1 WHERE fp = ?', now, fp);
-      return { fp, deduped: true, reopened: false, lane: existing.lane as Lane, reason: String(existing.reason), jobId: null };
-    }
+    const existing = this.row('SELECT status, lane, reason, evidence, closed_at FROM findings WHERE fp = ?', fp);
     const data = JSON.stringify(f);
     if (existing) {
-      // recurrence after a terminal state: same row, counted, new job (still one fingerprint, never a second finding)
+      const status = String(existing.status);
+      const seen = () => this.sql.exec('UPDATE findings SET last_seen = ?, seen_count = seen_count + 1 WHERE fp = ?', now, fp);
+      if (ACTIVE.has(status)) {
+        seen();
+        this.sql.exec('UPDATE findings SET data = ?, evidence = ? WHERE fp = ?', data, evidence, fp);
+        const promoted = this.promote(fp, String(existing.lane), c, now);
+        return { fp, deduped: true, reopened: false, lane: promoted ? 'urgent' : (existing.lane as Lane), reason: promoted ? c.reason : String(existing.reason), jobId: null };
+      }
+      const urgentClass = existing.lane === 'urgent' || c.lane === 'urgent';
+      const cooled = now - Number(existing.closed_at ?? 0) >= (urgentClass ? URGENT_COOLDOWN_MS : COOLDOWN_MS);
+      if (status === 'held' || !cooled || evidence === String(existing.evidence)) {
+        seen();
+        return { fp, deduped: true, reopened: false, lane: existing.lane as Lane, reason: String(existing.reason), jobId: null };
+      }
+      // a new occurrence after the cool-down: same row, counted, new job (one fingerprint, never a second finding)
       this.sql.exec(
-        `UPDATE findings SET status = 'open', data = ?, title = ?, lane = ?, reason = ?, merge_policy = ?, raised_at = ?, last_seen = ?,
+        `UPDATE findings SET status = 'open', data = ?, evidence = ?, title = ?, lane = ?, reason = ?, merge_policy = ?, raised_at = ?, last_seen = ?,
          seen_count = seen_count + 1, reopened = reopened + 1, acted_at = NULL, closed_at = NULL, outcome = NULL WHERE fp = ?`,
-        data, f.title, c.lane, c.reason, c.mergePolicy, now, now, fp,
+        data, evidence, f.title, c.lane, c.reason, c.mergePolicy, now, now, fp,
       );
     } else {
       this.sql.exec(
-        `INSERT INTO findings (fp, source, kind, key, title, repo, url, data, lane, reason, merge_policy, status, first_seen, raised_at, last_seen)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
-        fp, f.source, f.kind, f.key, f.title, f.repo ?? null, f.url ?? null, data, c.lane, c.reason, c.mergePolicy, now, now, now,
+        `INSERT INTO findings (fp, source, kind, key, title, repo, url, data, evidence, lane, reason, merge_policy, status, first_seen, raised_at, last_seen)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
+        fp, f.source, f.kind, f.key, f.title, f.repo ?? null, f.url ?? null, data, evidence, c.lane, c.reason, c.mergePolicy, now, now, now,
       );
     }
     const jobId = uid('job');
@@ -185,6 +206,21 @@ export class BrainDO extends DurableObject<Env> {
     return { fp, deduped: false, reopened: !!existing, lane: c.lane, reason: c.reason, jobId };
   }
 
+  /**
+   * Re-classification on a re-sighting may only go UP (ruling 4a-I3): a nightly or question finding that is now urgent
+   * (a CVE newly CISA-KEV listed, a CVSS raised to >= 9) is promoted while its job has not been handed out. A job already
+   * running or with a PR open keeps its lane; nothing is ever demoted.
+   */
+  private promote(fp: string, oldLane: string, c: ReturnType<typeof classifyFinding>, now: number): boolean {
+    if (c.lane !== 'urgent' || oldLane === 'urgent') return false;
+    const job = this.row(`SELECT id FROM jobs WHERE fp = ? AND status IN ('queued', 'awaiting_answer') ORDER BY created_at DESC`, fp);
+    if (!job) return false;
+    this.sql.exec(`UPDATE jobs SET lane = 'urgent', status = 'queued', merge_policy = ? WHERE id = ?`, c.mergePolicy, job.id);
+    this.sql.exec(`UPDATE questions SET status = 'cancelled', answered_at = ? WHERE fp = ? AND status IN ('pending', 'sent')`, now, fp);
+    this.sql.exec(`UPDATE findings SET lane = 'urgent', reason = ?, merge_policy = ?, status = 'queued' WHERE fp = ?`, `promoted: ${c.reason}`, c.mergePolicy, fp);
+    return true;
+  }
+
   async ingestMany(fs: Finding[], now: number = Date.now()): Promise<{ raised: number; deduped: number }> {
     let raised = 0;
     let deduped = 0;
@@ -196,7 +232,7 @@ export class BrainDO extends DurableObject<Env> {
   async resolveFinding(f: Pick<Finding, 'source' | 'kind' | 'key'>, outcome: string, now: number = Date.now()): Promise<boolean> {
     const fp = await fingerprint(f);
     const r = this.row('SELECT status FROM findings WHERE fp = ?', fp);
-    if (!r || TERMINAL.has(String(r.status))) return false;
+    if (!r || r.status === 'resolved') return false;
     this.sql.exec(`UPDATE findings SET status = 'resolved', closed_at = ?, acted_at = COALESCE(acted_at, ?), outcome = ? WHERE fp = ?`, now, now, outcome, fp);
     // jobs not yet handed out are cancelled; a running job finishes and reports normally
     this.sql.exec(`UPDATE jobs SET status = 'cancelled', finished_at = ? WHERE fp = ? AND status IN ('queued', 'awaiting_answer')`, now, fp);
@@ -208,7 +244,7 @@ export class BrainDO extends DurableObject<Env> {
   async reconcile(source: string, kind: string, keyPrefix: string, openKeys: string[], now: number = Date.now()): Promise<number> {
     const open = new Set(openKeys);
     let n = 0;
-    for (const r of this.rows(`SELECT key FROM findings WHERE source = ? AND kind = ? AND status NOT IN ('done','failed','held','resolved')`, source, kind)) {
+    for (const r of this.rows(`SELECT key FROM findings WHERE source = ? AND kind = ? AND status != 'resolved'`, source, kind)) {
       const key = String(r.key);
       if (key.startsWith(keyPrefix) && !open.has(key) && (await this.resolveFinding({ source, kind, key }, 'no longer reported', now))) n++;
     }
@@ -252,6 +288,8 @@ export class BrainDO extends DurableObject<Env> {
   /** Health watcher results. A target failing HEALTH_FAIL_BUDGET checks in a row (the self-heal retry window) becomes a P1. */
   async observeHealth(obs: HealthObservation[], now: number = Date.now()): Promise<{ raised: string[]; recovered: string[] }> {
     const fails = this.getMeta<Record<string, number>>('health:fails') ?? {};
+    // the start of the current failure streak is the incident's evidence: one streak = one incident = one urgent run
+    const since = this.getMeta<Record<string, number>>('health:since') ?? {};
     const raised: string[] = [];
     const recovered: string[] = [];
     for (const o of obs) {
@@ -260,39 +298,92 @@ export class BrainDO extends DurableObject<Env> {
       if (o.ok) {
         if ((fails[o.url] ?? 0) > 0 && (await this.resolveFinding(ident, 'recovered', now))) recovered.push(o.url);
         fails[o.url] = 0;
+        delete since[o.url];
         continue;
       }
       fails[o.url] = (fails[o.url] ?? 0) + 1;
+      since[o.url] ??= now;
       if (fails[o.url]! >= this.policy.healthFailBudget) {
         const r = await this.ingestFinding(
-          { ...ident, title: `${o.url} down (HTTP ${o.status || 'no response'}, ${fails[o.url]} checks in a row)`, url: o.url, severity: 'P1', selfHealExhausted: true, touches: o.kind === 'money' ? ['money'] : [] },
+          { ...ident, title: `${o.url} down (HTTP ${o.status || 'no response'}, ${fails[o.url]} checks in a row)`, url: o.url, severity: 'P1', selfHealExhausted: true, touches: o.kind === 'money' ? ['money'] : [], detail: { incident: since[o.url] } },
           now,
         );
         if (!r.deduped) raised.push(o.url);
       }
     }
     this.setMeta('health:fails', fails);
+    this.setMeta('health:since', since);
     this.setMeta('health:last', { at: now, obs });
     return { raised, recovered };
   }
 
   // ---------- messages ----------
+  private dayCounts(day: string) {
+    const r = this.row(
+      `SELECT SUM(CASE WHEN kind IN ('urgent-outcome','p1-unhealed') THEN 1 ELSE 0 END) AS urgent,
+              SUM(CASE WHEN kind NOT IN ('urgent-outcome','p1-unhealed','digest') THEN 1 ELSE 0 END) AS normal,
+              SUM(CASE WHEN kind = 'digest' THEN 1 ELSE 0 END) AS digest
+       FROM messages WHERE day = ? AND status = 'sent'`,
+      day,
+    );
+    return { normal: Number(r?.normal ?? 0), urgent: Number(r?.urgent ?? 0), digest: Number(r?.digest ?? 0) > 0 };
+  }
+
   private async emit(msg: Outgoing, now: number): Promise<'sent' | 'duplicate' | 'deferred' | 'failed'> {
     const day = dayKey(now);
-    const already = !!this.row('SELECT 1 FROM messages WHERE dedupe_key = ? AND status IN (\'sent\', \'deferred\', \'rolled\')', msg.dedupeKey);
-    const sentToday = Number(this.row(`SELECT COUNT(*) AS n FROM messages WHERE day = ? AND status = 'sent' AND kind != 'digest'`, day)?.n ?? 0);
-    const digestSent = !!this.row(`SELECT 1 FROM messages WHERE day = ? AND status = 'sent' AND kind = 'digest'`, day);
-    const a = admit(msg.kind, already, sentToday, digestSent, this.policy.messageBudgetPerDay);
+    const urgent = URGENT_KINDS.has(msg.kind);
+    // a failed urgent-class send is owned by the retry path; a failed question is simply tried again on the next tick
+    const already = !!this.row(
+      `SELECT 1 FROM messages WHERE dedupe_key = ? AND (status IN ('sent', 'deferred', 'rolled', 'undelivered') OR (status = 'failed' AND ?))`,
+      msg.dedupeKey, urgent ? 1 : 0,
+    );
+    const a = admit(msg.kind, already, this.dayCounts(day), this.policy.messageBudgetPerDay, this.policy.urgentMessageBudgetPerDay);
     if (a === 'duplicate') return 'duplicate';
-    const upsert = `INSERT INTO messages (dedupe_key, kind, day, status, text, at, reason) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(dedupe_key) DO UPDATE SET status = excluded.status, day = excluded.day, at = excluded.at, reason = excluded.reason`;
+    const upsert = `INSERT INTO messages (dedupe_key, kind, day, status, text, at, reason, attempts, next_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(dedupe_key) DO UPDATE SET status = excluded.status, day = excluded.day, at = excluded.at, reason = excluded.reason,
+                    attempts = excluded.attempts, next_at = excluded.next_at`;
     if (a === 'defer') {
-      this.sql.exec(upsert, msg.dedupeKey, msg.kind, day, 'deferred', msg.text, now, 'over daily budget');
+      this.sql.exec(upsert, msg.dedupeKey, msg.kind, day, 'deferred', msg.text, now, 'over daily budget', 0, null);
       return 'deferred';
     }
     const res = await sendTelegram(this.env.TELEGRAM_BOT_TOKEN, this.env.TELEGRAM_CHAT_ID, msg, this.fetchImpl);
-    this.sql.exec(upsert, msg.dedupeKey, msg.kind, day, res.ok ? 'sent' : 'failed', msg.text, now, res.reason ?? null);
+    const nextAt = !res.ok && urgent ? now + RETRY_BACKOFF_MS[0]! : null;
+    this.sql.exec(upsert, msg.dedupeKey, msg.kind, day, res.ok ? 'sent' : 'failed', msg.text, now, res.reason ?? null, 1, nextAt);
+    if (nextAt !== null) await this.scheduleRetry(nextAt);
     return res.ok ? 'sent' : 'failed';
+  }
+
+  private async scheduleRetry(at: number): Promise<void> {
+    const cur = await this.ctx.storage.getAlarm();
+    if (cur === null || cur > at) await this.ctx.storage.setAlarm(at);
+  }
+
+  /** Retry failed urgent-class sends (ruling 4a-I5): 3 tries over 15 min, then "undelivered" and into the digest. */
+  async retryFailed(now: number = Date.now()): Promise<{ sent: number; undelivered: number }> {
+    let sent = 0;
+    let undelivered = 0;
+    for (const m of this.rows(`SELECT * FROM messages WHERE status = 'failed' AND kind IN ('urgent-outcome','p1-unhealed') AND next_at IS NOT NULL AND next_at <= ?`, now)) {
+      const res = await sendTelegram(this.env.TELEGRAM_BOT_TOKEN, this.env.TELEGRAM_CHAT_ID, { dedupeKey: String(m.dedupe_key), kind: m.kind as MsgKind, text: String(m.text) }, this.fetchImpl);
+      const attempts = Number(m.attempts) + 1;
+      if (res.ok) {
+        this.sql.exec(`UPDATE messages SET status = 'sent', day = ?, at = ?, attempts = ?, next_at = NULL, reason = NULL WHERE dedupe_key = ?`, dayKey(now), now, attempts, m.dedupe_key);
+        sent++;
+      } else if (attempts >= RETRY_BACKOFF_MS.length + 1) {
+        this.sql.exec(`UPDATE messages SET status = 'undelivered', attempts = ?, next_at = NULL, reason = ? WHERE dedupe_key = ?`, attempts, res.reason ?? 'send failed', m.dedupe_key);
+        undelivered++;
+      } else {
+        const nextAt = now + RETRY_BACKOFF_MS[attempts - 1]!;
+        this.sql.exec(`UPDATE messages SET attempts = ?, next_at = ?, reason = ? WHERE dedupe_key = ?`, attempts, nextAt, res.reason ?? 'send failed', m.dedupe_key);
+        await this.scheduleRetry(nextAt);
+      }
+    }
+    return { sent, undelivered };
+  }
+
+  async alarm(): Promise<void> {
+    await this.retryFailed(Date.now());
+    const next = this.row(`SELECT MIN(next_at) AS t FROM messages WHERE status = 'failed' AND next_at IS NOT NULL`);
+    if (next?.t !== null && next?.t !== undefined) await this.ctx.storage.setAlarm(Number(next.t));
   }
 
   // ---------- questions ----------
@@ -382,7 +473,7 @@ export class BrainDO extends DurableObject<Env> {
       for (const j of queued) {
         // queued for the nightly batch and messaged ONCE per issue
         this.sql.exec(`UPDATE jobs SET lane = 'nightly' WHERE id = ?`, j.id);
-        await this.emit({ dedupeKey: `p1:${j.fingerprint}`, kind: 'p1-unhealed', text: `Ebda OS: urgent issue not handled yet: ${j.finding.title}\nNo urgent run now (${why}); queued for tonight's batch.` }, now);
+        await this.emit({ dedupeKey: `p1:${j.fingerprint}:${j.id}`, kind: 'p1-unhealed', text: `Ebda OS: urgent issue not handled yet: ${j.finding.title}\nNo urgent run now (${why}); queued for tonight's batch.` }, now);
       }
       return;
     }
@@ -437,7 +528,9 @@ export class BrainDO extends DurableObject<Env> {
     } else {
       const ok = o.status === 'merged' || o.status === 'pr_opened' || o.status === 'fix_deployed';
       this.sql.exec(`UPDATE jobs SET status = ?, finished_at = ?, outcome = ? WHERE id = ?`, ok ? 'done' : 'failed', now, JSON.stringify(o), jobId);
-      this.sql.exec(`UPDATE findings SET status = ?, closed_at = ?, outcome = ? WHERE fp = ? AND status = 'dispatched'`, ok ? 'done' : 'failed', now, JSON.stringify(o), j.fp);
+      // a PR that is open keeps the finding in flight ('waiting') until the condition is gone; merged / deployed = done
+      const fstatus = o.status === 'pr_opened' ? 'waiting' : ok ? 'done' : 'failed';
+      this.sql.exec(`UPDATE findings SET status = ?, closed_at = ?, outcome = ? WHERE fp = ? AND status = 'dispatched'`, fstatus, fstatus === 'waiting' ? null : now, JSON.stringify(o), j.fp);
       if (j.lane === 'urgent') {
         const what = { merged: 'fixed and merged', pr_opened: 'PR opened, needs your review', fix_deployed: 'fix deployed', could_not_fix: 'could NOT fix', timed_out: 'could NOT fix in time', skipped_usage: '' }[o.status];
         await this.emit({ dedupeKey: `outcome:${jobId}`, kind: 'urgent-outcome', text: `Ebda OS urgent: ${what}\n${j.title}${o.prUrl ? `\n${o.prUrl}` : ''}${o.note ? `\n${o.note}` : ''}` }, now);
@@ -472,6 +565,7 @@ export class BrainDO extends DurableObject<Env> {
 
   /** The 5-minute tick: expire/send questions, dispatch urgent work, self-check. */
   async tick(now: number = Date.now()): Promise<{ osBugs: number }> {
+    await this.retryFailed(now);
     await this.flushQuestions(now);
     await this.dispatchUrgent(now);
     return { osBugs: this.selfCheck(now).length };
@@ -488,7 +582,7 @@ export class BrainDO extends DurableObject<Env> {
     const a24 = this.actedOn(now, DAY);
     const a7 = this.actedOn(now, 7 * DAY);
     const pending = this.rows(`SELECT id, text, default_opt FROM questions WHERE status = 'pending' ORDER BY created_at LIMIT 10`);
-    const rolled = this.rows(`SELECT dedupe_key, text FROM messages WHERE status = 'deferred' ORDER BY at`);
+    const rolled = this.rows(`SELECT dedupe_key, text, status FROM messages WHERE status IN ('deferred', 'undelivered') ORDER BY at`);
     const refused = this.getMeta<{ at: number; reason: string }>('usage:refused');
     const msg = digestMessage({
       day: dayKey(now),
@@ -497,7 +591,7 @@ export class BrainDO extends DurableObject<Env> {
       acted24h: a24.acted,
       ratio7d: a7.ratio,
       pendingQuestions: pending.map((q) => ({ id: String(q.id), text: String(q.text), defaultOption: String(q.default_opt) })),
-      rolledUp: rolled.map((r) => String(r.text)),
+      rolledUp: rolled.map((r) => ({ text: String(r.text), failed: r.status === 'undelivered' })),
       osBugs: this.selfCheck(now).length,
       usageNote: refused && now - refused.at < DAY ? refused.reason : null,
     });
@@ -532,8 +626,8 @@ export class BrainDO extends DurableObject<Env> {
       questions: this.rows(`SELECT id, text, options, default_opt, reversible, status, deadline FROM questions WHERE status IN ('pending','sent') ORDER BY created_at`).map((q) => ({ ...q, options: JSON.parse(String(q.options)) as string[] }) as unknown as QuestionRow),
       messages: {
         sentToday: count(`SELECT COUNT(*) AS n FROM messages WHERE day = ? AND status = 'sent' AND kind != 'digest'`, day),
-        budget: this.policy.messageBudgetPerDay,
-        deferred: count(`SELECT COUNT(*) AS n FROM messages WHERE status = 'deferred'`),
+        budget: this.policy.messageBudgetPerDay + this.policy.urgentMessageBudgetPerDay,
+        deferred: count(`SELECT COUNT(*) AS n FROM messages WHERE status IN ('deferred', 'undelivered')`),
         failed: count(`SELECT COUNT(*) AS n FROM messages WHERE day = ? AND status = 'failed'`, day),
       },
       actedOn: { d1: this.actedOn(now, DAY), d7: this.actedOn(now, 7 * DAY) },

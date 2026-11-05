@@ -8,9 +8,12 @@ export interface Env {
   ASSETS?: Fetcher;
   // vars
   OS_ORGS: string;
+  /** owner/name list of repos whose code is deployed; an advisory is urgent only there */
+  DEPLOYED_REPOS?: string;
   HEALTH_TARGETS: string;
   HEALTH_FAIL_BUDGET: string;
   MESSAGE_BUDGET_PER_DAY: string;
+  URGENT_MESSAGE_BUDGET_PER_DAY?: string;
   URGENT_RUNS_PER_DAY: string;
   URGENT_RUN_CAP_MIN: string;
   QUESTION_DEADLINE_HOURS: string;
@@ -42,6 +45,7 @@ export function isPlaceholder(v: string | undefined): boolean {
 
 export interface Policy {
   messageBudgetPerDay: number;
+  urgentMessageBudgetPerDay: number;
   urgentRunsPerDay: number;
   urgentRunCapMin: number;
   questionDeadlineHours: number;
@@ -52,6 +56,7 @@ export interface Policy {
 export function policyFrom(env: Partial<Env>): Policy {
   return {
     messageBudgetPerDay: intVar(env.MESSAGE_BUDGET_PER_DAY, 3),
+    urgentMessageBudgetPerDay: intVar(env.URGENT_MESSAGE_BUDGET_PER_DAY, 3),
     urgentRunsPerDay: intVar(env.URGENT_RUNS_PER_DAY, 3),
     urgentRunCapMin: intVar(env.URGENT_RUN_CAP_MIN, 30),
     questionDeadlineHours: intVar(env.QUESTION_DEADLINE_HOURS, 24),

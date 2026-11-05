@@ -19,6 +19,7 @@ describe('wrangler.jsonc', () => {
     const names = Object.keys(cfg.vars);
     for (const s of ['GH_WEBHOOK_SECRET', 'RELAY_SECRET', 'GITHUB_TOKEN', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_WEBHOOK_SECRET', 'HANDS_TOKEN', 'INGEST_TOKEN']) expect(names).not.toContain(s);
     expect(cfg.vars.OS_ORGS).toBe('__OS_ORGS__');
+    expect(cfg.vars.DEPLOYED_REPOS).toBe('__DEPLOYED_REPOS__');
   });
   it('the Durable Object is SQLite-backed and assets let machine paths reach the Worker first', () => {
     expect(cfg.migrations[0].new_sqlite_classes).toEqual(['BrainDO']);
