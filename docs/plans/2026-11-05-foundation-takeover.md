@@ -174,3 +174,18 @@ ebda-foundation/
 5. Must NOT change: production behaviour of any product; FWB/WBS (Ahmad decides next week); anything inside `ForceAI-KW` beyond the `final-before-ebda` tag.
 
 Order: 0 → 1 → (2 ∥ 8-early) → 3 → 4 → 5 → 6 → 7 → 9 → 8-rest. Tasks 2–6 are code-only (parallel-safe in separate worktrees after Task 1 lands the layout); Task 7 touches the live Mac and runs alone.
+
+## Amendment A (Ahmad, 2026-11-05 late): where the OS runs
+
+**Decisions (binding, supersede anything above that conflicts):**
+- GitHub stays (code, PRs, CI). **GitHub Actions minutes are for CI only** — the OS never spends them on its own work (no fix jobs, no dream runs, no watchers on Actions).
+- The always-on part of the OS moves to **Cloudflare Workers** on the personal account (69188202…): watchers (Cron Triggers), the finding → job queue (Durable Object / Queue), the event relay (GitHub org webhooks → KV queue), the Telegram policy (unhealed P1 + real decisions + one daily digest, ≤ 3/day, deduped — memory `feedback-os-acts-not-pings`), and the ops dashboard (Worker + static assets, behind Cloudflare Access).
+- The "hands" (Claude Code writing fixes) run behind one provider interface: **Cloudflare Container/Sandbox = default, but ONE batched Linux container run per day** (end of day, e.g. 23:30 Cairo) that drains the whole day's job queue sequentially, then exits; the **Mac = fallback / on-demand** provider when awake. Nothing else starts a container (frugal rule). P1 incidents that the self-heal recipes cannot fix are queued for the nightly batch and messaged once.
+- The git host stays behind an interface (GitHub today) so it can change later without a rewrite.
+
+**What this changes in the tasks:**
+- Task 4 becomes two tasks: **4a** port the AI-OS logic as Worker code under `os/cloud/brain/` (cron watchers, job queue DO, relay, Telegram policy + digest, dashboard) with workerd tests; **4b** `os/cloud/hands/`: a container image (node 22, git, gh, Claude Code CLI, repo toolchains) + `run-batch.mjs` that pulls the day's queue, runs each job in its own worktree with a per-job time cap and the Claude usage guard (stop at the configured weekly-usage threshold), opens PRs, writes outcomes back to the brain, and exits. Provider interface `hands/providers/{cloudflare-sandbox,mac-local}.mjs` (+ optional `github-actions.mjs`, disabled by default).
+- Auto-merge only for the pre-approved classes (dependency/CVE bumps, docs, tests, lint, flaky fixes) and only when the repo's merge gate is green; everything else is a PR + one question.
+- Task 5's launchd set shrinks to the Mac-only jobs (Umbra guard/maintenance, local hygiene, memory pipeline, mac-local hands provider).
+- Task 7 cutover: deploy the brain Worker + relay + webhooks, then swap the Mac's launchd set.
+- Footprint target: Workers + cron + DO + KV inside the $5 plan; one container run/day ≈ well inside the included 375 vCPU-min / 25 GiB-h per month; GitHub minutes used by the OS: 0.
