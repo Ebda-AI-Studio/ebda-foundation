@@ -10,7 +10,7 @@
 import { chmod, cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fill } from './config.mjs';
-import { diffAllowsAutoMerge, FORMAT_KINDS, scanSecrets } from './diffcheck.mjs';
+import { diffAllowsAutoMerge, FORMAT_KINDS, protectedFor, scanSecrets } from './diffcheck.mjs';
 import { asSandbox, cloneUrl, gitEnv, prepareJobSecrets, SAFE_GIT, untrustedEnv } from './git.mjs';
 import { mayAutoMerge, mayWork } from './policy.mjs';
 import { buildPrompt, CANNOT_FIX } from './prompt.mjs';
@@ -27,7 +27,7 @@ export function oneLine(s, n = 300) {
 /** Claude permission flags. Edits are scoped to the checkout; CI, env, .git and test-defining files are denied (the diff
  *  check enforces the same rule independently: a denied path in the diff = no auto-merge). */
 export function claudePermissionArgs(cfg, repoCfg, kind) {
-  const deny = ['.git/**', '.github/**', '.env*', '**/.env*', '**/vitest.config.*', '**/jest.config.*', '**/playwright.config.*'];
+  const deny = ['.git/**', '.github/**', '.env*', '**/.env*', '**/vitest.config.*', '**/jest.config.*', '**/playwright.config.*', '**/CLAUDE.md', '**/AGENTS.md', '**/GEMINI.md', '.claude/**', '.agents/**', '.cursor/**', '.husky/**', ...(repoCfg.protectedPaths ?? [])];
   if (!DEP_KINDS.has(kind)) deny.push('**/package.json');
   const denyRules = deny.flatMap((p) => [`Edit(./${p})`, `Write(./${p})`]);
   if (cfg.sandboxed) return ['--permission-mode', 'bypassPermissions', '--disallowedTools', denyRules.join(',')];
@@ -179,7 +179,9 @@ export async function runJob(job, ctx) {
 
     // 10. merge only when the declared class AND the actual diff allow it, and the repo gate (pristine workflows) is green
     const declared = mayAutoMerge(job);
-    const actual = declared.ok ? diffAllowsAutoMerge(kind, changes) : declared;
+    // the foundation repo itself: nothing under os/ (the OS the hands are part of) ever auto-merges
+    const extra = [...protectedFor(repoCfg), ...(cfg.osRepoSlug && slug.toLowerCase() === cfg.osRepoSlug.toLowerCase() ? [/^os\//] : [])];
+    const actual = declared.ok ? diffAllowsAutoMerge(kind, changes, extra) : declared;
     const why = !declared.ok
       ? declared.reason
       : !actual.ok

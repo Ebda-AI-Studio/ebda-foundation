@@ -16,7 +16,7 @@ single_instance hands-mac-local
 [ -f "$OS_SERVICES_ENV" ] && set -a && . "$OS_SERVICES_ENV" && set +a
 export HANDS_CONFIG_FILE="${HANDS_CONFIG_FILE:-$HOME/.ebda-os.hands.json}"
 export HANDS_OS_HOME="${HANDS_OS_HOME:-$OS_DIR}"
-export OS_STATE_DIR
+export OS_STATE_DIR OS_REPO_SLUG
 for k in BRAIN_URL HANDS_TOKEN GH_TOKEN HANDS_GIT_NAME HANDS_GIT_EMAIL; do
   [ -n "${!k:-}" ] || { echo "hands-mac-local: $k unset (put it in OS_SERVICES_ENV); nothing claimed"; exit 0; }
 done

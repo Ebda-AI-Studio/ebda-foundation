@@ -39,8 +39,9 @@ Mac awake (launchd, every 30 min) ──────► run-batch.mjs --claim �
    copied to `<jobId>/base-workflows` before anything is applied: the merge gate derives required checks from that
    pristine copy, never from the edited tree (S3).
 6. **What changed**: a byte comparison of the work tree against the fresh clone (`lib/tree.mjs`, plain file reads that
-   never follow symlinks; `.git` and `node_modules` skipped; ignored files dropped by the CLEAN tree's rules). Symlinks,
-   special files and files over 5 MB in the diff are refused. git is never run in the work tree after Claude (S1).
+   never follow symlinks: the parent dir must still resolve inside the tree, the file is opened `O_NOFOLLOW` and must
+   be the inode the walk saw, so a swap by a leftover process is refused (N-2); `.git` and `node_modules` skipped;
+   ignored files dropped by the CLEAN tree's rules). Symlinks, special files and files over 5 MB are refused. git is never run in the work tree after Claude (S1).
 7. The repo's own `install` + `test` commands (per-repo config, argv arrays, no shell) in the work tree, as the sandbox
    user, with an allowlisted env (no credential at all).
 8. **Lint / format classes**: the base version of every changed file is written back and the repo's `format` command is
@@ -54,8 +55,13 @@ Mac awake (launchd, every 30 min) ──────► run-batch.mjs --claim �
     pre-approved, AND every changed path fits that kind's allowlist (`lib/diffcheck.mjs`): docs → `*.md`/`*.mdx`/
     `docs/**`; dependency/CVE bumps → manifests + lockfiles, `package.json` only when nothing but dependency fields
     changed; tests → test files only; lint/format → any path, only when step 8 verified it. No changed path may be
-    protected (`.github/`, `.env*`, wrangler config, migrations, Dockerfile, `.gitattributes`, `.npmrc`), sensitive or
-    destructive by name, or define how tests run (`package.json` scripts, test configs, `tsconfig*`, `Makefile`, …). The
+    protected (`.github/` incl. CODEOWNERS, `CODEOWNERS`, `.husky/`, `.env*`, wrangler config, migrations, Dockerfile,
+    `.gitattributes`, `.npmrc`, and agent instructions: `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` at any depth,
+    `.claude/`, `.agents/`, `.cursor/`, `.codex/`, `.cursorrules`, …), listed in the repo's `protectedPaths` (the
+    foundation repo: `os/**`, also automatic when the slug equals `OS_REPO_SLUG`), named by the hands' own repo
+    commands (e.g. `scripts/ci-test.sh` in `test`), sensitive or destructive by name, or define how tests run
+    (`package.json` scripts, test configs, `tsconfig*`, `Makefile`, …). An auto-merged edit to an agent-instruction file
+    would steer every later hands run, so those are always a question (N-1). The
     repo needs a `mergeGate` command, the commit tree must still be clean, and the gate (`os/ops/merge-gate.sh`, run
     from the image with `--workflows {base_workflows}`) must exit 0. Anything else: `pr_opened` with a `question:` note
     and the brain sends ONE review question. The gate may overrun the job cap by up to 60 s (it needs a few polls).
@@ -75,7 +81,9 @@ Container: the hands run as root and every untrusted command runs as `node` thro
 hands' `/proc/<pid>/environ`, the askpass dir or the commit tree. **Mac residual** (Ruling 4b-5): no second user, so a
 same-uid process (the repo's tests, which Claude may have edited) could read `OS_SERVICES_ENV` or the hands' env; the Mac
 keeps Claude to file tools in the checkout plus the test command, and a fix that touches test-defining files is never
-merged. `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` comes from the CLI's own env list (2.1.317); it is NOT VERIFIED with a
+merged. Until the container path is live, the Mac runner is pointed only at repos whose findings carry NO third-party
+text (no advisory bodies, issue or PR text from outside): the exposure is `ps eww` / `OS_SERVICES_ENV` to same-uid
+code. `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` comes from the CLI's own env list (2.1.317); it is NOT VERIFIED with a
 real token until the first container run (a wrong guess fails loudly: every job `could_not_fix: claude failed`).
 
 ## Files

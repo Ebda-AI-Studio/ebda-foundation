@@ -3,8 +3,35 @@
 // sensitive, destructive, protected, or defines how tests run (S4). Anything outside = PR + one question.
 import { DESTRUCTIVE, SENSITIVE } from './policy.mjs';
 
-/** Paths a fix must never auto-merge: CI, env, deploy config, migrations, container build. */
-export const PROTECTED = /(^|\/)(\.github\/|\.env|wrangler\.(json|jsonc|toml)$|migrations?\/|prisma\/schema|Dockerfile$|\.gitattributes$|\.gitmodules$|\.npmrc$|\.yarnrc)/;
+/** Paths a fix must never auto-merge: CI and repo governance (.github/, CODEOWNERS, .husky/), env, deploy config,
+ *  migrations, container build, and AGENT INSTRUCTIONS (CLAUDE.md, AGENTS.md, GEMINI.md, .claude/, .agents/,
+ *  .cursor/, .codex/, ...): an auto-merged edit there would steer every later hands run and developer session on the
+ *  repo (re-review N-1). Per-repo extras (protectedPaths, e.g. os/** in the foundation repo) and any file the hands'
+ *  own repo commands name are added by protectedFor(). */
+export const PROTECTED = /(^|\/)(\.github\/|\.env|wrangler\.(json|jsonc|toml)$|migrations?\/|prisma\/schema|Dockerfile$|\.gitattributes$|\.gitmodules$|\.npmrc$|\.yarnrc|CODEOWNERS$|\.husky\/|(CLAUDE|AGENTS|GEMINI|COPILOT)\.md$|\.(claude|agents|cursor|codex|windsurf|continue|aider[^/]*)(\/|$)|\.cursorrules$|\.windsurfrules$|\.clinerules)/i;
+
+/** Simple glob -> RegExp ("**" any depth, "*" one segment). Anchored at the repo root. */
+export function globToRegExp(glob) {
+  const esc = String(glob).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '.*');
+  return new RegExp(`^${esc}$`);
+}
+
+/**
+ * Extra protected paths for one repo: its config's protectedPaths globs, plus every repo-relative file the hands' own
+ * commands (install / test / format / mergeGate) name, so a fix can never rewrite what the hands execute or read.
+ */
+export function protectedFor(repoCfg = {}) {
+  const res = (repoCfg.protectedPaths ?? []).map(globToRegExp);
+  const named = new Set();
+  for (const k of ['install', 'test', 'format', 'mergeGate']) {
+    for (const a of repoCfg[k] ?? []) {
+      if (/^\{|^-|^[a-z]+$/i.test(a) && !a.includes('/') && !/\.[a-z0-9]+$/i.test(a)) continue; // flags, placeholders, bare words
+      const p = a.replace(/^\.\//, '');
+      if (!p.startsWith('/') && !p.includes('{') && !p.includes('..')) named.add(p);
+    }
+  }
+  return [...res, ...[...named].map((p) => new RegExp(`^${p.replace(/[.+^${}()|[\]\\*?]/g, '\\$&')}$`))];
+}
 
 /** Files that define WHAT the allowed test command runs (S4). Touching one = question. package.json is special-cased
  *  for dependency bumps (only dependency fields may change). */
@@ -64,7 +91,7 @@ export function packageJsonDepsOnly(baseText, newText) {
  * changes: [{ path, type: 'write'|'delete', base?: Buffer|null, buf?: Buffer }]. Returns { ok, reason }.
  * ok = every path is allowed for the kind AND nothing sensitive/destructive/protected/test-defining is touched.
  */
-export function diffAllowsAutoMerge(kind, changes) {
+export function diffAllowsAutoMerge(kind, changes, extraProtected = []) {
   const k = String(kind ?? '').toLowerCase();
   const allow = KIND_PATHS[k];
   if (!allow) return { ok: false, reason: `class ${k} has no path allowlist` };
@@ -73,7 +100,7 @@ export function diffAllowsAutoMerge(kind, changes) {
     const p = c.path;
     const lp = p.toLowerCase();
     if (!allow.test(p)) return { ok: false, reason: `${p} is outside what a ${k} fix may change` };
-    if (PROTECTED.test(p)) return { ok: false, reason: `the fix touches ${p}` };
+    if (PROTECTED.test(p) || extraProtected.some((re) => re.test(p))) return { ok: false, reason: `the fix touches ${p}` };
     if (DESTRUCTIVE.test(lp) || SENSITIVE.test(lp)) return { ok: false, reason: `${p} is a sensitive path` };
     if (TEST_DEFINITION.test(p)) {
       const depsOnly = DEP_KINDS.has(k) && /(^|\/)package\.json$/.test(p) && c.type === 'write' && c.base && packageJsonDepsOnly(c.base.toString('utf8'), c.buf.toString('utf8'));

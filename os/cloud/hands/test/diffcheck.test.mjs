@@ -1,7 +1,7 @@
 // The diff-bound merge rule, unit level.
 import { describe, expect, it } from 'vitest';
 import { parseThreshold } from '../lib/config.mjs';
-import { diffAllowsAutoMerge, packageJsonDepsOnly, scanSecrets } from '../lib/diffcheck.mjs';
+import { diffAllowsAutoMerge, globToRegExp, packageJsonDepsOnly, protectedFor, scanSecrets } from '../lib/diffcheck.mjs';
 import { decide, UsageGuard } from '../lib/usage-guard.mjs';
 
 const w = (path, buf = 'x', base = null) => ({ path, type: 'write', buf: Buffer.from(buf), base: base === null ? null : Buffer.from(base) });
@@ -56,5 +56,21 @@ describe('usage threshold (I-1)', () => {
     expect(decide({ src: 'x', pct: 1 }, Number.NaN).allowed).toBe(false);
     const g = new UsageGuard({ thresholdPct: Number.NaN, probe: async () => { throw new Error('must not probe'); } });
     expect(await g.check()).toMatchObject({ allowed: false, reason: expect.stringMatching(/invalid usage threshold/) });
+  });
+});
+
+describe('agent-instruction and governance files never auto-merge (N-1)', () => {
+  it('a docs change to CLAUDE.md / AGENTS.md / GEMINI.md / .claude / .agents / .cursor / .github / CODEOWNERS / .husky is refused', () => {
+    for (const p of ['CLAUDE.md', 'apps/web/CLAUDE.md', 'AGENTS.md', 'docs/AGENTS.md', 'GEMINI.md', '.claude/settings.json', '.claude/agents/x.md', '.agents/skills/a/SKILL.md', '.cursor/rules/r.mdc', '.cursorrules', '.github/CODEOWNERS', '.github/copilot-instructions.md', 'CODEOWNERS', 'docs/CODEOWNERS', '.husky/pre-commit']) {
+      expect(diffAllowsAutoMerge('docs', [w(p)]).ok, p).toBe(false);
+    }
+    expect(diffAllowsAutoMerge('docs', [w('docs/claude-notes.md')]).ok).toBe(true);
+  });
+  it('protectedFor: config globs (os/** in the foundation repo) and files the hands commands name', () => {
+    const extra = protectedFor({ protectedPaths: ['os/**'], test: ['bash', './scripts/ci-test.sh', '--fast'], install: ['npm', 'ci'], mergeGate: ['bash', '{os_home}/ops/merge-gate.sh', '{pr}'] });
+    expect(diffAllowsAutoMerge('docs', [w('os/standard/x.md')], extra).ok).toBe(false);
+    expect(diffAllowsAutoMerge('lint', [w('scripts/ci-test.sh')], extra).ok).toBe(false);
+    expect(diffAllowsAutoMerge('docs', [w('docs/os.md')], extra).ok).toBe(true);
+    expect(globToRegExp('docs/*.md').test('docs/a/b.md')).toBe(false);
   });
 });

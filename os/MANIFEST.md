@@ -20,6 +20,15 @@ The AI OS layer of ebda-foundation: the operating tooling that every business (E
 
 `ops/` at the repo root (not under `os/`) is the product-library ops (merge gate, host lock, workflow lint) and is untouched.
 
+## Carried to later tasks
+
+| Owner | Item | Source |
+|---|---|---|
+| Task 6 | Brain alert after N consecutive nightly hands runs in which every job came back `skipped_usage` (a broken usage probe otherwise boots a container every night, refuses and re-queues silently). One message, deduped, through the brain's Telegram policy. | Ruling 4b-6 (`.superpowers/.../task-4b-report.md`), 4b review design note (b) |
+| Task 7 | Keep the Mac hands runner (`os/cloud/hands/providers/mac-local.sh`) off repos whose findings carry third-party text until the container path is live. | Ruling 4b-5 |
+
+`os/cloud/brain/` (Worker) and `os/cloud/hands/` (container image, run-batch, providers) are documented in their own READMEs.
+
 ## Ported counts (files under `os/ops` and `os/tests`)
 
 | Dir | Files |

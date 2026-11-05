@@ -38,6 +38,7 @@ export function validateConfig(c) {
     for (const k of ['install', 'mergeGate', 'format']) if (r[k] !== undefined && !isArgv(r[k])) return `${slug}: ${k} must be an argv array`;
     if (r.mergeGate?.some((a) => a.includes('{dir}'))) return `${slug}: mergeGate must not read the edited tree ({dir}); use {base_workflows}`;
     if (r.defaultBranch !== undefined && typeof r.defaultBranch !== 'string') return `${slug}: defaultBranch must be a string`;
+    if (r.protectedPaths !== undefined && !(Array.isArray(r.protectedPaths) && r.protectedPaths.every((g) => typeof g === 'string' && g && !g.startsWith('/')))) return `${slug}: protectedPaths must be repo-relative globs`;
   }
   for (const k of ['jobCapMin', 'runCapMin', 'maxTurns', 'usageThresholdPct']) {
     if (c[k] !== undefined && !(Number.isInteger(c[k]) && c[k] > 0)) return `${k} must be a positive integer`;
@@ -62,6 +63,7 @@ export async function loadConfig(env = process.env) {
   cfg.sandboxUser = env.HANDS_SANDBOX_USER && /^[a-z_][a-z0-9_-]{0,31}$/.test(env.HANDS_SANDBOX_USER) ? env.HANDS_SANDBOX_USER : '';
   cfg.sandboxHome = env.HANDS_SANDBOX_HOME ?? (cfg.sandboxUser ? `/home/${cfg.sandboxUser}` : env.HOME);
   cfg.gitleaks = env.HANDS_GITLEAKS ?? '';
+  cfg.osRepoSlug = env.OS_REPO_SLUG ?? '';
   cfg.usageState = env.USAGE_STATE ?? (env.OS_STATE_DIR ? join(env.OS_STATE_DIR, 'usage') : '');
   cfg.usageSnapshot = env.USAGE_SNAPSHOT ?? (cfg.sandboxed ? '' : join(homedir(), '.claude', 'usage-snapshot.json'));
   return cfg;

@@ -2,7 +2,8 @@
 // credential helpers and textconv in that tree are attacker-controlled. Instead the changed files are found by comparing
 // the work tree with a FRESH clone of the same base commit, byte by byte, with plain filesystem reads that never follow
 // symlinks, and the changes are applied to the fresh clone, which is the only tree git commits from.
-import { lstat, readdir, readFile, rm, mkdir, writeFile, chmod } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open, readdir, readFile, realpath, rm, mkdir, writeFile, chmod } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 const SKIP_DIRS = new Set(['.git', 'node_modules']);
@@ -31,11 +32,31 @@ async function walk(root, rel = '', out = new Map()) {
 }
 
 /**
+ * Read one regular file without ever following a symlink (re-review N-2): the parent dir must still resolve to where
+ * the walk saw it, the final component is opened O_NOFOLLOW, and the open file must be the same inode the walk
+ * lstat'ed. A swap between walk and read (a process Claude left behind) is refused, never read through.
+ */
+export async function readNoFollow(root, rel, seen) {
+  const abs = join(root, rel);
+  const realRoot = await realpath(root);
+  const parent = await realpath(dirname(abs));
+  if (parent !== join(realRoot, dirname(rel)) && !(dirname(rel) === '.' && parent === realRoot)) throw new Error(`${rel}: a parent directory changed into a link`);
+  const fh = await open(abs, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const st = await fh.stat();
+    if (!st.isFile() || st.ino !== seen.ino || st.dev !== seen.dev) throw new Error(`${rel} changed while it was read`);
+    return await fh.readFile();
+  } finally {
+    await fh.close();
+  }
+}
+
+/**
  * Compare the edited tree `work` against the pristine clone `clean`. Returns
  * { changes: [{path, type:'write'|'delete', buf?, mode?, base?}], refused?: string }.
  * Symlinks, special files and oversized files in the diff are refused (never copied into the commit tree).
  */
-export async function treeDiff(work, clean) {
+export async function treeDiff(work, clean, opts = {}) {
   const a = await walk(work);
   const b = await walk(clean);
   const changes = [];
@@ -46,8 +67,15 @@ export async function treeDiff(work, clean) {
       continue; // an unchanged symlink present in both trees
     }
     const st = await lstat(join(work, p));
+    if (!st.isFile()) return { changes: [], refused: `${p} changed into a ${st.isSymbolicLink() ? 'symlink' : 'non-file'} during the walk` };
     if (st.size > MAX_FILE_BYTES) return { changes: [], refused: `${p} is larger than ${MAX_FILE_BYTES} bytes` };
-    const buf = await readFile(join(work, p));
+    if (opts.beforeRead) await opts.beforeRead(p);
+    let buf;
+    try {
+      buf = await readNoFollow(work, p, st);
+    } catch (e) {
+      return { changes: [], refused: `${p}: refused to read (${e.code === 'ELOOP' ? 'it became a symlink' : e.message})` };
+    }
     const mode = st.mode & 0o111 ? 0o755 : 0o644;
     if (other?.kind === 'file') {
       const bst = await lstat(join(clean, p));
