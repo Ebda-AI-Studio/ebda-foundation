@@ -42,7 +42,7 @@ rm -rf "$R"
 
 # --- a scrubbed CLIENT NAME anywhere in the tree fails ---
 R="$(mktemp -d)"; mkrepo "$R" "$SHA"
-echo 'const store = "gcc-horse-market";' > "$R/src/leak.ts"
+echo 'const store = "acme-client";' > "$R/src/leak.ts"
 git -C "$R" -c user.email=t@t -c user.name=t add -A >/dev/null
 git -C "$R" -c user.email=t@t -c user.name=t commit -qm leak
 out="$(bash "$SCRIPT" --repo "$R" 2>&1 || true)"
@@ -53,7 +53,7 @@ rm -rf "$R"
 
 # --- a leaked DOMAIN also fails (different scrub class) ---
 R="$(mktemp -d)"; mkrepo "$R" "$SHA"
-echo 'const api = "https://leaked.example/api";' > "$R/src/leak.ts"
+echo 'const api = "https://acme.example/api";' > "$R/src/leak.ts"
 git -C "$R" -c user.email=t@t -c user.name=t add -A >/dev/null
 git -C "$R" -c user.email=t@t -c user.name=t commit -qm leak
 bash "$SCRIPT" --repo "$R" >/dev/null 2>&1 && no "a leaked domain fails the gate" || ok "a leaked domain fails the gate"

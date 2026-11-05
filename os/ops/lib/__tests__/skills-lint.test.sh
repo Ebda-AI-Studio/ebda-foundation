@@ -56,7 +56,8 @@ printf '%s' "$out" | grep -q 'WARN.*correct' && ok "warns on the skipped dir" ||
 [ -e "$H/.claude/skills/force-audit" ] && no "force-audit installed by default" || ok "force-audit excluded by default"
 HOME="$H" SRC="$ROOT/ops" bash "$STEP" >/dev/null 2>&1 && ok "idempotent re-run exits 0" || no "re-run failed"
 HOME="$H" SRC="$ROOT/ops" SKILLS_EXCLUDE="" bash "$STEP" >/dev/null 2>&1
-[ -L "$H/.claude/skills/force-audit" ] && ok "SKILLS_EXCLUDE='' opts force-audit in" || no "opt-in did not link force-audit"
+# force-audit is not ported (open decision, docs/history/standards/incidents.md): an empty exclude list links every SHIPPED skill and invents none.
+{ [ -L "$H/.claude/skills/benchmark-vet" ] && [ ! -e "$H/.claude/skills/force-audit" ]; } && ok "SKILLS_EXCLUDE='' links shipped skills and no force-audit" || no "opt-in linked the wrong set"
 rm -rf "$H"
 
 echo "skills-lint: $_pass passed, $_fail failed"

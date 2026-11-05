@@ -1,0 +1,44 @@
+# prisma-postgres — Language/Framework Rule Pack
+
+tags: [BOTH]
+scope: `schema.prisma`, any Prisma client usage, raw SQL migrations, Neon/Postgres connection config, RLS policies
+sources: `../rls.md`, `../scaling.md`, `../money.md`, `../testing.md` (criterion 13), MEMORY.md feedback-prisma-enum-migration-trap, feedback-prisma-enum-pascalcase-trap, feedback-neon-pooled-needs-pgbouncer-and-direct-url, feedback-prisma-direct-url-pooler, feedback-prisma-7-config-migration, feedback-prisma-maxwait-default-2s-trap, feedback-prisma-transaction-array-no-timeout, feedback-prisma-or-query-needs-orderby, feedback-tx-wrapper-breaks-prisma-mocks, feedback-postgres-rls-silent-filter-trap, feedback-rls-enable-needs-policy-per-command, feedback-rls-force-cutover-breaks-preauth-and-self-service-auth, feedback-ci-integration-ephemeral-postgres-not-shared-neon
+
+## Must Always
+- Split Neon connection strings by role: `DATABASE_URL` = **pooled** host (`-pooler` in hostname) + `?pgbouncer=true` appended (disables Prisma prepared statements, which break under PgBouncer transaction-mode pooling). `DIRECT_URL` (when `schema.prisma` declares `directUrl`) = the **unpooled** host (strip `-pooler`) with NO `pgbouncer=true` — migrations and advisory locks need a stable session, not a transaction-pooled one.
+- Hand-write the migration SQL for every enum change — `prisma migrate dev` does NOT reliably auto-generate `ALTER TYPE ... ADD VALUE` for enum-only diffs, and `prisma migrate status` reports the `_prisma_migrations` HISTORY table, not a live schema diff, so it says "up to date" while the DB is silently behind. Use `ALTER TYPE "EnumName" ADD VALUE IF NOT EXISTS 'value'` (idempotent, must run outside a transaction — Prisma's migrate runner handles the split).
+- Verify the ACTUAL Postgres enum type name before writing `ALTER TYPE` by hand — Prisma creates enum types **PascalCase** matching the schema identifier (`"BulkAiJobKind"`), not snake_case, unless `@@map` is set. `psql -c "SELECT typname FROM pg_type WHERE typname ILIKE '%<name>%'"` first; a wrong-cased `ALTER TYPE` fails and leaves a dirty `_prisma_migrations` row that blocks ALL future deploys with P3009.
+- Set explicit `{ maxWait: 10000, timeout: 30000 }` on every `$transaction` used in a request-serving path. Prisma's default `maxWait` is **2000ms** — under burst load on a pgbouncer-pooled Neon connection, the 4th–6th concurrent tenant-context transaction queues past 2s and throws P2028, which looks intermittent/flaky from the outside but is pure pool-slot contention.
+- Add a deterministic `orderBy` (e.g. `updatedAt: 'desc'`) to every `findFirst` whose `where` (especially an `OR:`) can match multiple rows. Without it, Postgres returns whatever heap order it has, which drifts with VACUUM/autoanalyze/replication and produces flaky, data-dependent bugs (a stale empty cart winning over the active one is a real example).
+- ENABLE ROW LEVEL SECURITY only alongside a policy for EVERY command the app actually runs (SELECT + INSERT + UPDATE + DELETE, or one `FOR ALL`). A table with RLS enabled and only a SELECT policy silently 42501-denies all writes for the app's non-BYPASSRLS role — even inside `withRlsBypass` — because the bypass GUC only matters if a policy actually reads it.
+- Wrap every cross-tenant or no-tenant-context DB access (Inngest functions, cron jobs, super-admin routes, pre-auth routes like `/login`/`/refresh`) in `withRlsBypass` (sets `app.bypass_rls='true'` for that transaction) or `runInTenantContext(storeId, fn)` for single-store background work. Any read of a FORCE-RLS table with no GUC set returns **0 rows successfully** — no error — which then reads as "nothing to do" (silently-dead notifications) or 401s a legitimate login before the password is even checked.
+- Add a prod-guard on every destructive reset path (`TRUNCATE`, `deleteMany` sweeps, `db push --force-reset`) that throws unless the target is a disposable localhost/container DB — check host/db-name, reject anything matching neon/railway/supabase/aws hostnames.
+- For CI integration tests, spin a per-run `postgres:17` (match Neon's major) service container with the RLS role model mirrored (`neondb_owner BYPASSRLS` + app role `NOBYPASSRLS`, granted `WITH ADMIN OPTION` on PG16+) and reset with `TRUNCATE ... RESTART IDENTITY CASCADE` per test file — never point CI integration tests at a shared Neon branch (any imperfect per-test cleanup cascades into every later test, and failures shift with OS/ordering).
+
+## Must Never
+- Never let `DIRECT_URL` point at the `-pooler` hostname when `schema.prisma` declares `directUrl` — `prisma migrate deploy` through PgBouncer transaction-mode pooling fails two distinct ways: an "Invariant violation: migration persistence is not initialized" (lost state between pooled backends) or a P1002 stuck advisory lock (a prior failed migrate's lock survives because the session/backend is still pooled-alive). Recovery requires `pg_terminate_backend` on the stuck PID via the unpooled URL.
+- Never use the array-overload form of `$transaction([op1, op2])` when you need a custom `timeout`/`maxWait` — those options exist ONLY on the interactive callback form `$transaction(async tx => {...}, opts)`. Passing them to the array form is a TS2769 compile error (Prisma's docs imply they're universal; they're not). Convert to the callback form for anything that might hit Neon cold-start latency.
+- Never do a bare `create(...).catch(P2002)` for in-transaction idempotency inside an outer `$transaction` — Postgres aborts the WHOLE transaction on a unique-violation, so the catch never gets a clean rollback point. Use a `SAVEPOINT` instead.
+- Never add a shared `$transaction`-wrapping helper (e.g. `withMoneyTx`) without grepping every `vi.mock('@pkg/database')`/`jest.mock(...)` factory and adding the new export there in the SAME commit — typecheck passes on an `any`-shaped mock, but the real symbol resolving to `undefined` throws at test-RUN time only.
+- Never assume `neondb_owner`/table-owner behavior generalizes to the app's actual runtime role — the owner has `rolbypassrls=true` and sees every row, masking RLS bugs completely during manual `psql` inspection. Always reason about (and test against) the non-owner app role.
+- Never trust `migrate status` alone as evidence an enum change reached prod — it reports migration-history state, not the live schema. Verify with a direct `enum_range(NULL::"TypeName")` query.
+
+## Patterns
+- **RLS silent-filter signature**: a `deleteMany`/`$executeRaw DELETE` inside a transaction returns success with `count: 0` (not an error), then a LATER foreign-key cascade check on the same rows throws a constraint violation — because FK checks bypass RLS but the DELETE didn't. The fix is `SET LOCAL app.bypass_rls = 'true'` (or `app.current_store_id`) as the FIRST statement inside that transaction.
+  ```ts
+  await prisma.$transaction(async tx => {
+    await tx.$executeRaw`SET LOCAL app.bypass_rls = 'true'`;
+    await tx.journalEntry.deleteMany({ where: { storeId } });
+    await tx.store.delete({ where: { id: storeId } });
+  });
+  ```
+- **Prisma 7 config split**: `schema.prisma` datasource has NO `url` anymore — the connection string moves to `prisma.config.ts` (which must explicitly `loadEnv()` — Prisma does not auto-read `.env.local`) and the runtime client takes an adapter: `new PrismaClient({ adapter: new PrismaPg({ connectionString }) })`. Add `"postinstall": "prisma generate"` to `package.json` — Vercel does a fresh install per build and won't run `prisma generate` on its own.
+- **Detection grep for maxWait gaps**: `grep -rn '\$transaction(' src | grep -v 'maxWait'` — every hit needs a review.
+- **Detection grep for OR-without-orderBy**: `grep -rn -A10 'findFirst' src | grep -B5 'OR:' | grep -v orderBy`.
+
+## Traps
+- `prisma migrate status` saying "up to date" is not proof the DB schema matches `schema.prisma` for enum-only changes — it only reflects the migrations table.
+- A hand-written migration referencing the wrong enum type name (snake_case guess instead of the real PascalCase) fails AND leaves a dirty `_prisma_migrations` row with `finished_at = NULL`, which blocks every subsequent `migrate deploy` across the whole team with P3009 until manually resolved (`prisma migrate resolve --rolled-back <name>`).
+- A cron/Inngest function reading a FORCE-RLS table silently "finding nothing to do" is functionally identical to a bug — it never errors, it just does nothing, and every downstream consumer of that empty result (a feature-flag check, a notification-config lookup) inherits the false-negative.
+
+Cross-links: `../rls.md` (the full multi-tenant RLS rubric), `../money.md` (SAVEPOINT idempotency, serializable-tx retry), `../scaling.md` (cursor pagination, indexed WHERE/ORDER BY), `node-express.md` (transaction-timeout budget + I/O), `typescript.md` (mock-factory drift).

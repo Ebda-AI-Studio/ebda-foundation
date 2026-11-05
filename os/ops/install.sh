@@ -82,7 +82,7 @@ fi
 # Symlink, not copy: the repo stays the single source, so a merged skill edit needs no re-install.
 # Dynamic: every dir under skills/ holding a SKILL.md. Never clobbers a real dir (a
 # hand-installed skill of the same name) — it warns and skips. force-audit is excluded by
-# default (install decision still open, docs/plans/HANDOFF-force-audit.md); opt in with
+# default (not ported; open decision in docs/history/standards/incidents.md); opt in with
 # SKILLS_EXCLUDE="" ops/install.sh.
 # Trust boundary: a symlink makes whatever is checked out LIVE in every session. So link
 # only from the main checkout on master/main, never a linked worktree or a feature branch

@@ -13,7 +13,8 @@ The AI OS layer of ebda-foundation: the operating tooling that every business (E
 | `ops/lib/keychain.sh` | `keychain_get <service>`: Keychain read with the hex-decode rule (same rule as ebda-store `scripts/cf/lib/keychain.mjs`). | new (Task 2) |
 | `ops/tests/`, `ops/lib/__tests__/`, `tests/remediation/` | The ported suites. Run all: `bash os/tests/run-all.sh`. | ported (Task 2) |
 | `tests/no-force-strings.test.sh`, `tests/linux-smoke.test.sh`, `tests/run-all.sh` | Predecessor-string guard, Linux `bash -n` + `--help` smoke, one-command runner. | new (Task 2) |
-| `standard/`, `audit/`, `schemas/`, `skills/`, `agents/`, `template/`, `vendor/` | Standards, audit lenses, schemas, skills, agents, vendor template. | Task 3 |
+| `standard/` (242 files: the 95-file base set, the 111+ Ebda 2026-10 graded lens standards, `umbra-guest-integrity`, `rules/`), `agents/` (25), `skills/` (benchmark-vet, blast-radius, correct, THIRD-PARTY.md), `schemas/hooks.schema.json`, `vendor/landlock-run/`, `audit/lenses/` (source packs), `template/VENDOR-PROVENANCE.md` | Standards, lens packs, agents, skills, hook schema, vendored Landlock launcher, vendor-provenance template. `skills/force-audit` is NOT ported (open decision in `docs/history/standards/incidents.md`). | ported (Task 3) |
+| `tests/standard-links.test.mjs` | Every relative link in `standard/` and `audit/lenses/` resolves. | new (Task 3) |
 | dashboard, command-center app, dream cycle, self-heal and heal-watch, watchers, event listener, page-load monitor, daily brief, companion | The AI-OS components beyond the core. | Task 4 |
 
 `ops/` at the repo root (not under `os/`) is the product-library ops (merge gate, host lock, workflow lint) and is untouched.

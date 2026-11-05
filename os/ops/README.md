@@ -1,5 +1,5 @@
 ## Command center
-The Ops Command-Center is now a native macOS app — see `ops/command-center-app/` and `docs/runbooks/force-ai-ops.md`. The Node aggregator (`ops/dashboard/`) remains the data/action backend.
+The Ops Command-Center is now a native macOS app — see `ops/command-center-app/` and `docs/runbooks/ebda-os-ops.md`. The Node aggregator (`ops/dashboard/`) remains the data/action backend.
 
 ## launchd jobs deliberately NOT in this repo
 
