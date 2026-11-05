@@ -1,0 +1,7 @@
+# Baseline for the ported OS scripts (os/MANIFEST.md, "shellcheck baseline"). Real-bug classes stay ON; these stylistic classes
+# were present in the frozen predecessor and are suppressed here so the gate can be red for NEW problems. Burn them down per file.
+#   SC2034 unused variable (39: OS_JOB_NAME and friends are read by the sourced libs)
+#   SC2164 cd without || exit (21: scripts run under set -e / cd into their own dir)
+#   SC1090 non-constant source (10: installed vs repo path fallback)
+#   SC2207 array from command output (7)    SC2155 declare and assign (7)    SC2010 ls | grep (2)
+disable=SC2034,SC2164,SC1090,SC2207,SC2155,SC2010
