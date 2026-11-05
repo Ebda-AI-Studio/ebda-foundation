@@ -1,0 +1,17 @@
+{
+  "name": "unsafe-migration-backfill",
+  "class": "migration-safety",
+  "severity": "high",
+  "title": "in-migration backfill / rewriting column add (locks a live table)",
+  "detail": "A bare UPDATE ... SET (data backfill) or an ADD COLUMN ... NOT NULL (table rewrite) inside a Prisma migration.sql runs in the migration's single transaction and LOCKS row ranges \u2014 on a large, 24/7 table that stalls all live traffic (an outage). Two paying-client stores are live.",
+  "fix": "Zero-downtime pattern: add the column NULLABLE/no-default (metadata-only), deploy app code that fills it on every NEW write first, then backfill old rows in a background job in small batches with a between-batch DB-load check. Never one big UPDATE in the migration.",
+  "globs": [
+    "**/migrations/**/migration.sql",
+    "**/migrations/*.sql",
+    "**/prisma/migrations/**/*.sql"
+  ],
+  "match_mode": "line-present",
+  "include_regex": "UPDATE\\s+\"?[a-zA-Z_][\\w\"]*\"?\\s+SET\\b|ADD COLUMN[^;]*\\bNOT NULL\\b(?![^;]*DEFAULT)",
+  "cap": 40,
+  "source_lesson": "feedback-zero-downtime-schema-migration.md"
+}

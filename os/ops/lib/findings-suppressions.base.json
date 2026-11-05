@@ -1,0 +1,74 @@
+{
+  "_README": [
+    "Version-controlled suppression BASELINE for the code-health / dream finding pipeline.",
+    "",
+    "An entry here says: the scanner is WRONG about this, and here is why. It is not a",
+    "backlog, a deferral, or a 'wontfix' — those belong in the issue tracker, and",
+    "acceptance-feedback.sh writes those automatically into the MUTABLE state file at",
+    "~/.whisky-os-state/findings-suppressions.json. Both files are unioned at load.",
+    "",
+    "KEY ON `file` + `symbol`. Titles are written by the LLM pass and get reworded",
+    "between runs — on 2026-08-18 'generateSectionPalette() is 104 lines' became",
+    "'generateSectionPalette() — 104 lines' and a reviewed suppression silently lapsed.",
+    "But `file` ALONE is too blunt: it swallowed an unreviewed 'GET() nesting depth 6'",
+    "that merely shared a route file with a reviewed POST() finding. `symbol` narrows it",
+    "to the thing actually reviewed, and function names do not drift like prose.",
+    "",
+    "Match order: (repo,class,file,symbol) -> (repo,class,file) -> legacy (repo,class,title).",
+    "Omit `symbol` only when the WHOLE file is intentionally exempt for that class.",
+    "",
+    "Every entry MUST carry a _comment with the evidence that it is a false positive.",
+    "Suppressing a real defect is strictly worse than leaving it in the count."
+  ],
+  "suppress": [
+    {
+      "repo": "ebda-studio",
+      "class": "overcomplexity",
+      "title": "POST() flagged at 37 branches is mostly '|| null' field-fallback mapping, not real control flow",
+      "_comment": "Verified 2026-08-18 at src/app/api/clients/route.ts:65 — 23 of the counted branches are '|| null' / ternary field fallbacks inside a single prisma.client.create data object. Input is already Zod-validated upstream, so there is no control flow to factor out. Splitting the object would add indirection and remove nothing.",
+      "_verified_at": "2026-08-18",
+      "file": "src/app/api/clients/route.ts",
+      "symbol": "POST()"
+    },
+    {
+      "repo": "ebda-studio",
+      "class": "overcomplexity",
+      "title": "GET()/ReadableStream executor nesting is intentional SSE keep-alive design, not accidental complexity",
+      "_comment": "Verified 2026-08-18 at src/app/api/sse/route.ts:27 — the nesting IS the SSE protocol shape: a ReadableStream start() executor holding a send() closure over `closed`, the `retry: 30000` directive that stops EventSource storm-reconnects from exhausting the Neon pool, and the poll timer. Flattening it would break the closure that guards writes after close.",
+      "_verified_at": "2026-08-18",
+      "file": "src/app/api/sse/route.ts",
+      "symbol": "GET()"
+    },
+    {
+      "repo": "ebda-store",
+      "class": "overcomplexity",
+      "title": "generateSectionPalette() is 104 lines",
+      "_comment": "Verified 2026-08-18 at packages/shared/src/utils/color.ts:728 — flagged on length alone: the function has only 9 branches, and its body is a documented 4-case switch acting as a palette lookup table (the pattern/section matrix is spelled out in a comment table directly above it). Splitting a lookup table across files scatters something that reads correctly as a unit.",
+      "_verified_at": "2026-08-18",
+      "file": "packages/shared/src/utils/color.ts",
+      "symbol": "generateSectionPalette()"
+    },
+    {
+      "repo": "ebda-store",
+      "class": "overcomplexity",
+      "file": "scripts/backfill-slug-redirects.ts",
+      "_comment": "Verified 2026-08-18: one-shot backfill with ZERO callers — not in any package.json, workflow or import. Already run. Refactoring a completed migration script carries risk (it writes redirect rows) with no runtime benefit.",
+      "_verified_at": "2026-08-18"
+    },
+    {
+      "repo": "ebda-store",
+      "class": "overcomplexity",
+      "file": "packages/database/prisma/seed-loadtest-stores.ts",
+      "_comment": "Verified 2026-08-18: load-test FIXTURE tooling (npm run seed:loadtest), never bundled and never on a request path. It creates and cleans up throwaway stores against a real database; restructuring it risks the cleanup path for zero production benefit.",
+      "_verified_at": "2026-08-18"
+    },
+    {
+      "repo": "ebda-store",
+      "class": "overcomplexity",
+      "file": "packages/database/prisma/clone-demo-stores.ts",
+      "symbol": "cloneInto",
+      "_comment": "Verified 2026-08-18: ops tool run manually via `railway run` against PRODUCTION to recreate template demo stores. It hard-deletes and re-creates demo-* stores; a refactor here risks live data to reduce nesting in a script nobody imports.",
+      "_verified_at": "2026-08-18"
+    }
+  ]
+}

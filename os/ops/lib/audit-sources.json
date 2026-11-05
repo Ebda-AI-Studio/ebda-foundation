@@ -1,0 +1,58 @@
+{
+  "_note": "Sources for ops/audit-pack-daily.sh. Adding one is a DATA change: no code edit, no redeploy. A disabled source is still printed every run, so it cannot go quietly missing.",
+  "sources": [
+    {
+      "id": "os-watchdog",
+      "kind": "state-file",
+      "enabled": true,
+      "paths": [
+        "world-extras.json",
+        "world-digest.json"
+      ],
+      "note": "What the OS already learns about the world each day \u2014 framework EOL, API-version drift, deprecated deps, new CVEs. Each finding CLASS is a candidate lens: the audit pack should catch in a client's repo what the watchdog catches in ours."
+    },
+    {
+      "id": "video-matt-murphy",
+      "kind": "instagram",
+      "enabled": true,
+      "profile": "https://www.instagram.com/mattmurphyai/",
+      "max_per_run": 3,
+      "note": "Ahmad's primary audit source (2026-09-23). Discovery needs a logged-in session, so the cycle lists the profile in a real browser with INSTAGRAM-ONLY cookies, downloads what is new, and sends the AUDIO plus the caption to Gemini. Never the video: one 2.5-minute reel measured 28,626,271 tokens and exhausted the free tier's 250k/day in a single call; the audio track is 687 KB against 37 MB."
+    },
+    {
+      "id": "market-watch",
+      "kind": "release-notes",
+      "enabled": true,
+      "weekly_on": 0,
+      "urls": [
+        "https://github.com/semgrep/semgrep/releases.atom",
+        "https://github.com/zaproxy/zaproxy/releases.atom",
+        "https://github.com/OWASP/wstg/commits/master.atom"
+      ],
+      "note": "What other audit tools started checking. Sunday only \u2014 a weekly signal read daily is noise."
+    },
+    {
+      "id": "advisories",
+      "kind": "advisory-feed",
+      "enabled": true,
+      "max_per_run": 25,
+      "urls": [
+        "https://api.github.com/advisories?ecosystem=composer&per_page=25",
+        "https://api.github.com/advisories?ecosystem=npm&per_page=25"
+      ],
+      "note": "Ahmad, 2026-09-23. php-deps pins only four STRUCTURAL facts (no lockfile, PHP floor, framework major, minimum-stability) because it refuses to guess a CVE. This is where verified advisories come from. Recorded to audit-pack-advisories.tsv as DATA and deduped by id; only ONE lens candidate is ever proposed from the whole feed, because filing a lens per CVE would open fifty issues for one idea. The REST API, not advisories.atom: that answers 406 with and without a User-Agent (measured 2026-09-23)."
+    },
+    {
+      "id": "client-audits",
+      "kind": "client-audit",
+      "enabled": true,
+      "max_per_run": 5,
+      "roots": [
+        "~/Desktop/projects/Force-AI/clients",
+        "~/Desktop/projects/Whisky-11/clients",
+        "~/Desktop/projects/Ebda-AI-Studio/clients"
+      ],
+      "note": "Ahmad, 2026-09-23 \u2014 the highest-yield source measured: ONE hand audit of a client Laravel repo (work-wise-audit) produced 11 lenses. Reads '### SEC-004: <title>'-shaped findings out of each client's reports/*.md, reduces the title to a defect CLASS so another client's wording of the same defect does not propose it twice, and skips any class an existing lens already covers."
+    }
+  ]
+}

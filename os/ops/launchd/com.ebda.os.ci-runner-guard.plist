@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>__HOME__</string>
+		<key>PATH</key>
+		<string>__PATH__</string>
+		<key>RUNNER_UMBRA_MACHINE</key>
+		<string>fwb-ci6</string>
+	</dict>
+	<key>Label</key>
+	<string>com.ebda.os.ci-runner-guard</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>__HOME__/.claude/scripts/ci-runner-guard.sh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/ci-runner-guard.err</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/ci-runner-guard.log</string>
+	<key>StartInterval</key>
+	<integer>1800</integer>
+</dict>
+</plist>

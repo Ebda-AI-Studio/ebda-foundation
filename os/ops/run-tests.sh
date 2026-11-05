@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Whisky AI OS — run every test suite in the repo, across all 5 classes.
+#
+# WHY THIS EXISTS: the suites were written and then nothing ever ran them. The
+# foundation's own CI was removed in #104 (Actions billing blocked since
+# ~2026-07-20), os-selftest checks the OS's *runtime* health rather than this
+# repo's tests, and no launchd job invoked them. By 2026-08-18 two suites had
+# been red for weeks with nobody notified:
+#   • postmortem      8/14 failing — the fake HOME the suite uses for state
+#                     isolation could never satisfy the TCC canary
+#   • detector-run    1/7 failing  — asserted a detector deliberately retired in #48
+# Neither was a product defect. Both were invisible purely because no runner
+# existed. A test nobody runs is worth less than no test: it reads as coverage.
+#
+# 2026-09-04 — THE SAME DEFECT, ONE LEVEL UP. This runner globbed exactly one
+# path, `lib/__tests__/*.test.sh`, so it ran 25 of the repo's 37 suites and
+# reported "all passing". The other 12 were run by nothing — not here, not in
+# CI (the `Ops tests` job invokes only this script):
+#     ops/tests/*.test.sh              2 suites
+#     ops/tests/*.test.mjs             3 suites
+#     ops/dashboard/__tests__/*.mjs    1 suite   <- had been RED, 34 != 15
+#     ops/accountant/tests/test_*.py   6 suites, 309 tests
+# The dashboard suite asserted a hardcoded subsystem count that grew from 15 to
+# 34 while nobody re-ran it. A runner that finds only what it was first written
+# to find is a never-run gate wearing a green badge.
+#
+# So discovery is now a TABLE of classes, and — the load-bearing part — a class
+# that discovers ZERO suites is a FAILURE, not a quiet skip. Renaming a
+# directory or moving a suite can no longer silently retire a whole tier.
+#
+# Usage:
+#   ops/run-tests.sh            # run every class, print a summary
+#   ops/run-tests.sh --quiet    # only print failures + the summary
+# Exit: non-zero if any suite fails OR any class discovers nothing.
+set -uo pipefail
+cd "$(dirname "$0")"
+
+QUIET=0
+[ "${1:-}" = "--quiet" ] && QUIET=1
+
+# CLASSES — "label|glob|runner". A repo's test stack is not one shape: this one
+# is bash suites, node ESM suites and a python unittest package. bash 3.2 has no
+# associative arrays, so this is a plain newline-separated list.
+#
+# A suite in a NEW location means a new line here. Discovery is DECLARED, not
+# inferred, so a class can never be half-discovered — and an empty class is loud.
+CLASSES='
+ops-lib|lib/__tests__/*.test.sh|bash
+ops-shell|tests/*.test.sh|bash
+ops-node|tests/*.test.mjs|node
+remediation|../tests/remediation/*_test.sh|bash
+'
+
+suites=0
+failed=0
+skipped=0
+empty_classes=()
+failed_names=()
+
+# run_one <runner> <path>: 0 = pass. Output on stdout.
+run_one() {
+  case "$1" in
+    bash) bash "$2" 2>&1 ;;
+    node) node "$2" 2>&1 ;;
+    # Run as a package module from the class root so intra-package imports
+    # resolve as they do for the app: `python3 -m unittest tests.<name>`.
+    pyunit) ( cd "$(dirname "$(dirname "$2")")" \
+                && python3 -m unittest "tests.$(basename "$2" .py)" 2>&1 ) ;;
+    *) echo "unknown runner: $1"; return 2 ;;
+  esac
+}
+
+for line in $CLASSES; do
+  [ -n "$line" ] || continue
+  label="${line%%|*}"; rest="${line#*|}"
+  glob="${rest%%|*}"; runner="${rest##*|}"
+
+  found=0
+  for t in $glob; do
+    [ -f "$t" ] || continue
+    found=$(( found + 1 ))
+    suites=$(( suites + 1 ))
+    name="$label/$(basename "$t" | sed -e 's/\.test\.sh$//' -e 's/\.test\.mjs$//' -e 's/^test_//' -e 's/\.py$//')"
+    # Declared-pending suites (need Task 3 content): loud SKIP, counted, never silent.
+    if grep -qE "^${name}([[:space:]]|\$)" tests-pending.list 2>/dev/null; then
+      skipped=$(( skipped + 1 )); printf '  SKIP  %s (pending Task 3 content, see tests-pending.list)\n' "$name"; continue
+    fi
+    if out="$(run_one "$runner" "$t")"; then
+      [ "$QUIET" = "1" ] || printf '  ok    %s\n' "$name"
+    else
+      failed=$(( failed + 1 ))
+      failed_names+=("$name")
+      printf '  FAIL  %s\n' "$name"
+      printf '%s\n' "$out" | sed 's/^/          /' \
+        | grep -E 'FAIL|AssertionError|Traceback|passed|Error' | head -12
+    fi
+  done
+
+  # A class that matched nothing is a FAILURE — the original bug was a runner
+  # reporting green over suites it never looked for.
+  if [ "$found" -eq 0 ]; then
+    empty_classes+=("$label ($glob)")
+    printf '  EMPTY %s — glob matched no suite\n' "$label"
+  fi
+done
+
+echo
+# Finding NOTHING is a failure, not a pass. The installed runtime copy at
+# ~/.claude/scripts/ has no lib/__tests__/ (install.sh copies lib/*.sh, *.py,
+# *.json and *.mjs — not the test dir), so running it there printed
+# "0 suite(s), all passing" and exited 0. A runner that reports green because it
+# could not find anything to run is the same fail-open defect this script exists
+# to catch. Run it from the repo: ops/run-tests.sh
+if [ "$suites" -eq 0 ]; then
+  echo "ops tests: NO SUITES FOUND under $(pwd) — nothing was verified."
+  echo "           This is a FAILURE, not a pass. Run this from the foundation repo,"
+  echo "           not from the installed runtime copy in ~/.claude/scripts/."
+  exit 2
+fi
+
+if [ "${#empty_classes[@]}" -gt 0 ]; then
+  echo "ops tests: ${suites} suite(s) ran, but ${#empty_classes[@]} CLASS(ES) DISCOVERED NOTHING:"
+  # Guarded expansion: a bare "${arr[@]}" on an empty array ABORTS under set -u
+  # on bash 3.2 (macOS). Unreachable here — the count check above gates it — but
+  # ops/lib/__tests__/empty-array-guard.test.sh forbids the shape outright, and
+  # it is right to: this is how deploy-drift died silently for 32h.
+  for c in ${empty_classes[@]+"${empty_classes[@]}"}; do echo "             - $c"; done
+  echo "           A class matching no suite is a retired tier nobody noticed."
+  echo "           Fix the glob or delete the class line — never ignore this."
+  exit 2
+fi
+
+if [ "$failed" -eq 0 ]; then
+  echo "ops tests: ${suites} suite(s) across 4 classes, all passing (${skipped} declared-pending SKIPPED)"
+else
+  echo "ops tests: ${suites} suite(s), ${failed} FAILING — ${failed_names[*]}"
+fi
+[ "$failed" -eq 0 ]

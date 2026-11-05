@@ -1,0 +1,7 @@
+# Suites that cannot pass until the Task 3 content lands (standard/, skills/, agents/, schemas/, template/).
+# run-tests.sh prints each as SKIP (never silent) and counts them; Task 3 deletes the line it makes green.
+# format: <class>/<suite-name>   # what it needs
+ops-lib/agents           # agents/*.md frontmatter
+ops-lib/check-provenance # template/VENDOR-PROVENANCE.md (and its scrub table)
+ops-lib/skills-lint      # skills/*/SKILL.md
+ops-lib/validate-hooks   # schemas/ (hook config schema)

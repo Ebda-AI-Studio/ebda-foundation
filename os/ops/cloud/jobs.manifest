@@ -1,0 +1,42 @@
+# Force AI — cloud-tier job manifest (Oracle Free ARM VM).
+# The always-on watchdog half of the OS, ported off the Mac so it survives the Mac
+# being asleep/off. Mirrors the launchd intervals on the Mac (ops/launchd/*.plist).
+#
+# OWNERSHIP PARTITION (no job runs in both places → no double-alerts):
+#   - cloud VM owns everything in THIS file.
+#   - the Mac keeps ONLY inherently-Mac-local jobs (neon-backup =
+#     local pg_dump to the Mac disk; mac-maintenance = Mac storage hygiene). When the cloud tier is live,
+#     UNLOAD the duplicated launchd jobs on the Mac (cloud-install.sh prints the list).
+#
+# Format (PIPE-delimited, exactly 3 columns; whitespace around fields is trimmed):
+#   <script> | <schedule> | <args>
+#   schedule = interval:<seconds>           → systemd OnUnitActiveSec (periodic)
+#            | calendar:<OnCalendar expr>    → systemd OnCalendar (may contain spaces)
+#   args     = extra args for the script (e.g. --notify); use - for none.
+# Pipe-delimited specifically because OnCalendar expressions contain spaces.
+
+# Synthetic monitors + alert intake (the reactive half)
+services-watch     | interval:900   | --notify
+anomaly-watch      | interval:900   | --notify
+alert-triage       | interval:1800  | --notify
+checkout-monitor   | interval:1800  | --notify
+wbs-monitor        | interval:1800  | --notify
+os-watch           | interval:7200  | --notify
+
+# CI health (the runner guards)
+runner-hook-health | interval:10800 | --notify
+ci-runner-guard    | interval:10800 | -
+
+# Scheduled sweeps (the proactive half)
+cost-guard         | calendar:*-*-* 09:00:00     | -
+dream              | calendar:*-*-* 08:00:00     | --daily
+docs-scan          | calendar:Sun *-*-* 09:30:00 | -
+code-health        | calendar:Sat *-*-* 06:00:00 | --notify
+
+# Self-improving expansion (sense -> learn -> decide)
+journey-monitor    | interval:1800               | --notify
+os-selftest        | calendar:*-*-* 07:30:00     | --notify
+daily-brief        | calendar:*-*-* 07:45:00     | --notify
+world-watch        | calendar:Sun *-*-* 10:00:00 | --notify
+acceptance-feedback| calendar:Sun *-*-* 11:00:00 | --notify
+# postmortem is EVENT-triggered by os-watch (no schedule)

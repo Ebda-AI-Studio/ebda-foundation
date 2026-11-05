@@ -1,0 +1,14 @@
+{
+  "name": "api-route-without-validation",
+  "class": "security-validation",
+  "severity": "medium",
+  "title": "API route reads request body without schema validation (Zod/Yup)",
+  "detail": "A handler consuming req.body / request.json() with no .parse()/.safeParse() trusts unvalidated input at an API edge.",
+  "fix": "validate every API edge with a Zod/Yup schema before using the payload.",
+  "globs": ["**/routes/**/*.ts", "**/app/api/**/route.ts", "**/pages/api/**/*.ts", "**/controllers/**/*.ts", "**/*.routes.ts"],
+  "match_mode": "file-present-absent",
+  "include_regex": "req\\.body|request\\.json\\(\\)|await\\s+req\\.json",
+  "absent_regex": "\\.parse\\(|\\.safeParse\\(|z\\.object|yup\\.|Joi\\.|joi\\.|requireToken|verifyWebhook|verifySignature|webhookSecret|REVALIDATE_SECRET|x-webhook-token",
+  "cap": 25,
+  "source_lesson": "feedback-ai-security-checklist.md"
+}

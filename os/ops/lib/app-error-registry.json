@@ -1,0 +1,25 @@
+{
+  "_comment": "App-error-class → action map for app-error-heal.sh (gap G1, 2026-07-22). Each class matches Sentry issue titles by regex within a window; when matching events in-window >= threshold and not in cooldown, it fires `action`. action=escalate → precise runbook alert (SAFE default, MANDATORY for any data-touching class — NEVER auto-mutate data). action=redeploy:<service-id> → compute-only recovery via self-heal.sh for that heal-registry service (leaked-connection/stuck-process classes only). Add a class = add an entry. Windows in hours.",
+  "cooldown_sec": 3600,
+  "projects_org_env": "SENTRY_ORG",
+  "classes": [
+    {
+      "name": "prisma-tx-pool-exhaustion",
+      "projects": "ebda-api",
+      "title_regex": "Transaction already closed|Timed out fetching connection from pool|connection pool|Transaction API error|P2024|P2028",
+      "window_h": 6,
+      "threshold": 5,
+      "action": "escalate",
+      "runbook": "Prisma connection-pool exhaustion / transaction timeout is recurring (refunds, store reads, storefront layout, auth all hit it). CHECK: (1) DB pool size — connection_limit on the pooled Neon URL + pgbouncer; (2) long-running / Redis-I/O-inside transactions holding connections; (3) a webhook/queue storm starving the pool. This is COMPUTE-fixable: a rolling redeploy of the API clears leaked connections as a stopgap, but the real fix is pool sizing / removing I/O from transactions. NEVER a data action."
+    },
+    {
+      "name": "inngest-coa-seed-missing",
+      "projects": "ebda-api",
+      "title_regex": "System account .* not found|seed COA first|Chart of Accounts|COA",
+      "window_h": 24,
+      "threshold": 1,
+      "action": "escalate",
+      "runbook": "Accounting side-effects are silently failing: a store is missing its Chart-of-Accounts seed, so inngest jobs throw while returning 200 (health-probe-invisible). DATA class — NEVER auto-seed. FIX: run the COA seed for the affected store id (in the error title), then replay the failed inngest event(s). Consider a signup-time guard that seeds COA before the first accounting event."
+    }
+  ]
+}

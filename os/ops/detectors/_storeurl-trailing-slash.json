@@ -1,0 +1,13 @@
+{
+  "name": "storeurl-trailing-slash",
+  "class": "bug-pattern",
+  "severity": "low",
+  "title": "storeUrl('') produces a //double-slash link on platform-host stores",
+  "detail": "storeUrl with an empty path yields /<slug>//cart on path-based platform hosts. Pass a real path or guard the empty case.",
+  "fix": "pass a concrete path to storeUrl, or normalize the trailing slash in the helper.",
+  "globs": ["**/*.ts", "**/*.tsx"],
+  "match_mode": "line-present",
+  "include_regex": "storeUrl\\(\\s*['\"]['\"]\\s*\\)",
+  "cap": 20,
+  "source_lesson": "feedback-storeurl-trailing-slash-platform-host.md"
+}

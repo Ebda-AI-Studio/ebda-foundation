@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>DR_MODE</key>
+		<string>full</string>
+		<key>HOME</key>
+		<string>__HOME__</string>
+		<key>PATH</key>
+		<string>__PATH__</string>
+	</dict>
+	<key>Label</key>
+	<string>com.ebda.os.dr-drill</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>__HOME__/.claude/scripts/dr-drill.sh</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/Library/Logs/forceai-dr-drill.log</string>
+	<key>StandardOutPath</key>
+	<string>__HOME__/Library/Logs/forceai-dr-drill.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>5</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+		<key>Weekday</key>
+		<integer>0</integer>
+	</dict>
+</dict>
+</plist>

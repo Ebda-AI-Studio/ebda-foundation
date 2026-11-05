@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>__HOME__</string>
+		<key>PATH</key>
+		<string>__PATH__</string>
+	</dict>
+	<key>Label</key>
+	<string>com.ebda.os.ebda-cf-backup</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>__HOME__/.claude/scripts/backup-ebda-cloudflare.sh</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/Library/Logs/forceai-ebda-cf-backup.log</string>
+	<key>StandardOutPath</key>
+	<string>__HOME__/Library/Logs/forceai-ebda-cf-backup.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>7</integer>
+		<key>Minute</key>
+		<integer>15</integer>
+	</dict>
+</dict>
+</plist>

@@ -1,0 +1,13 @@
+{
+  "name": "raw-sql-template-injection",
+  "class": "security-injection",
+  "severity": "high",
+  "title": "raw SQL with template interpolation (queryRawUnsafe + ${...})",
+  "detail": "String-interpolating into queryRawUnsafe is a SQL-injection sink. Use parameterized $1 placeholders (and ::type casts for dates).",
+  "fix": "switch to $queryRaw tagged template or queryRawUnsafe with bound $n params; never interpolate.",
+  "globs": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs"],
+  "match_mode": "line-present",
+  "include_regex": "queryRawUnsafe\\([^)]*\\$\\{",
+  "cap": 25,
+  "source_lesson": "feedback-prisma-queryrawunsafe-date-param-500.md"
+}
