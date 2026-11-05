@@ -28,7 +28,7 @@ Consumers (vendored, sha-pinned): Ebda Store `packages/shared/src/foundation`, E
 - `sync --target <repo> --dir <dir> --parity <path>` (needs a clean, committed foundation checkout; the lock records its commit)
 - `check [--target <repo>]` lock vs files, naming the offending file
 - `status <repo>...` locks of the repos, the latest tag (`git ls-remote`) and whether the vendored content is identical
-- `new ebda-<x> [--display "Ebda X"] [--display-ar "…"] [--no-remote] [--no-install] [--out <dir>]` scaffold a Hono + D1 + Durable Object Worker, vendor the foundation, `git init`, and (unless `--no-remote`) create `Whisky-11/ebda-<x>` privately and set `EBDA_RUNS_ON`
+- `new ebda-<x> [--display "Ebda X"] [--display-ar "…"] [--no-remote] [--no-install] [--out <dir>]` scaffold a Hono + D1 + Durable Object Worker, vendor the foundation, `git init`, and (unless `--no-remote`) create `Ebda-AI-Studio/ebda-<x>` privately and set `EBDA_RUNS_ON`
 
 ## Versioning
 
