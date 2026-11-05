@@ -1,6 +1,6 @@
 # self-healing — the OS medic (auto-remediation, not just alerting)
 
-The observability fleet (`services-watch`, `wbs-monitor`, `checkout-monitor`, `cf-workers-watch`, `anomaly-watch`) **detects + alerts** — it never mutates. This layer **acts**: when a hosted service is confirmed down, it runs a bounded, compute-only recovery and reports the outcome. So a service that falls at 3am is *fixed by 3:03am*, and Ahmad wakes to "🔧 I fixed it," not "🚨 it's broken."
+The observability fleet (`services-watch`, `msg-monitor`, `checkout-monitor`, `cf-workers-watch`, `anomaly-watch`) **detects + alerts** — it never mutates. This layer **acts**: when a hosted service is confirmed down, it runs a bounded, compute-only recovery and reports the outcome. So a service that falls at 3am is *fixed by 3:03am*, and Ahmad wakes to "🔧 I fixed it," not "🚨 it's broken."
 
 **"Confirmed down" excludes "I could not reach it."** A probe that got no HTTP response (curl exit 5/6/7/28/35/56, or `000`) says nothing about the service — it may only mean the monitoring Mac lost DNS. Because the recovery here is `railway-redeploy`, believing such a probe would **redeploy production services that were never down**. Two independent guards enforce this, deliberately kept separate:
 
@@ -31,4 +31,4 @@ The observability fleet (`services-watch`, `wbs-monitor`, `checkout-monitor`, `c
 - Complements (does not replace) the detect+alert monitors — they stay as an independent signal.
 
 ## Registered services (2026-07-05)
-`wbs-api` (Railway, redeploy) · `wbs-web` (Cloudflare Worker, wrangler rollback) · `fwb-web` (Cloudflare Worker, wrangler rollback) · `fwb-api` (Railway, redeploy). To add: append to `heal-registry.json` with `health`, `expect`, `recovery`, and the platform's service identifiers.
+`msg-api` (Railway, redeploy) · `msg-web` (Cloudflare Worker, wrangler rollback) · `store-web` (Cloudflare Worker, wrangler rollback) · `store-api` (Railway, redeploy). To add: append to `heal-registry.json` with `health`, `expect`, `recovery`, and the platform's service identifiers.

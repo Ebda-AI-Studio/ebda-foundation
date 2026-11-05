@@ -58,10 +58,10 @@ assert [i['key'] for i in digest['ongoing_top']] == ['fresh'], digest['ongoing_t
 # uptimerobot DOWN / CI FAILURE describe the state RIGHT NOW. Treating a missing
 # last_seen as 'stale' would silently drop every outage from the digest.
 assert_py "event with no last_seen is treated as current" "
-ci = {'channel':'ci','key':'ci-main:fwb','count':1,'status':'FAILURE','title':'fwb main red'}
-seen = {'ci-main:fwb': {'count':1,'status':'FAILURE'}}
+ci = {'channel':'ci','key':'ci-main:store','count':1,'status':'FAILURE','title':'store main red'}
+seen = {'ci-main:store': {'count':1,'status':'FAILURE'}}
 digest, _ = ad.build_digest([ci], seen, surge_delta=5, recent_days=7, now=${NOW})
-assert [i['key'] for i in digest['ongoing_top']] == ['ci-main:fwb'], digest['ongoing_top']
+assert [i['key'] for i in digest['ongoing_top']] == ['ci-main:store'], digest['ongoing_top']
 "
 
 assert_py "unparseable last_seen fails open into ongoing_top" "

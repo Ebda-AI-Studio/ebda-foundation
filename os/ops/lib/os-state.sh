@@ -243,7 +243,7 @@ fi
 # ── paused services ───────────────────────────────────────────────────────────
 # service_paused <name...> — true if any given name has a pause marker.
 #
-# A service can be deliberately parked to stop cloud spend (ops/wbs-power.sh).
+# A service can be deliberately parked to stop cloud spend (ops/msg-power.sh).
 # Every watcher that probes it must check this, or the pause turns into a nightly
 # Telegram alert about a service that is off ON PURPOSE. An alert everyone learns
 # to ignore is worse than no alert, and it trains people to dismiss the real one.

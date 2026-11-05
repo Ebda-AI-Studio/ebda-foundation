@@ -45,7 +45,7 @@ ORG="${SENTRY_ORG:-$OS_SENTRY_ORG}"
 repo_of() {
   case "$1" in
     ebda-api|ebda-web|ebda-admin) echo "$OS_ORG/ebda-store" ;;
-    wbs) echo "$OS_ORG/ebda-whatsapp" ;;
+    msg) echo "$OS_ORG/ebda-whatsapp" ;;
     *) echo "" ;;
   esac
 }

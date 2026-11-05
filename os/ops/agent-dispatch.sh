@@ -120,7 +120,7 @@ trap 'rm -rf "$LOCK_DIR"' EXIT
 
 # ---------------------------------------------------------------- cwd
 # Three ways the repo gets chosen, in priority order:
-#   1. INFERRED from the message itself ("fix the CORS bug in fwb")
+#   1. INFERRED from the message itself ("fix the CORS bug in store")
 #   2. STICKY, from the last `/cd` (survives across messages)
 #   3. the projects root, where the agent can search across everything
 #
@@ -354,7 +354,7 @@ ${OUT: -2500}"
 Ran in: $(basename "$CWD") ($CWD_SOURCE)
 Your message: $TEXT
 
-That usually means the request was too open-ended to land in one pass. Try naming the repo and the specific thing, e.g. \"in fwb, why is the CORS error firing\"."
+That usually means the request was too open-ended to land in one pass. Try naming the repo and the specific thing, e.g. \"in store, why is the CORS error firing\"."
   fi
 elif (( RC != 0 )); then
   log "FAILED rc=$RC in ${DUR}s :: $TEXT"

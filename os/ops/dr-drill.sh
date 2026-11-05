@@ -44,8 +44,8 @@ DRY_RUN="${DRY_RUN:-0}"
 
 # project_id : friendly : backup_dir_name  (backups at $OS_PROJECTS_DIR/_backups/<dir>/)
 PROJECTS=(
-  "crimson-king-40424588:fwb:ebda-store"
-  "spring-dew-80973306:wbs:ebda-whatsapp"
+  "crimson-king-40424588:store:ebda-store"
+  "spring-dew-80973306:msg:ebda-whatsapp"
 )
 
 BACKUPS="$OS_PROJECTS_DIR/_backups"
@@ -126,7 +126,7 @@ for entry in "${PROJECTS[@]}"; do
   # pause. Skip rather than silently spend: a paused DB is not accepting writes,
   # so there is no new state whose restorability is in question.
   if [ -f "$HOME/.whisky-os-state/${fr}-paused" ] || [ -f "$HOME/.whisky-os-state/${dir}-paused" ]; then
-    echo "  SKIP — $fr is paused (ops/wbs-power.sh status); not waking it for a drill"
+    echo "  SKIP — $fr is paused (ops/msg-power.sh status); not waking it for a drill"
     continue
   fi
   sweep_stale "$pid"

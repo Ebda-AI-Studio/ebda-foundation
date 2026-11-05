@@ -2,7 +2,7 @@
 
 tags: [BOTH]
 scope: any `.ts`/`.tsx` file, any project on the TS toolchain (Next.js apps, Express APIs, shared packages)
-sources: CLAUDE.md (code-quality rules 1–2), `security.md` (criteria 3, 11, 11a), `deps.md`, MEMORY.md feedback-fwb-apiget-double-unwrap, feedback-withrlsbypass-callback-signature, feedback-npm-override-major-pin-trap, feedback-npm-overrides-tilde-constraint-trap, feedback-pnpm-react18-19-types-coexistence, feedback-jsonparse-any-poisoning
+sources: CLAUDE.md (code-quality rules 1–2), `security.md` (criteria 3, 11, 11a), `deps.md`, MEMORY.md feedback-store-apiget-double-unwrap, feedback-withrlsbypass-callback-signature, feedback-npm-override-major-pin-trap, feedback-npm-overrides-tilde-constraint-trap, feedback-pnpm-react18-19-types-coexistence, feedback-jsonparse-any-poisoning
 
 ## Must Always
 - Validate every API-edge input with Zod (or Yup) BEFORE it touches business logic — `.parse()`/`.safeParse()` on body/query/params, never a bare `as`-cast on `req.body`. When a shared union/enum widens, widen the Zod schema in the **same commit** — TS is compile-time only, the validator is the real runtime gate.

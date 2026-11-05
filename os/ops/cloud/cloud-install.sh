@@ -171,6 +171,6 @@ echo "== installed $gen_count cloud-tier timers =="
 systemctl --user list-timers 'whisky-os-*' --no-pager 2>/dev/null | head -20
 echo
 echo ">> ON THE MAC, unload the now-duplicated launchd jobs so alerts don't double-fire:"
-echo "   for j in services-watch anomaly-watch alert-triage checkout-monitor wbs-monitor os-watch runner-hook-health ci-runner-guard cost-guard dream docs-scan; do"
+echo "   for j in services-watch anomaly-watch alert-triage checkout-monitor msg-monitor os-watch runner-hook-health ci-runner-guard cost-guard dream docs-scan; do"
 echo "     launchctl bootout gui/\$(id -u)/${OS_LAUNCHD_PREFIX}.\$j 2>/dev/null; done"
-echo "   KEEP on the Mac: ${OS_LAUNCHD_PREFIX}.neon-backup + ${OS_LAUNCHD_PREFIX}.mac-maintenance (Mac-local)."
+echo "   KEEP on the Mac: ${OS_LAUNCHD_PREFIX}.mac-maintenance (Mac-local)."

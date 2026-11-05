@@ -17,7 +17,7 @@
 # ── the Neon projects that are dumped nightly ────────────────────────────────
 # "friendly-name:neon-project-id[:neon-org-id]", one per line. friendly-name is also the
 # directory under $OS_PROJECTS_DIR/_backups/. The optional third field is only needed when a
-# project's Neon org differs from backup-all-neon.sh's default $ORG.
+# project's Neon org differs from the dump job's default org.
 #
 # Project ids are infrastructure identifiers that belong to the machine, not the repo, so the
 # list is read from BACKUP_NEON_PROJECTS or from the per-machine file

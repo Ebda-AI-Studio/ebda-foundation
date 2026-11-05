@@ -141,7 +141,7 @@ for w in data:
     #   umbra 'umbra-ci verify'    — workflow FILE DELETED; only the lingering
     #                                Actions record remains, still state=active
     #   ci-runner-verify           — on: push, but the repo has had no push since
-    #   ForceMedia gitleaks        — repo idle since its last run
+    #   example-media gitleaks        — repo idle since its last run
     # Alert fatigue is how a real dead gate gets ignored, so classify instead.
     # (a) The workflow file is gone from the default branch — GitHub keeps the
     #     Actions record forever. That is a DELETED gate, not a stale one.

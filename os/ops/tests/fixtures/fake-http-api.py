@@ -13,7 +13,7 @@ Two modes, both entirely local — no real network call, no production request:
 `error500` exists to prove the fix does not weaken real alerts: a reachable
 service returning 5xx must still FAIL and still page, exactly as before.
 
-Usage: fake-wbs-api.py <port> [healthy|error500]
+Usage: fake-msg-api.py <port> [healthy|error500]
 """
 import json
 import sys

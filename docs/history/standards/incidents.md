@@ -52,3 +52,11 @@ Across `os/standard/**` the labels "FWB" (Force Store, the predecessor store pro
 ## Playbook legacy stack (retired 2026-11-05)
 
 The previous playbook prescribed: Prisma + Postgres on Neon (pooled and direct URLs), Postgres RLS with a per-request GUC (`app.current_store_id`, `withRlsBypass`, `runInTenantContext`, non-owner role `force_app` versus owner `neondb_owner`, the owner-to-app-role cutover trap), Redis two-tier cache and `rate-limit-redis`, Inngest or BullMQ for jobs, Socket.io with `@socket.io/redis-adapter`, Redis-lock cron leader election, Railway for the API (railpack `npm ci --omit=dev` simulation) and Vercel for frontends (`vercel env ls` isolation check), `scripts/backup-db.sh` pg_dump rotation. The playbook now carries a verified "Current stack" table (Workers, D1, Durable Objects, KV, Queues, Workflows, R2, Workers AI, Vectorize, accounts service, Telegram alerts) and keeps the legacy mechanics only as marked principles.
+
+## Retired: backup-all-neon.sh (2026-11-05)
+
+`os/ops/backup-all-neon.sh` and `launchd/com.ebda.os.neon-backup.plist` were removed in Task 3 fix round 2: they dumped Neon databases of the predecessor fleet and Ebda has no Neon (NEON-ZERO). `remediation/registry.sh` `op_dr_backup` now fails loudly instead of calling it; `ebda-cf-backup` (D1/R2/DO export) is the only scheduled backup job. `lib/backup-projects.sh` stays: its Neon list defaults to empty and it still carries the extra-dirs watch used by the Cloudflare backup.
+
+## Fix round 2: lowercase service names
+
+The predecessor service names were renamed in place across `os/` (word-boundary, case-insensitive): fwb -> store, wbs -> msg (examples: `fwb-web`/`fwb-api` -> `store-web`/`store-api`, `wbs-monitor` -> `msg-monitor`, `wbs-power.sh` -> `msg-power.sh`, dr-drill map `fwb:ebda-store` -> `store:ebda-store`, `fake-wbs-api.py` -> `fake-msg-api.py`). Several referenced scripts (`msg-power.sh`, `msg-monitor.sh`, `checkout-monitor`) were never ported and are mentioned only as names. The CI guest `fwb-ci6` exists only as the default of `OS_UMBRA_VMS` (os.env and os-config.sh); everywhere else tests use the fixture name `umbra-ci6` and docs use `<umbra-vm>`. The playbook's earlier claim that Postgres/Redis/Socket.io are absent was corrected to "not bound in the Worker (stubbed); Node dev path being retired (N-17)".

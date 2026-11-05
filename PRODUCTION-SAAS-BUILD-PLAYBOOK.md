@@ -45,7 +45,7 @@ The iceberg metaphor: an MVP that "works in the demo" is ~10% of a production pr
 | **Deploy** | `wrangler deploy` from CI per app; check which Cloudflare account a config targets before deploying; a merge is not a deploy, so verify the live commit | `cf-api-deploy.yml` |
 | **Money** | integers in the smallest unit, never floats; one tested helper module | standard `money.md` |
 
-There is no Postgres, Hyperdrive, Redis, Inngest, BullMQ, Socket.io or Vercel in the current stack. Tenant isolation is structural (one `StoreDO` per store, resolver throws on an unknown store), not row-level policy.
+Postgres, Redis and Socket.io are not bound in the Worker (their code paths are stubbed there), and the Node dev path that still uses them is being retired (NEON-ZERO N-17). Hyperdrive is removed, and there is no Vercel. Tenant isolation is structural (one `StoreDO` per store, resolver throws on an unknown store), not row-level policy.
 
 **Legacy stack (retired 2026-11-05).** The earlier products ran Express + Prisma on Postgres (Neon) with row-level security via a per-request GUC, Redis rate limiting and two-tier cache, Inngest/BullMQ jobs, Socket.io with the Redis adapter, Railway for the API and Vercel for frontends. Sections of this playbook that still describe those mechanics (3.2 RLS, the Prisma/Postgres notes in 3.3, Redis in 3.5 and 4) are kept as principles with a legacy marker; the full legacy detail lives in `docs/history/`.
 
@@ -85,7 +85,7 @@ There is no Postgres, Hyperdrive, Redis, Inngest, BullMQ, Socket.io or Vercel in
 UI hide + API gate (`requireFeature → 503`) + async-job gate (check flag at handler start) + service-level dual-gate. UI-only hiding is a billing leak. Super-admin bypasses every gate consistently. Plan-baseline + per-store override resolution: `enabled = override ?? PLAN_BASELINE[plan].includes(key)`; plan changes never touch override rows.
 
 ### 3.7 Every-data-needs-a-UI
-Every table whose rows mean something to a human (merchant/admin/customer) MUST have a UI to view them. Backend-only data with no viewer is a defect. Exempt: pure infra tables (`_prisma_migrations`, rate counters). Enforce at plan time and PR time.
+Every table whose rows mean something to a human (merchant/admin/customer) MUST have a UI to view them. Backend-only data with no viewer is a defect. Exempt: pure infra tables (migration bookkeeping tables, rate counters). Enforce at plan time and PR time.
 
 ---
 
@@ -110,7 +110,7 @@ Every table whose rows mean something to a human (merchant/admin/customer) MUST 
 
 Static marketing pages are exempt from integration+load+UAT (still need unit + E2E-smoke). **No feature ships to a paying customer without all 5 green for the touched paths.**
 
-Test teardown discipline (or CI hangs 30–45 min): every module-level `setInterval`/`setTimeout` exported + cleared in `afterAll`; every database/client singleton closed in teardown; `testTimeout: 30000` for Neon cold starts; never `--forceExit` (it masks the leak).
+Test teardown discipline (or CI hangs 30–45 min): every module-level `setInterval`/`setTimeout` exported + cleared in `afterAll`; every database/client singleton closed in teardown; `testTimeout: 30000` for slow cold starts (*legacy: Neon*) starts; never `--forceExit` (it masks the leak).
 
 ---
 
@@ -123,8 +123,8 @@ Test teardown discipline (or CI hangs 30–45 min): every module-level `setInter
 - **Audit split:** prod zero-tolerance (`npm audit --audit-level=low --omit=dev`), dev gated at high (unfixable transitive vulns in tooling).
 - **`notify-failure` job** firing Telegram (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALERT_CHAT_ID`) on `failure() && main && push` — sleep-proof, this job STAYS on cloud even if everything else is self-hosted (fail-open).
 - **gitleaks** workflow paired with `.gitleaks.toml` (allowlist) + `.gitleaksignore` (documented false positives), scanning ALL branches with `fetch-depth: 0`.
-- **Branch hygiene:** only `main` (+ `preview` if staging). No `test-*`/`staging`/`vercel/*` orphans (orphan branches with old creds trip the gitleaks all-branch scan even after main is scrubbed).
-- **Pre-push hook** mirrors a CI subset (lockfile drift + prisma generate + lint + typecheck + unit) to catch issues 90s before burning runner minutes.
+- **Branch hygiene:** only `main` (+ `preview` if staging). No `test-*`/`staging`/preview-platform orphans (orphan branches with old creds trip the gitleaks all-branch scan even after main is scrubbed).
+- **Pre-push hook** mirrors a CI subset (lockfile drift + codegen (*legacy: prisma generate*) + lint + typecheck + unit) to catch issues 90s before burning runner minutes.
 
 **Runner routing (self-hosted-with-cloud-override):** the reliable pattern is `runs-on: ${{ (inputs.force_cloud || vars.USE_SELF_HOSTED != 'true') && 'ubuntu-latest' || fromJSON('["self-hosted","linux","wsl2"]') }}` — **defaults to cloud**, set repo var `USE_SELF_HOSTED=true` to route to a self-hosted box, `workflow_dispatch force_cloud` overrides per-run. **Trap:** keying runner choice on `inputs.force_cloud` ALONE means push/PR events (where `inputs` is empty) always fall through to self-hosted — so every CI run silently lands on your dev machine. Always include a non-input default (a repo `vars.*`). `notify-failure`/rescue jobs stay on `ubuntu-latest` unconditionally.
 

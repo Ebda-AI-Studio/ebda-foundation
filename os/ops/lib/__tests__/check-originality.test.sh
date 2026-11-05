@@ -28,8 +28,8 @@ echo "$out" | grep -E 'FAIL.*c\.md' >/dev/null && no "does not FAIL an unrelated
 
 # entity neutralisation: identical prose differing ONLY by product name must be caught
 D2="$(mktemp -d)"
-printf 'The tenant resolver must throw on an unresolved identifier and never default to the first row of the table because that silently serves one customer the data of another.\n' > "$D2/fwb.md"
-printf 'The tenant resolver must throw on an unresolved identifier and never default to the first row of the table because that silently serves one customer the data of another.\n' | sed 's/tenant/tenant/' > "$D2/wbs.md"
+printf 'The tenant resolver must throw on an unresolved identifier and never default to the first row of the table because that silently serves one customer the data of another.\n' > "$D2/store.md"
+printf 'The tenant resolver must throw on an unresolved identifier and never default to the first row of the table because that silently serves one customer the data of another.\n' | sed 's/tenant/tenant/' > "$D2/msg.md"
 bash "$SCRIPT" --dir "$D2" >/dev/null 2>&1 && no "catches an entity-swapped re-skin" || ok "catches an entity-swapped re-skin"
 rm -rf "$D2"
 

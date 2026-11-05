@@ -64,30 +64,30 @@ eq "max 0 refuses every rebuild" \
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 GUEST_REBUILD_STATE="$T/hist.json"
 
-eq "no state file → empty history" "$(guest_rebuild_history fwb-ci6)" ""
+eq "no state file → empty history" "$(guest_rebuild_history umbra-ci6)" ""
 
-guest_rebuild_record fwb-ci6 1000
-eq "first rebuild is recorded"  "$(guest_rebuild_history fwb-ci6)" "1000"
-guest_rebuild_record fwb-ci6 2000
-eq "history accumulates, ascending" "$(guest_rebuild_history fwb-ci6)" "1000 2000"
+guest_rebuild_record umbra-ci6 1000
+eq "first rebuild is recorded"  "$(guest_rebuild_history umbra-ci6)" "1000"
+guest_rebuild_record umbra-ci6 2000
+eq "history accumulates, ascending" "$(guest_rebuild_history umbra-ci6)" "1000 2000"
 eq "a different machine keeps its own history" "$(guest_rebuild_history other-guest)" ""
 
 guest_rebuild_record other-guest 5000
 eq "the second machine records independently" "$(guest_rebuild_history other-guest)" "5000"
-eq "…without disturbing the first"            "$(guest_rebuild_history fwb-ci6)" "1000 2000"
+eq "…without disturbing the first"            "$(guest_rebuild_history umbra-ci6)" "1000 2000"
 
 # Pruning is relative to the epoch being recorded, so the file cannot grow
 # without bound, and an ancient entry cannot keep the limit tripped forever.
-guest_rebuild_record fwb-ci6 $((2000 + WIN + 1))
+guest_rebuild_record umbra-ci6 $((2000 + WIN + 1))
 eq "recording prunes entries that fell out of the window" \
-   "$(guest_rebuild_history fwb-ci6)" "$((2000 + WIN + 1))"
+   "$(guest_rebuild_history umbra-ci6)" "$((2000 + WIN + 1))"
 
 # A corrupt state file must not crash the guard, and must not read as
 # permission either — history is empty, and the caller's own default (max>=1)
 # then applies to an empty history.
 echo 'not json{' > "$GUEST_REBUILD_STATE"
 eq "a corrupt state file reads as empty history, not a crash" \
-   "$(guest_rebuild_history fwb-ci6)" ""
+   "$(guest_rebuild_history umbra-ci6)" ""
 
 echo "guest-rebuild: $_pass passed, $_fail failed"
 [ "$_fail" -eq 0 ]

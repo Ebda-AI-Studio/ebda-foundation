@@ -23,14 +23,14 @@ mkplist code-health '<key>StartCalendarInterval</key><dict><key>Hour</key><integ
 mkplist docs-scan   '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer><key>Weekday</key><integer>0</integer></dict>'
 mkplist os-selftest '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>'
 mkplist hourly      '<key>StartCalendarInterval</key><dict><key>Minute</key><integer>15</integer></dict>'
-mkplist wbs-monitor '<key>StartInterval</key><integer>1800</integer>'
+mkplist msg-monitor '<key>StartInterval</key><integer>1800</integer>'
 mkplist deploy-drift '<key>StartInterval</key><integer>3600</integer>'
 
 eq "weekly calendar -> 1 week"     "$(job_period_seconds code-health "$TMP")"  "604800"
 eq "weekly (Sunday) -> 1 week"     "$(job_period_seconds docs-scan "$TMP")"    "604800"
 eq "daily calendar -> 1 day"       "$(job_period_seconds os-selftest "$TMP")"  "86400"
 eq "minute-only calendar -> 1 hour" "$(job_period_seconds hourly "$TMP")"      "3600"
-eq "StartInterval passes through"  "$(job_period_seconds wbs-monitor "$TMP")"  "1800"
+eq "StartInterval passes through"  "$(job_period_seconds msg-monitor "$TMP")"  "1800"
 eq "hourly interval passes through" "$(job_period_seconds deploy-drift "$TMP")" "3600"
 
 # StartInterval governs freshness when a plist carries both.
@@ -238,12 +238,12 @@ eq "schedule+RunAtLoad is scheduled, not daemon" "$(verdict sched-runatload)" "f
 # --- backup jobs keep their pinned 36h window -------------------------------
 # A missed backup is a DR gap on the FIRST night. The generic rule would give a
 # daily job 48h and let one missed night pass unremarked until the night after.
-mkplist neon-backup "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict><key>StandardOutPath</key><string>$TMP/neon.log</string>"
+mkplist ebda-cf-backup "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict><key>StandardOutPath</key><string>$TMP/neon.log</string>"
 mklog "$TMP/neon.log" 108000             # 30h
-eq "backup fresh at 30h"           "$(verdict neon-backup)" "fresh"
-eq "backup window is pinned to 36h" "$(vfield neon-backup 3)" "129600"
+eq "backup fresh at 30h"           "$(verdict ebda-cf-backup)" "fresh"
+eq "backup window is pinned to 36h" "$(vfield ebda-cf-backup 3)" "129600"
 mklog "$TMP/neon.log" 144000             # 40h — inside 48h, outside 36h
-eq "backup stale at 40h (36h window)" "$(verdict neon-backup)" "stale"
+eq "backup stale at 40h (36h window)" "$(verdict ebda-cf-backup)" "stale"
 
 # --- an ARRAY of calendar entries divides the period ------------------------
 mkplist quadjob "<key>StartCalendarInterval</key><array>

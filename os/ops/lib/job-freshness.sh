@@ -123,7 +123,7 @@ _jf_wake_epoch() {
 _jf_window() {
   local label="${1-}" period="${2-}"
   case "$label" in
-    "${OS_LAUNCHD_PREFIX}.neon-backup"|"${OS_LAUNCHD_PREFIX}.ebda-cf-backup") echo $(( 36 * 3600 )); return 0 ;;
+    "${OS_LAUNCHD_PREFIX}.ebda-cf-backup") echo $(( 36 * 3600 )); return 0 ;;
   esac
   job_stale_after "$period"
 }

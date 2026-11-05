@@ -7,7 +7,7 @@ Two loaded `com.ebda.os.*` agents on the workstation have no plist here, on purp
 
 - **`com.ebda.os.umbrad`** runs `/usr/local/bin/umbrad` — Umbra's own daemon, not a foundation
   ops script. It is Umbra's to install and version.
-- **`com.ebda.os.fwb-babysit`** was a single-incident job (store PRs #814/#815, installed
+- **`com.ebda.os.store-babysit`** was a single-incident job (store PRs #814/#815, installed
   2026-07-19) written to self-destruct once both merged. Both merged on 2026-07-19 and the
   self-destruct never fired, so it stayed loaded and idle until 2026-08-03. Unloaded and archived
   to `~/.claude/scripts/_retired/`. **A self-destructing job needs an external sweep** — if its
@@ -32,7 +32,7 @@ a watcher which grows a private pause check is how the noise comes back, and tha
 must be RUNTIME state (`~/.whisky-os-state/`), not deployed config — a `heal-registry.json`
 edit was silently reverted by the next script sync, re-arming the healer mid-pause.
 
-Why it exists: on 2026-08-06 `fwb-ci6` stopped booting, and on 2026-08-08 every repo was
+Why it exists: on 2026-08-06 `umbra-ci6` stopped booting, and on 2026-08-08 every repo was
 routed to cloud (`USE_SELF_HOSTED=false`) — but nothing told the fleet's watchers or its
 healer. `ci-runner-guard` hard-rebooted a dead guest **every 30 minutes for three days**,
 Telegramming each failure, while the `runner-health-check` crons on CRM + whatsapp fired every
@@ -66,10 +66,10 @@ wall clock, and an expired marker whose `pid=` is still a live umbra process als
 most 4h past expiry), so a guard that fires the moment the Mac wakes does not act on a rebuild
 still in flight. A failed rebuild keeps the marker
 while you finish by hand; a killed one stops covering the guest within one TTL. Delete the file
-to hand the machine back early. Why: on 2026-10-16 the guard rebooted a brand-new `fwb-ci6`
+to hand the machine back early. Why: on 2026-10-16 the guard rebooted a brand-new `umbra-ci6`
 mid-rebuild, and had to be unloaded by hand for the window.
 
-## Self-hosted runner disk (Umbra guest `fwb-ci6`)
+## Self-hosted runner disk (Umbra guest `umbra-ci6`)
 
 `runner-job-started-hook.sh` is deployed INSIDE the guest as
 `/home/umbra/hooks/job-started.sh` and wired per runner via
@@ -79,7 +79,7 @@ reads `.env` at start, so after changing it: `sudo systemctl restart 'actions.ru
 
 **The runner dirs are the long-named ones** (`actions-runner-ebda-store-1`),
 one systemd unit each. On 2026-08-03 a set of short-named duplicates
-(`actions-runner-fwb-1`, `-crm-1`, …) was found holding **13.3 GB** — leftover copies
+(`actions-runner-umbra-1`, `-crm-1`, …) was found holding **13.3 GB** — leftover copies
 from the rename migration, with identical `.runner` files (same `agentId`) and no
 systemd unit. Removed. If you see both spellings again, the short one is the leftover
 — but verify with `systemctl show <unit> -p ExecStart` before deleting, not by name.

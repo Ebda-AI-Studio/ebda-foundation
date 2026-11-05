@@ -70,11 +70,11 @@ every 30 min) and on demand. Criterion: every Force repo's `ci.yml` MUST honor `
 
 **Runner fleet (2026-07-12 cutover): Umbra first, legacy OrbStack fallback.** The
 self-hosted runners live in a local VM on the Mac. The canonical host is now the
-Umbra machine `fwb-ci6` (runner services are systemd units inside the
+Umbra machine `<umbra-vm>` (runner services are systemd units inside the
 VM, so booting it restarts them; its runners register at the ORG level, invisible to
 the repo-scoped `/actions/runners` API — a running Umbra fleet can look like zero
 runners to a naive check, so the guard judges health by the CI queue instead of that
-API). The OrbStack machine `fwb-ci` is the legacy safety net, started ONLY when the
+API). The OrbStack machine `<umbra-vm>` is the legacy safety net, started ONLY when the
 Umbra fleet is also down — running both VM fleets at once on the 16GB box causes
 memory pressure that kills runner services mid-job (observed 2026-07-12: two CI runs
 cancelled mid-`npm ci`). The guard self-heals a stopped machine (`umbra start` /
@@ -103,7 +103,7 @@ enforces each one.
 **Auto-rebuild of a corrupt guest (2026-09-16).** The guard's one DESTRUCTIVE remedy. When
 `umbra doctor --json` returns a verdict with `health: fail`, `rung: guest-disk-corrupt` and a
 `subject` naming the guard's own machine, the guard runs `umbra rebuild <machine> --yes` instead
-of standing down. Authorised by Ahmad ("rebuild it if it comes back") after fwb-ci6 corrupted
+of standing down. Authorised by Ahmad ("rebuild it if it comes back") after <umbra-vm> corrupted
 twice in two days: a reboot never recovered it (forced stop at 120s, failed readiness, the vm
 process burning 0.01s of cpu over a 10s sample) and a rebuild always did, in ~9 min.
 
@@ -163,8 +163,8 @@ Canonical shape: `template/runner-hooks/post-job-cleanup.sh` — `set +e`, run t
 real cleanup with `|| true`, and **always `exit 0`**. Keep real logic in a sibling
 `post-job-cleanup.real.sh` so the "never fail" guarantee can't be edited away.
 
-**Install / repair (on the runner host — the OrbStack `fwb-ci` Ubuntu machine, `orb -m
-fwb-ci`, not the Mac):** `bash ops/setup-runner-hooks.sh` — diagnoses the current hook
+**Install / repair (on the runner host — the OrbStack `<umbra-vm>` Ubuntu machine, `orb -m
+<umbra-vm>`, not the Mac):** `bash ops/setup-runner-hooks.sh` — diagnoses the current hook
 (prints it + its exit code so we learn *why* it failed, not just mask it), preserves
 existing logic as the `.real.sh`, writes the best-effort wrapper, idempotent. No runner
 restart needed (the hook is read fresh per job). One edit fixes all runners sharing the
@@ -224,7 +224,7 @@ reading the diff and start inspecting the runtime.
 
 ### The runner host's disk is a fleet-wide single point of failure (2026-08-23)
 
-`fwb-ci6` reached **0 bytes free of 58 G**: 18 registered runners, ~40 G of
+`<umbra-vm>` reached **0 bytes free of 58 G**: 18 registered runners, ~40 G of
 `_work` checkouts and `node_modules`. Every runner then failed to reach GitHub,
 **all 18 registrations went offline**, and four repos sat with runs that could
 never start. Nothing watched the disk, so the first symptom was CI having been
@@ -247,7 +247,7 @@ sources: stray-process-on-shared-runner-poisons-ci
 
 ### A shared runner host turns every per-job resource into a contended one (2026-08-23)
 
-Scaling `fwb-ci6` from 6 to 18 runner instances bought throughput and three outages. Each was a
+Scaling `<umbra-vm>` from 6 to 18 runner instances bought throughput and three outages. Each was a
 shared resource that simply was not contended at 6 instances:
 
 - **Disk** — 18 × ~2.5 GB of `_work` filled a 58 GB disk to **0 bytes**; the whole fleet went
@@ -294,7 +294,7 @@ Learned on the course-platform build; sibling of `feedback-partial-deploy-from-p
 
 
 ## Runner focus — runners are ON-DEMAND (2026-10-08)
-**Standard:** the Umbra guest `fwb-ci6` (6 CPU / 6 GiB, disk on the external SSD — never move it)
+**Standard:** the Umbra guest `<umbra-vm>` (6 CPU / 6 GiB, disk on the external SSD — never move it)
 runs only the runners of the repos that are using CI right now. Everything else is stopped AND
 disabled, so the whole guest RAM goes to the repo that needs it. 22 always-on runner services
 for ~19 repos plus two load hangs in one day (2026-10-08) is the failure this prevents.
@@ -310,7 +310,7 @@ for ~19 repos plus two load hangs in one day (2026-10-08) is the failure this pr
   are unchanged and judged on the focused runners. An unreadable focus file disables healing
   and alerts (fail closed: healing blind would restart runners deactivated on purpose).
 - Auto-on: each guard cycle runs `runner-focus.sh auto`, which turns ON a deactivated repo whose
-  job has been queued for a self-hosted label (`umbra-ci`/`self-hosted`) for > 3 min. It only
+  job has been queued for a self-hosted label (`<umbra-vm>`/`self-hosted`) for > 3 min. It only
   ever turns runners on. Org-level runners (ebda) are never auto-handled. Reset with
   `runner-focus.sh only <slug>...` when the work is done.
 - Tests: `ops/tests/ci-runner-guard.test.sh` ("a deactivated runner is not healed").

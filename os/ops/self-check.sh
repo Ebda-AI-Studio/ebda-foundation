@@ -247,7 +247,7 @@ ops/docs-scan.sh               ← structural doc-drift detector across prod rep
 ops/blast-radius.sh            ← graphify-driven PR blast-radius reviewer (on-demand)
 ops/propagate.sh               ← cross-repo change propagation engine (on-demand)
 ops/safe-to-admin-merge.sh     ← gate before any admin-merge; checks security checks (on-demand)
-ops/wbs-monitor.sh             ← whatsapp liveness + authenticated login/me correctness probe (scheduled)
+ops/msg-monitor.sh             ← whatsapp liveness + authenticated login/me correctness probe (scheduled)
 ops/ci-runner-guard.sh         ← bidirectional runner guard: cloud-exhaustion↔self-hosted saturation (scheduled)
 ops/deploy-drift.sh            ← prod deploy-freshness check vs main HEAD per service (scheduled)
 ops/self-check.sh              ← this script; regenerates ARCHITECTURE.md + coherence check (on-demand)

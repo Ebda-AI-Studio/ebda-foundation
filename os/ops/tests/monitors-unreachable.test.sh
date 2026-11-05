@@ -15,7 +15,7 @@
 #   2. a real 500 from a REACHABLE service still fails and still pages (M-2)
 #   3. host-offline produces ONE line, no per-service outage text, and NO page (M-1)
 #   4. the credential wording only appears on a real HTTP status (M-3)
-#   (the wbs/checkout/heal-watch cases and the mutation checks went with those scripts; see os/MANIFEST.md)
+#   (the msg/checkout/heal-watch cases and the mutation checks went with those scripts; see os/MANIFEST.md)
 #
 # NOTHING here touches the network, production, or Telegram: every target is
 # 127.0.0.1 (a closed port for guaranteed ECONNREFUSED, or a local fixture),

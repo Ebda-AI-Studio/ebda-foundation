@@ -9,7 +9,7 @@
 		<key>PATH</key>
 		<string>__PATH__</string>
 		<key>RUNNER_UMBRA_MACHINE</key>
-		<string>fwb-ci6</string>
+		<string>umbra-ci6</string>
 	</dict>
 	<key>Label</key>
 	<string>com.ebda.os.ci-runner-guard</string>

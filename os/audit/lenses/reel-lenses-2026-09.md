@@ -438,7 +438,7 @@ what they are.
 pages sampled. Answer engines queried in Arabic get a mismatched summary.
 **A2.** Brand entity split: a web search for "where to buy <brand> in <country>" answered from a
 separate WordPress site (`<brand>.com`) that still has an indexed default "Hello world!"
-post; the store itself indexed with a bare title "PecannBee" and a snippet of only
+post; the store itself indexed with a bare title "ExampleShop" and a snippet of only
 phone+email.
 **A3.** No `hreflang` alternates anywhere; homepage has no `rel=canonical` (product pages do);
 `/en/products/<slug>` returned `lang="ar"` with the store-wide description instead of an

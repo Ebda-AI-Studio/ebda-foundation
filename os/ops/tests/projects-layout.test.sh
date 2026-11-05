@@ -19,7 +19,7 @@ pass() { echo "PASS: $1"; _pass=$((_pass+1)); }
 fail() { echo "FAIL: $1"; _fail=$((_fail+1)); }
 
 R="$TMP/projects"; mkrepo() { mkdir -p "$R/$1/.git"; }
-mkrepo Ebda-AI-Studio/internal-projects/fwb
+mkrepo Ebda-AI-Studio/internal-projects/store
 mkrepo Whisky-11/clients/globex/globex-menu
 mkrepo Whisky-11/internal-projects/whisky11-site
 mkrepo Whisky-11/clients/initech/ERP
@@ -33,7 +33,7 @@ export PROJECTS_ROOT="$R"
 # shellcheck source=/dev/null
 . "$OPS/lib/projects-layout.sh" || { echo "FAIL: cannot source lib/projects-layout.sh"; exit 1; }
 
-[ "$(resolve_repo_dir fwb)" = "$R/Ebda-AI-Studio/internal-projects/fwb" ] && pass "resolves an internal project" || fail "internal project: got '$(resolve_repo_dir fwb)'"
+[ "$(resolve_repo_dir store)" = "$R/Ebda-AI-Studio/internal-projects/store" ] && pass "resolves an internal project" || fail "internal project: got '$(resolve_repo_dir store)'"
 [ "$(resolve_repo_dir globex-menu)" = "$R/Whisky-11/clients/globex/globex-menu" ] && pass "client repo resolves to its NEW slot, not the legacy symlink" || fail "client repo: got '$(resolve_repo_dir globex-menu)'"
 [ "$(resolve_repo_dir ERP)" = "$R/Whisky-11/clients/initech/ERP" ] && pass "whisky-11 client resolves" || fail "whisky-11 client"
 [ "$(resolve_repo_dir ebda-store)" = "$R/Ebda-AI-Studio/internal-projects/ebda-store" ] && pass "ebda-store canonical name resolves" || fail "ebda-store canonical resolution"
@@ -63,8 +63,8 @@ out=$(PROJECTS_LAYOUT_PENDING="$TMP/pending.tsv" bash "$OPS/projects-layout-chec
 # coverage hole (2026-09-25: agent-dispatch pointed at a deleted digital-card,
 # blast-radius at ebda-whatsapp and _clients/digital-card — never real).
 rm -rf "$R/_clients/busy-repo"; mkdir -p "$TMP/scripts"
-printf 'A="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/fwb"\n' > "$TMP/scripts/ok.sh"
-sed -i.bak 's#ebda-os/internal-projects/fwb#Ebda-AI-Studio/internal-projects/fwb#' "$TMP/scripts/ok.sh" 2>/dev/null; rm -f "$TMP/scripts/ok.sh.bak"
+printf 'A="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/store"\n' > "$TMP/scripts/ok.sh"
+sed -i.bak 's#ebda-os/internal-projects/store#Ebda-AI-Studio/internal-projects/store#' "$TMP/scripts/ok.sh" 2>/dev/null; rm -f "$TMP/scripts/ok.sh.bak"
 out=$(bash "$OPS/projects-layout-check.sh" --refs "$TMP/scripts" 2>&1); rc=$?
 [ $rc -eq 0 ] && pass "a script naming a real project path passes --refs" || fail "real path flagged: $out"
 printf 'B="$HOME/Desktop/projects/_clients/digital-card"\n' > "$TMP/scripts/dead.sh"
@@ -73,7 +73,7 @@ out=$(bash "$OPS/projects-layout-check.sh" --refs "$TMP/scripts" 2>&1); rc=$?
 
 # a binary file (e.g. a .pyc) that embeds a path must not be reported — grep prints
 # "Binary file … matches", which the checker once read as a dead path.
-rm -f "$TMP/scripts/dead.sh"; printf 'x\0y Desktop/projects/Ebda-AI-Studio/internal-projects/fwb\0' > "$TMP/scripts/cache.pyc"
+rm -f "$TMP/scripts/dead.sh"; printf 'x\0y Desktop/projects/Ebda-AI-Studio/internal-projects/store\0' > "$TMP/scripts/cache.pyc"
 out=$(bash "$OPS/projects-layout-check.sh" --refs "$TMP/scripts" 2>&1); rc=$?
 [ $rc -eq 0 ] && ! echo "$out" | grep -q 'Binary' && pass "binary files are skipped by --refs" || fail "binary file reported (rc=$rc): $out"
 
@@ -82,7 +82,7 @@ out=$(bash "$OPS/projects-layout-check.sh" --refs "$TMP/scripts" 2>&1); rc=$?
 # 2026-09-25 reorg put repos 2-3 levels deep. It must return every slot repo,
 # never a worktree/backup/archive, never a symlink, and legacy _clients repos too.
 got=$(list_repo_roots | sed "s#^$R/##" | LC_ALL=C sort | tr '\n' ' ')
-want="Ebda-AI-Studio/clients/acme/acme-site Ebda-AI-Studio/internal-projects/ebda-store Ebda-AI-Studio/internal-projects/fwb Personal/projects/mypovonai Whisky-11/clients/globex/globex-menu Whisky-11/clients/initech/ERP Whisky-11/internal-projects/whisky11-site _clients/busy-repo "
+want="Ebda-AI-Studio/clients/acme/acme-site Ebda-AI-Studio/internal-projects/ebda-store Ebda-AI-Studio/internal-projects/store Personal/projects/mypovonai Whisky-11/clients/globex/globex-menu Whisky-11/clients/initech/ERP Whisky-11/internal-projects/whisky11-site _clients/busy-repo "
 mkrepo _clients/busy-repo
 got=$(list_repo_roots | sed "s#^$R/##" | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "$want" ] && pass "list_repo_roots finds every slot repo + legacy, skips links/worktrees/backups" || fail "list_repo_roots: got '$got'"
@@ -93,7 +93,7 @@ hand=$(grep -rnE '(\$PROJECTS|\$\{PROJECTS\}|\$PROJECTS_DIR)"?/(\*|_\*|_clients/
 
 # files that never run — *.bak* copies and _retired/ — must not fail --refs:
 # 2026-09-25 the installed dir held update-memory-pipeline.sh.bak-20260814-1541 and
-# _retired/fwb-babysit-*.sh, which would have failed os-selftest every day.
+# _retired/store-babysit-*.sh, which would have failed os-selftest every day.
 rm -f "$TMP/scripts/cache.pyc"; mkdir -p "$TMP/scripts/_retired"
 printf 'X="$HOME/Desktop/projects/gone-repo"\n' > "$TMP/scripts/old.sh.bak-20260814-1541"
 printf 'Y="$HOME/Desktop/projects/gone-repo"\n' > "$TMP/scripts/_retired/old.sh"

@@ -90,12 +90,12 @@ okflag=$(python3 -c "import json;print(json.load(open('$ST'))['ok'])" 2>/dev/nul
 # --- 4. pnpm repo + sub-dir lockfiles are audited; vulns reported --------------
 R="$T/t4"
 mkrepo "$R/Whisky-11/clients/c/pn"; lock "$R/Whisky-11/clients/c/pn/pnpm-lock.yaml"
-mkrepo "$R/Ebda-AI-Studio/internal-projects/wbs"
-lock "$R/Ebda-AI-Studio/internal-projects/wbs/backend/package-lock.json"; lock "$R/Ebda-AI-Studio/internal-projects/wbs/frontend/package-lock.json"
+mkrepo "$R/Ebda-AI-Studio/internal-projects/msg"
+lock "$R/Ebda-AI-Studio/internal-projects/msg/backend/package-lock.json"; lock "$R/Ebda-AI-Studio/internal-projects/msg/frontend/package-lock.json"
 echo '{"advisories":{"1":{"module_name":"lodash","severity":"critical","url":"https://github.com/advisories/GHSA-aaaa-bbbb-cccc"}},"metadata":{"vulnerabilities":{"critical":1,"high":0}}}' > "$T/pn.json"
 PNPM_JSON_FILE="$T/pn.json" run_audit "$R"
 grep -q "pnpm audit --prod --json @ .*/pn$" "$T/shim.log" && pass "pnpm-lock.yaml repo audited with pnpm audit --prod --json" || fail "pnpm not audited: $(cat "$T/shim.log")"
-[ "$(grep -c '^npm audit' "$T/shim.log")" = 2 ] && grep -q "wbs/backend" "$T/shim.log" && grep -q "wbs/frontend" "$T/shim.log" \
+[ "$(grep -c '^npm audit' "$T/shim.log")" = 2 ] && grep -q "msg/backend" "$T/shim.log" && grep -q "msg/frontend" "$T/shim.log" \
   && pass "sub-dir lockfiles (backend + frontend) each audited" || fail "sub-dir lockfiles: $(cat "$T/shim.log")"
 echo "$OUT" | grep -q "lodash (critical)" && [ "$RC" = 0 ] && [ "$(field "d['ok']")" = warn ] \
   && [ "$(field "d['detail']['vuln_repos']")" = 1 ] && pass "pnpm critical reported (status warn, vuln_repos=1, status keys kept)" || fail "pnpm vuln: rc=$RC out=$OUT"

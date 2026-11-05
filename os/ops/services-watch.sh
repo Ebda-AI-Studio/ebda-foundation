@@ -139,7 +139,7 @@ probe_uptimerobot() {
     IFS='|' read -ra _mons <<< "$downmons"
     for m in "${_mons[@]}"; do
       case "$m" in
-        whatsapp|wbs|whatsapp\ *) service_paused wbs 2>/dev/null && { skip "uptimerobot whatsapp (paused on purpose)"; continue; } ;;
+        whatsapp|msg|whatsapp\ *) service_paused msg 2>/dev/null && { skip "uptimerobot whatsapp (paused on purpose)"; continue; } ;;
       esac
       kept="${kept:+$kept|}$m"
     done
@@ -328,9 +328,9 @@ fi
 # manual redeploy, a resume that forgot the marker — trips this on the next run.
 # Counts as HARD: a pause silently not holding is the cost problem returning
 # under a green dashboard.
-if service_paused wbs 2>/dev/null && [ -x "$HERE/wbs-power.sh" ]; then
-  if ! bash "$HERE/wbs-power.sh" enforce >/dev/null 2>&1; then
-    down "whatsapp is marked PAUSED but its API is answering — the pause is NOT holding. Known cause: Railway GitHub auto-deploy on a push to main (any merge does it). Re-pause: ops/wbs-power.sh pause — or if it was resumed deliberately, ops/wbs-power.sh resume (clears the marker + SERVICE_PAUSED so CI smoke tests run again)."
+if service_paused msg 2>/dev/null && [ -x "$HERE/msg-power.sh" ]; then
+  if ! bash "$HERE/msg-power.sh" enforce >/dev/null 2>&1; then
+    down "whatsapp is marked PAUSED but its API is answering — the pause is NOT holding. Known cause: Railway GitHub auto-deploy on a push to main (any merge does it). Re-pause: ops/msg-power.sh pause — or if it was resumed deliberately, ops/msg-power.sh resume (clears the marker + SERVICE_PAUSED so CI smoke tests run again)."
   fi
 fi
 

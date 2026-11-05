@@ -36,7 +36,7 @@ cd "$(dirname "$0")" || exit 1
 # verdict would be a "command not found" that this script's own `|| true` style
 # would swallow, and the section would report nothing at all while looking fine.
 . ./lib/job-freshness.sh 2>/dev/null || . "$HOME/.claude/scripts/lib/job-freshness.sh" 2>/dev/null || true
-# The backup project list + pause rule, shared with ops/backup-all-neon.sh so the
+# The backup project list + pause rule, shared with the backup jobs so the
 # checker cannot watch a narrower fleet than the writer writes.
 . ./lib/backup-projects.sh 2>/dev/null || . "$HOME/.claude/scripts/lib/backup-projects.sh" 2>/dev/null || true
 
@@ -182,7 +182,7 @@ check_plist_freshness() {
     # never produced output, which is the incident itself.
     never-ran)
       case "$label" in
-        "${OS_LAUNCHD_PREFIX}.neon-backup"|"${OS_LAUNCHD_PREFIX}.ebda-cf-backup")
+        "${OS_LAUNCHD_PREFIX}.ebda-cf-backup")
           add_high "$label: loaded, but its declared log does not exist ($log_path) — this backup has never produced output. Treat as NOT running."
           _fail "$label: declared log absent — backup has never run" ;;
         *)
@@ -197,11 +197,11 @@ check_plist_freshness() {
       add_info "$label: no log yet, but its plist is only ${age}s old against a ${period}s cadence — it cannot be late before its first slot." ;;
 
     not-loaded)
-      # A job unloaded BY the pause is not an unregistered job — ops/wbs-power.sh
-      # unloads wbs-monitor deliberately, and resume reloads it.
+      # A job unloaded BY the pause is not an unregistered job — ops/msg-power.sh
+      # unloads msg-monitor deliberately, and resume reloads it.
       case "$label" in
-        "${OS_LAUNCHD_PREFIX}.wbs-monitor")
-          service_paused wbs 2>/dev/null && { _info "$label: SKIPPED — unloaded by the whatsapp pause"; return 0; } ;;
+        "${OS_LAUNCHD_PREFIX}.msg-monitor")
+          service_paused msg 2>/dev/null && { _info "$label: SKIPPED — unloaded by the whatsapp pause"; return 0; } ;;
       esac
       add_medium "$label: not loaded in launchctl and no log found — job may be unregistered"
       _fail "$label: not loaded in launchctl and no log" ;;
@@ -515,12 +515,12 @@ if ! command -v backup_watch_names >/dev/null 2>&1; then
   _fail "artifact: backup project list unavailable — dump freshness unchecked"
 else
 for proj in $(backup_watch_names); do
-  # A parked project is deliberately skipped by backup-all-neon.sh, so it CANNOT
+  # A parked project is deliberately skipped by the dump job, so it CANNOT
   # have a fresh dump — flagging it HIGH every run puts a permanent FAIL floor
   # on the OS health check and trains everyone to read FAIL as normal. Nothing is
   # writing to it either, so the pre-pause dump still represents the data exactly.
   if backup_project_paused "$proj"; then
-    _info "artifact: $proj SKIPPED — paused on purpose (ops/wbs-power.sh status)"
+    _info "artifact: $proj SKIPPED — paused on purpose (ops/msg-power.sh status)"
     continue
   fi
   # Age in hours of the newest non-truncated dump. Computed with python3, NOT
@@ -534,7 +534,7 @@ for proj in $(backup_watch_names); do
   # 10KB floor, so widening the watch list to every project would have created a
   # permanent two-FAIL floor on day one. Size is the WRONG test for validity
   # anyway, and it is already done properly where the data is in hand:
-  # backup-all-neon.sh counts actual COPY rows and fails when rows < tables (the
+  # the dump job counted actual COPY rows and fails when rows < tables (the
   # check that would have caught the 2026-08-02 CRM schema-only disaster). This
   # floor only has to reject a truncated or empty .gz; freshness is its job.
   newest_age_h=$(BKP="$BK/$proj" python3 -c '

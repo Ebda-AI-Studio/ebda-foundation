@@ -5,12 +5,11 @@
 # while. SEVEN scheduled monitors then reported their targets as broken, each
 # naming a different and mutually contradictory cause:
 #
-#   wbs-monitor      "whatsapp auth: login FAILED (HTTP 000) — auth is broken for all users"
+#   msg-monitor      "whatsapp auth: login FAILED (HTTP 000) — auth is broken for all users"
 #   checkout-monitor "catalogue/store-resolve FAILED"           (both live stores)
 #   cf-workers-watch "could not verify the token (CF API unreachable?)"
 #   deploy-drift     "Railway API query failed (check RAILWAY_API_TOKEN)"
 #   services-watch   "PostHog API auth FAILED or no project — check POSTHOG_API_KEY"
-#   neon-backup      "Done. 0 succeeded, 5 failed."
 #
 # Every service was healthy minutes later. The tell was in the same logs: the
 # Telegram sends failed too — `curl: (6) Could not resolve host: api.telegram.org`,

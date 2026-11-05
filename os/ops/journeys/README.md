@@ -16,7 +16,7 @@ On `ok:false` the runner emits a **HIGH** finding (`class: "journey-fail"`) to `
 
 ## Writing a new journey
 
-1. Copy `_template.mjs` to `<descriptive-name>.mjs` (e.g. `wbs-login.mjs`).
+1. Copy `_template.mjs` to `<descriptive-name>.mjs` (e.g. `msg-login.mjs`).
 2. Name the `JOURNEY_NAME` constant to match the file basename.
 3. Pick the required env var(s) — document them below and in `~/.whisky-services.env`.
 4. If env is unset → print `{ok:true, skipped:true, detail:"..."}` and `process.exit(0)`. Never fail on missing creds.
@@ -47,7 +47,7 @@ Set these in `~/.whisky-services.env` on the monitoring Mac to enable real prod 
 ### store (Force Store) journeys
 
 ```bash
-# fwb-storefront-smoke.mjs  -- REQUIRED: with this unset every journey SKIPS and
+# store-storefront-smoke.mjs  -- REQUIRED: with this unset every journey SKIPS and
 # journey-monitor reports WARN "BLIND: all journeys skipped" (nothing was checked).
 JOURNEY_STORE_STORE_URL="https://shop.example.com"
 
@@ -85,7 +85,7 @@ JOURNEY_TEMPLATE_MARKER=""
 
 | File | Env required | What it asserts |
 |---|---|---|
-| `fwb-storefront-smoke.mjs` | `JOURNEY_STORE_STORE_URL` | GET store URL → HTTP 200 AND structural storefront markers in HTML (product grid / cart / nav) — not just 200 |
+| `store-storefront-smoke.mjs` | `JOURNEY_STORE_STORE_URL` | GET store URL → HTTP 200 AND structural storefront markers in HTML (product grid / cart / nav) — not just 200 |
 
 ## Scheduling
 

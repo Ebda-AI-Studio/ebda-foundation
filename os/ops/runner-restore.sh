@@ -8,15 +8,15 @@
 # so calling it from the event route is safe at any cadence.
 #
 # HISTORY — why this is now a delegator. It used to be a one-shot restorer for
-# the 2026-07-13 outage: wait for host memory, boot `fwb-ci5`, then REGISTER two
+# the 2026-07-13 outage: wait for host memory, boot `umbra-ci5`, then REGISTER two
 # repo-scoped runners named after the guest and flip repos back to self-hosted.
 # By 2026-08-03 that was both dead and dangerous:
 #
-#   * fwb-ci5 was DELETED 2026-07-30, so `umbra list | grep "^fwb-ci5 "` matched
+#   * umbra-ci5 was DELETED 2026-07-30, so `umbra list | grep "^umbra-ci5 "` matched
 #     nothing and the script early-exited on every tick — inert for weeks while
 #     still showing up in `launchctl list` as a working safety net.
 #   * The one guest that exists, $OS_VM, already runs NINE correctly-named
-#     runner services as systemd units. Renaming fwb-ci5 -> $OS_VM would have
+#     runner services as systemd units. Renaming umbra-ci5 -> $OS_VM would have
 #     re-armed the registration path and stacked duplicate, wrongly-named runners
 #     on top of them. The rename was the destructive option, not the fix.
 #

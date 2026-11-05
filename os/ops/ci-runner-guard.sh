@@ -150,7 +150,7 @@ runner_online() {
 
 # The self-hosted runner lives in a local Umbra VM on this Mac. Canonical host
 # since the 2026-07-30 rebuild is $OS_VM (the runner is a systemd unit inside
-# it, so booting the VM restarts it). fwb-ci5, fwb-ci2 + the OrbStack fwb-ci machine are
+# it, so booting the VM restarts it). umbra-ci5, umbra-ci2 + the OrbStack umbra-ci machine are
 # retired. Heal Umbra first so this guard never resurrects a stale host.
 # Returns 0 when a runner is back online. Overrides: RUNNER_UMBRA_MACHINE /
 # RUNNER_ORB_MACHINE.
@@ -418,7 +418,7 @@ except Exception:
 
 # Count of ACTIVE actions.runner systemd units inside the Umbra VM. The VM can be
 # running while runner units are dead (oom-kill under a heavy build — observed
-# 2026-07-12, fwb-ci2 primary killed Result=oom-kill). The in-VM probe is the
+# 2026-07-12, umbra-ci2 primary killed Result=oom-kill). The in-VM probe is the
 # STRONGER liveness signal: a unit can be dead while GitHub still lists the
 # runner. (It is NOT the only one — the runners are REPO-scoped and do show up
 # in repo /actions/runners; verified 2026-08-03. An earlier comment here claimed
@@ -540,7 +540,7 @@ any_runner_online() {
 # shows running but SSH is unreachable AND no runner reports online to GitHub.
 # A service restart (heal_umbra_runners) needs SSH, so it cannot recover a
 # wedged guest — only a reboot can. Root cause of the ~3h CI stall on
-# 2026-07-17: fwb-ci5's OS hung (`Connection reset by peer`), runner OFFLINE,
+# 2026-07-17: umbra-ci5's OS hung (`Connection reset by peer`), runner OFFLINE,
 # and the guard misread SSH-dead as "busy" and never rebooted. Returns 0 when a
 # runner is back online after the reboot.
 reboot_guest() {
@@ -865,7 +865,7 @@ esac
 # repo /actions/runners API); the org-scoped blind-spot handling below is kept
 # for the legacy/future org-registered setup.
 # Canonical since the 2026-07-30 rebuild: ONE Umbra guest ($OS_VM) hosting the
-# repo-scoped runners. fwb-ci5 and fwb-ci2 were DELETED that day — do NOT
+# repo-scoped runners. umbra-ci5 and umbra-ci2 were DELETED that day — do NOT
 # default to either or this whole block silently no-ops against a machine that
 # does not exist. Both overridable via RUNNER_UMBRA_MACHINE / RUNNER_INSTANCE_COUNT.
 # Expected = what is installed in the VM right now, not a constant. An explicit

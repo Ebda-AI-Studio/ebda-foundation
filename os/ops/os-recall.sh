@@ -58,7 +58,7 @@ SEE (inputs the OS reads):
                      Sentry/UptimeRobot/PostHog/Railway/Neon land in Telegram.
                      Creds: ~/.whisky-services.env (GMAIL_IMAP_*).
   • Health/monitors  ~/.whisky-os-state/*-status.json — every subsystem (services, checkout,
-                     wbs, cf-workers, deploy-drift, dr-drill, neon-recover, cost, backup, …).
+                     msg, cf-workers, deploy-drift, dr-drill, neon-recover, cost, backup, …).
   • Knowledge graph  scoped memory graph + Obsidian vault graph (graphify) — recall via THIS script.
   • Event bus        ~/.whisky-os-state/events.ndjson + zero-inbox.ndjson (the live SEE stream).
 

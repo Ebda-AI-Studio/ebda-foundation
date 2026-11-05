@@ -29,7 +29,7 @@
  *   {"journey":"my-journey","ok":true,"skipped":true,"detail":"JOURNEY_MY_URL not set — skipping"}
  *
  * Keep journeys focused: one user goal per file. A journey should take < 10s.
- * Name the file after the journey: ops/journeys/fwb-add-to-cart.mjs
+ * Name the file after the journey: ops/journeys/store-add-to-cart.mjs
  */
 
 // ---- 1. Read env ----

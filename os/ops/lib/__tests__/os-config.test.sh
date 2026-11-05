@@ -21,6 +21,6 @@ out="$(run)"; [ "$out" = "Ebda-AI-Studio Whisky-11 voidengineer-911" ] && pass "
 # no os.env reachable (library copied elsewhere): built-in defaults, never an empty identity
 mkdir -p "$TMP/lonely"; cp "$ROOT/lib/os-config.sh" "$TMP/lonely/"
 out="$(env -i HOME="$TMP/home" PATH="$PATH" bash -c ". '$TMP/lonely/os-config.sh' && os_config_load && echo \"\$OS_REPO_SLUG|\$OS_VM|\$OS_ORG\"")"
-[ "$out" = "Ebda-AI-Studio/ebda-foundation|fwb-ci6|Ebda-AI-Studio" ] && pass "no os.env anywhere: built-in defaults apply" || fail "built-in defaults: $out"
+[ "$out" = "Ebda-AI-Studio/ebda-foundation|$(sed -n 's/.*OS_UMBRA_VMS:-\([^}]*\)}.*/\1/p' "$(dirname "$0")/../../../config/os.env")|Ebda-AI-Studio" ] && pass "no os.env anywhere: built-in defaults apply" || fail "built-in defaults: $out"
 
 echo "os-config: $_pass passed, $_fail failed"; [ "$_fail" -eq 0 ]

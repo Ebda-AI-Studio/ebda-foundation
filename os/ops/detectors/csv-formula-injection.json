@@ -14,5 +14,5 @@
   "include_regex": "Content-Type[^\\n]*csv|Content-Disposition[^\\n]*csv|csv-stringify|toCsv|exportCsv|new Blob\\([^)]*text/csv",
   "absent_regex": "csvSanitize|sanitizeCsv|formulaGuard|\\^\\[=\\+|escapeCsv|neutralize|neutralise|csvField|BulkService|xlsxBufferToImportCsv",
   "cap": 20,
-  "source_lesson": "feedback-fwb-browser-attack-surface-hardening.md"
+  "source_lesson": "feedback-store-browser-attack-surface-hardening.md"
 }

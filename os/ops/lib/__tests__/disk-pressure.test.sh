@@ -33,7 +33,7 @@ assert_eq "custom crit"         "$(disk_pressure_level 75 50 70)" "crit"
 
 
 # ── host readers (added 2026-09-04) ───────────────────────────────────────────
-# A 98%-full HOST wedged fwb-ci6: the guest booted, never reached sshd, and
+# A 98%-full HOST wedged umbra-ci6: the guest booted, never reached sshd, and
 # console.log stayed 0 bytes. Nothing read the host disk — this guard measured
 # only the GUEST, and mac-maintenance.sh's 20GB threshold ran WEEKLY, so the
 # disk crossed from healthy to fleet-fatal inside one window.

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # runner-focus.sh must not START runners into a memory-starved guest, and must not start them as a wave.
 set -uo pipefail
+export OS_UMBRA_VMS=umbra-ci6   # fixture guest name; the shipped default lives only in os.env
 cd "$(dirname "$0")/.."; OPS="$(pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
@@ -13,7 +14,7 @@ cat > "$TMP/bin/umbra" <<STUB
 cmd="\${4:-}"
 case "\$cmd" in
   *MemAvailable*) [ "\${FAKE_AVAIL:-3000}" = none ] || echo "\${FAKE_AVAIL:-3000}" ;;
-  *list-unit-files*) printf 'actions.runner.Org-alpha.fwb-ci6-alpha-1.service\nactions.runner.Org-alpha.fwb-ci6-alpha-2.service\nactions.runner.Org-beta.fwb-ci6-beta-1.service\n' ;;
+  *list-unit-files*) printf 'actions.runner.Org-alpha.umbra-ci6-alpha-1.service\nactions.runner.Org-alpha.umbra-ci6-alpha-2.service\nactions.runner.Org-beta.umbra-ci6-beta-1.service\n' ;;
   *"enable --now"*) echo "\$cmd" >> "$TMP/starts" ;;
 esac
 exit 0

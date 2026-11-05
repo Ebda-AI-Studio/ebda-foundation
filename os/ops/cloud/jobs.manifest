@@ -4,7 +4,7 @@
 #
 # OWNERSHIP PARTITION (no job runs in both places → no double-alerts):
 #   - cloud VM owns everything in THIS file.
-#   - the Mac keeps ONLY inherently-Mac-local jobs (neon-backup =
+#   - the Mac keeps ONLY inherently-Mac-local jobs (ebda-cf-backup =
 #     local pg_dump to the Mac disk; mac-maintenance = Mac storage hygiene). When the cloud tier is live,
 #     UNLOAD the duplicated launchd jobs on the Mac (cloud-install.sh prints the list).
 #
@@ -20,7 +20,7 @@ services-watch     | interval:900   | --notify
 anomaly-watch      | interval:900   | --notify
 alert-triage       | interval:1800  | --notify
 checkout-monitor   | interval:1800  | --notify
-wbs-monitor        | interval:1800  | --notify
+msg-monitor        | interval:1800  | --notify
 os-watch           | interval:7200  | --notify
 
 # CI health (the runner guards)

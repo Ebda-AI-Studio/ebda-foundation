@@ -104,7 +104,7 @@ our highest-exposure live surface.
 - PII (phone numbers, names, order details) must be masked before logging — same gate as
   `security.md` #6, doubly important here because logs may later be fed back into an LLM
   context (e.g. a debugging agent reading logs = untrusted-content re-entry point).
-  reference: `feedback-wbs-bot-state-machine-design-rules.md`.
+  reference: `feedback-msg-bot-state-machine-design-rules.md`.
 - The WhatsApp webhook is already signature-validated at the edge — that stops spoofed
   senders, not injected instructions from a *real* sender's message body. The two gates
   are independent; both are required.
@@ -156,7 +156,7 @@ write + git access — the "external comms" leg is a live `git push` / `gh pr cr
   act on. `require_projects_access()` / `require_projects_access_critical()`
   (`ops/lib/os-state.sh`) gate every scheduled desktop-reader: 21 scan/act scripts
   abort quietly (`write_status … warn`) when blind; the handful whose non-run is
-  itself an incident (`backup-all-neon.sh`, `mac-maintenance.sh`,
+  itself an incident (`mac-maintenance.sh`,
   `update-memory-pipeline.sh`, `migrate-claude-home.sh`) alert P1 instead; `os-selftest.sh`
   reports blindness as a CRITICAL finding and skips unknowable checks rather than
   hiding them. The real fix is a one-time Full Disk Access grant to `/bin/bash`

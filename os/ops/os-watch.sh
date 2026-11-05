@@ -162,7 +162,7 @@ probe_repo_prs() {
 }
 
 probe_runners() {
-  # Don't hardcode runner names (the old windows-wsl-fwb* list went stale when the
+  # Don't hardcode runner names (the old windows-wsl-store* list went stale when the
   # runners moved hosts and this probe silently checked nothing for weeks) —
   # enumerate whatever is registered and flag any not-online. (Runner host is now
   # the Umbra VM $OS_VM; OrbStack was retired 2026-07.)

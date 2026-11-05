@@ -9,7 +9,7 @@ A scheduled, restorable DB backup that dumps full data (RLS tables included) ind
 ## Criteria
 | # | Criterion | Solid (grade 2) | Gap detection | Severity |
 |---|---|---|---|---|
-| 1 | Scheduled restorable DB backup | A backup job dumps the prod DB on a schedule (daily local `pg_dump`), keeps last ~30, prunes older | file-exists `scripts/backup-db.sh` or `backup-all-neon.sh`; confirm a scheduler (launchd plist / cron / workflow) invokes it | Critical |
+| 1 | Scheduled restorable DB backup | A backup job dumps the prod DB on a schedule (daily local `pg_dump`), keeps last ~30, prunes older | file-exists `scripts/backup-db.sh`; confirm a scheduler (launchd plist / cron / workflow) invokes it | Critical |
 | 2 | Backup independent of repo `.env` + dumps full data | Backup pulls the DIRECT connection string from the provider (`neonctl --role-name neondb_owner`), not repo `.env` (which may hold placeholders/pooled URLs) | grep backup script for `neonctl`/direct-URL retrieval; confirm it does NOT read `DATABASE_URL` from `.env`; confirm dump role is the owner (sees RLS tables) | High |
 | 3 | `pg_dump` version ≥ server version | `pg_dump` major version ≥ Neon server (PG17) — older silently produces empty dumps | grep backup script / docs for a pinned `pg_dump`/`postgresql@17` path; check `pg_dump --version` ≥ server | High |
 | 4 | `scripts/rollback.sh` present, blocks on migrations | `scripts/rollback.sh` does git revert + push and refuses/warns when the revert spans a migration | file-exists `scripts/rollback.sh`; grep it for a migration guard (`migration`/`prisma migrate`/block) | High |

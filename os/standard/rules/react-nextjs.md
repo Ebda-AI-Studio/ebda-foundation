@@ -2,7 +2,7 @@
 
 tags: [BOTH]
 scope: any `.tsx`/`.jsx` file, any Next.js App Router route, any React component — admin dashboards, storefronts, PWAs
-sources: `frontend-quality.md`, `scaling.md` (criterion 9 edge cache), CLAUDE.md (Arabic UTF-8 edit rule), MEMORY.md feedback-tailwind-tracking-breaks-arabic, feedback-i18n-dataattr-textcontent-flatten-trap, feedback-migrate-before-deploy-and-force-dynamic, feedback-tailwind-v4-css-vars, feedback-tailwind-v4-jit-dynamic-classes, feedback-fwb-i18n-duplicate-key-block-trap (indexed)
+sources: `frontend-quality.md`, `scaling.md` (criterion 9 edge cache), CLAUDE.md (Arabic UTF-8 edit rule), MEMORY.md feedback-tailwind-tracking-breaks-arabic, feedback-i18n-dataattr-textcontent-flatten-trap, feedback-migrate-before-deploy-and-force-dynamic, feedback-tailwind-v4-css-vars, feedback-tailwind-v4-jit-dynamic-classes, feedback-store-i18n-duplicate-key-block-trap (indexed)
 
 ## Must Always
 - Declare `export const dynamic = "force-dynamic"` on any page that reads `cookies()`/`headers()` (locale switch, auth-aware rendering) — these pages are inherently per-request. Never pair such a page with a `generateStaticParams` that queries the DB at build time; that couples render-mode to build-time DB reachability, and when the build-time query fails, Next silently compiles the page into a broken mode that 500s at runtime with a masked `DYNAMIC_SERVER_USAGE` digest even though the build reported success.

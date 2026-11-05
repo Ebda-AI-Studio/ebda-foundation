@@ -14,6 +14,7 @@
 #      "NOT running and not startable". umbra lists `stopping`/`starting` mid-op.
 #   3. "20/1 runner services active": the plist pinned RUNNER_INSTANCE_COUNT=1.
 set -uo pipefail
+export OS_UMBRA_VMS=umbra-ci6   # fixture guest name; the shipped default lives only in os.env
 OPS="$(cd "$(dirname "$0")/.." && pwd)"
 T="$(mktemp -d)"
 _pass=0; _fail=0
@@ -76,8 +77,8 @@ case "$1" in
     st=$(sed -n "${n}p" "$FK/states")
     # The machine NAME is a fixture too: a guard pointed at a machine umbra does
     # not list at all is the 'unlisted/unreachable' case — the shape left behind
-    # when fwb-ci5/fwb-ci2 were deleted under a config that still named them.
-    m=$(cat "$FK/list.machine" 2>/dev/null || echo fwb-ci6)
+    # when umbra-ci5/umbra-ci2 were deleted under a config that still named them.
+    m=$(cat "$FK/list.machine" 2>/dev/null || echo umbra-ci6)
     echo "NAME     STATE    IP              CPUS  MEM(GiB)  DISK(GiB)  AUTOSTART"
     echo "$m  $st  192.168.127.10  6     6         60         true"
     ;;
@@ -266,8 +267,8 @@ grep -q 'runner fleet: 20/20 runner services active' "$T/guard.out" \
   || { fail "healthy line wrong: $(grep 'runner fleet' "$T/guard.out")"; }
 
 # ── 3b. …and from the umbra runner manifest when that probe fails ───────────
-cat > "$T/home/.umbra/runners/fwb-ci6.json" <<'EOF'
-{"machine":"fwb-ci6","entries":[{"repo":"a/x","count":2},{"repo":"a/y","count":18}]}
+cat > "$T/home/.umbra/runners/umbra-ci6.json" <<'EOF'
+{"machine":"umbra-ci6","entries":[{"repo":"a/x","count":2},{"repo":"a/y","count":18}]}
 EOF
 run_guard 60 FAKE_INSTALLED=garbage
 grep -q 'runner fleet: 20/20 runner services active' "$T/guard.out" \
@@ -282,7 +283,7 @@ else
 fi
 
 # ── 4. guest-disk-corrupt → auto-rebuild, behind guardrails ─────────────────
-# Ahmad, 2026-09-16: "rebuild it if it comes back". fwb-ci6 corrupted twice in
+# Ahmad, 2026-09-16: "rebuild it if it comes back". umbra-ci6 corrupted twice in
 # two days (ext4 going read-only); a reboot never recovered it and
 # `umbra rebuild` always did, in ~9 min.
 #
@@ -300,9 +301,9 @@ doctor_json() {   # <rung> <subject>
 EOF
 }
 rebuilds() { if [ -f "$FK/rebuild.log" ]; then grep -c . "$FK/rebuild.log" | tr -d ' '; else echo 0; fi; }
-seed_history() {  # <epoch…>  (all for fwb-ci6)
+seed_history() {  # <epoch…>  (all for umbra-ci6)
   mkdir -p "$(dirname "$HIST")"
-  python3 -c 'import json,sys; json.dump({"fwb-ci6":[int(x) for x in sys.argv[2:]]}, open(sys.argv[1],"w"))' "$HIST" "$@"
+  python3 -c 'import json,sys; json.dump({"umbra-ci6":[int(x) for x in sys.argv[2:]]}, open(sys.argv[1],"w"))' "$HIST" "$@"
 }
 NOW_S="$(date -u +%s)"
 # Short clocks everywhere: no test may wait on a real umbra.
@@ -312,22 +313,22 @@ RB_ENV=(UMBRA_TIMEOUT=3 UMBRA_TIMEOUT_SLOW=4 UMBRA_TIMEOUT_REBUILD=15 GUEST_REBU
 
 # ── 4a. the corrupt rung rebuilds, exactly once ─────────────────────────────
 echo running > "$FK/states"
-doctor_json guest-disk-corrupt fwb-ci6
+doctor_json guest-disk-corrupt umbra-ci6
 rm -f "$HIST"
 run_guard 120 "${RB_ENV[@]}"
 n="$(rebuilds)"
 if [ "$n" != 1 ]; then
   fail "guest-disk-corrupt should rebuild exactly once — got $n"; sed 's/^/        /' "$T/guard.out" | head -8
-elif ! grep -q 'fwb-ci6 --yes' "$FK/rebuild.log"; then
+elif ! grep -q 'umbra-ci6 --yes' "$FK/rebuild.log"; then
   fail "rebuild did not name the machine with --yes: $(cat "$FK/rebuild.log")"
 elif ! grep -q 'REBUILT' "$T/guard.out"; then
   fail "rebuild happened but was not reported"; sed 's/^/        /' "$T/guard.out" | head -8
 else
-  pass "guest-disk-corrupt → exactly one 'umbra rebuild fwb-ci6 --yes', reported"
+  pass "guest-disk-corrupt → exactly one 'umbra rebuild umbra-ci6 --yes', reported"
 fi
 
 # …and it is recorded, or the rate limit can never count anything.
-if [ -f "$HIST" ] && grep -q 'fwb-ci6' "$HIST"; then
+if [ -f "$HIST" ] && grep -q 'umbra-ci6' "$HIST"; then
   pass "the rebuild is recorded in the persisted history"
 else
   fail "rebuild was not recorded — the rate limit would never trip"
@@ -337,7 +338,7 @@ fi
 # FAILED rebuild, alerts, and BLOCKS the next automatic rebuild (no loop). ───
 BLK="$T/home/.whisky-os-state/umbra-rebuild-blocked"
 rm -f "$BLK" "$HIST"
-doctor_json guest-disk-corrupt fwb-ci6
+doctor_json guest-disk-corrupt umbra-ci6
 run_guard 120 "${RB_ENV[@]}" FAKE_KDOK=0
 if [ "$(rebuilds)" = 1 ] && [ -f "$BLK" ] && grep -q 'did NOT restore' "$T/guard.out"; then
   pass "rebuild onto a non-HWE/no-docker guest fails verification and writes the block marker"
@@ -358,7 +359,7 @@ rm -f "$BLK" "$HIST"
 # guest-ssh-stall is healable (normal path). NONE may destroy the guest.
 rung_ok=1
 for rung in guest-ssh-stall netstack-dead host-hardware machine-crashed; do
-  doctor_json "$rung" fwb-ci6
+  doctor_json "$rung" umbra-ci6
   rm -f "$HIST"
   run_guard 120 "${RB_ENV[@]}"
   if [ "$(rebuilds)" != 0 ]; then
@@ -379,7 +380,7 @@ else
 fi
 
 # ── 4c. cooldown and rate limit block a second rebuild, and alert ───────────
-doctor_json guest-disk-corrupt fwb-ci6
+doctor_json guest-disk-corrupt umbra-ci6
 seed_history $((NOW_S - 600))          # 10 min ago: inside the 3h cooldown
 run_guard 120 "${RB_ENV[@]}"
 if [ "$(rebuilds)" != 0 ]; then
@@ -465,13 +466,13 @@ rm -f "$FK/doctor.json"
 # covers those mechanics for guest-disk-corrupt; this section proves
 # guest-binaries-missing goes through the IDENTICAL gates rather than a
 # separate, unaudited path — and that its alert text says what actually broke.
-doctor_json guest-binaries-missing fwb-ci6
+doctor_json guest-binaries-missing umbra-ci6
 rm -f "$HIST" "$BLK"   # a failed-verification rebuild leaves the block marker; each case starts unblocked
 run_guard 120 "${RB_ENV[@]}"
 n="$(rebuilds)"
 if [ "$n" != 1 ]; then
   fail "guest-binaries-missing should rebuild exactly once — got $n"; sed 's/^/        /' "$T/guard.out" | head -8
-elif ! grep -q 'fwb-ci6 --yes' "$FK/rebuild.log"; then
+elif ! grep -q 'umbra-ci6 --yes' "$FK/rebuild.log"; then
   fail "rebuild did not name the machine with --yes: $(cat "$FK/rebuild.log")"
 elif ! grep -q 'REBUILT' "$T/guard.out"; then
   fail "rebuild happened but was not reported"; sed 's/^/        /' "$T/guard.out" | head -8
@@ -481,14 +482,14 @@ elif grep -q 'root filesystem' "$T/guard.out"; then
 elif ! grep -qi 'MISSING BINARIES' "$T/guard.out"; then
   fail "guest-binaries-missing rebuild did not name the actual fault"; sed 's/^/        /' "$T/guard.out" | head -8
 else
-  pass "guest-binaries-missing → exactly one 'umbra rebuild fwb-ci6 --yes', reported with the RIGHT fault named"
+  pass "guest-binaries-missing → exactly one 'umbra rebuild umbra-ci6 --yes', reported with the RIGHT fault named"
 fi
 
 # THE RULING (docs/plans/2026-09-22-throttle-hardening.md): the busy rule is
 # NOT weakened for this rung, even though a broken throttle hook can make a
 # runner look busy for longer than a real job would. Same gate, same test
 # shape as 4d, just against guest-binaries-missing.
-doctor_json guest-binaries-missing fwb-ci6
+doctor_json guest-binaries-missing umbra-ci6
 rm -f "$HIST" "$BLK"   # a failed-verification rebuild leaves the block marker; each case starts unblocked
 run_guard 120 "${RB_ENV[@]}" FAKE_RUNNER_BUSY=true FAKE_ROOT_RW=RW
 if [ "$(rebuilds)" != 0 ]; then
@@ -660,8 +661,8 @@ printf '#!/bin/sh\nexec "$@"\n' > "$FK/gbin/sudo"; chmod +x "$FK/gbin/systemctl"
 cat > "$FK/units" <<'U'
 actions.runner.Whisky-11.umbra-ebda-1.service loaded failed failed
 actions.runner.Whisky-11.umbra-ebda-2.service loaded active running
-actions.runner.Ebda-AI-Studio-ebda-studio.fwb-ci6-quote-studio-1.service loaded inactive dead
-actions.runner.Ebda-AI-Studio-ebda-studio.fwb-ci6-quote-studio-2.service loaded inactive dead
+actions.runner.Ebda-AI-Studio-ebda-studio.umbra-ci6-quote-studio-1.service loaded inactive dead
+actions.runner.Ebda-AI-Studio-ebda-studio.umbra-ci6-quote-studio-2.service loaded inactive dead
 U
 echo '{"focus":["ebda"]}' > "$T/home/.umbra/runner-focus.json"
 rm -f "$FK/restarted.log"
@@ -685,22 +686,22 @@ grep -q 'quote-studio-1' "$FK/restarted.log" 2>/dev/null && pass "focus: no focu
 rm -f "$FK/units"
 
 # ── 7. hands-off while `umbra rebuild` provisions the guest (2026-10-16) ────
-# At 02:53 the guard rebooted a brand-new fwb-ci6 mid-rebuild: a provisioning
+# At 02:53 the guard rebooted a brand-new umbra-ci6 mid-rebuild: a provisioning
 # guest (ssh down across the HWE restart, no runner yet) looks exactly like a
 # hung one. umbra rebuild now holds ~/.umbra/provisioning/<vm> with expires=.
 PROV="$T/home/.umbra/provisioning"; mkdir -p "$PROV"
 rm -f "$FK/doctor.json"
 # Stopped VM: without the marker the guard would `umbra start` it.
 echo stopped > "$FK/states"
-printf 'expires=%s\nphase=kernel\npid=1\n' $(( $(date +%s) + 1800 )) > "$PROV/fwb-ci6"
-doctor_json guest-disk-corrupt fwb-ci6   # would otherwise trigger the guard's own rebuild
+printf 'expires=%s\nphase=kernel\npid=1\n' $(( $(date +%s) + 1800 )) > "$PROV/umbra-ci6"
+doctor_json guest-disk-corrupt umbra-ci6   # would otherwise trigger the guard's own rebuild
 rm -f "$HIST" "$BLK"   # a failed-verification rebuild leaves the block marker; each case starts unblocked
 run_guard 90 "${RB_ENV[@]}"; rc_out="$(cat "$T/guard.out")"
 if grep -qE '^(start|stop|rebuild|prune)' "$FK/calls.log" 2>/dev/null; then
   fail "provisioning: guard mutated a guest umbra rebuild is provisioning: $(grep -E '^(start|stop|rebuild|prune)' "$FK/calls.log" | tr '\n' ';')"
 elif ! grep -q 'PROVISIONING' <<<"$rc_out"; then
   fail "provisioning: stand-down was silent"; sed 's/^/        /' <<<"$rc_out" | head -5
-elif grep -q 'fwb-ci6' "$FK/notify.log" 2>/dev/null && grep -qiE 'HUNG|NOT running|CI is|queuing forever' "$FK/notify.log"; then
+elif grep -q 'umbra-ci6' "$FK/notify.log" 2>/dev/null && grep -qiE 'HUNG|NOT running|CI is|queuing forever' "$FK/notify.log"; then
   fail "provisioning: a deliberate rebuild paged as an outage: $(head -3 "$FK/notify.log")"
 else
   pass "provisioning: a fresh marker → no start/stop/rebuild/prune on that VM, no outage page, says why"
@@ -714,7 +715,7 @@ fi
 # crit, which a rebuild allocating a fresh disk.img makes worse) still page,
 # and the fleet-wide checks still run.
 echo running > "$FK/states"; rm -f "$FK/doctor.json"
-printf 'expires=%s\nphase=kernel\n' $(( $(date +%s) + 1800 )) > "$PROV/fwb-ci6"
+printf 'expires=%s\nphase=kernel\n' $(( $(date +%s) + 1800 )) > "$PROV/umbra-ci6"
 run_guard 90 "${RB_ENV[@]}" HOST_DISK_WARN_PCT=1 HOST_DISK_CRIT_PCT=2
 if ! grep -q 'HOST disk' "$FK/notify.log" 2>/dev/null; then
   fail "provisioning: the host-disk crit finding was dropped by the stand-down"; sed 's/^/        /' "$T/guard.out" | head -6
@@ -727,17 +728,17 @@ else
 fi
 # Check-then-act: a rebuild that starts AFTER the pre-flight read (here: while
 # doctor runs) must still stop the guard's own `umbra rebuild`.
-rm -f "$PROV/fwb-ci6"; doctor_json guest-disk-corrupt fwb-ci6; rm -f "$HIST"
-run_guard 120 "${RB_ENV[@]}" FAKE_MARK_ON_DOCTOR="$PROV/fwb-ci6"
+rm -f "$PROV/umbra-ci6"; doctor_json guest-disk-corrupt umbra-ci6; rm -f "$HIST"
+run_guard 120 "${RB_ENV[@]}" FAKE_MARK_ON_DOCTOR="$PROV/umbra-ci6"
 if [ "$(rebuilds)" != 0 ]; then
   fail "provisioning: marker written mid-run (after pre-flight) did not stop the guard's rebuild"
 else
   pass "provisioning: the marker is re-checked right before acting (no rebuild on top of one that just started)"
 fi
-rm -f "$PROV/fwb-ci6" "$FK/doctor.json"
+rm -f "$PROV/umbra-ci6" "$FK/doctor.json"
 # Expired marker = a dead rebuild: the guard is back to normal (starts the VM).
 echo stopped > "$FK/states"
-printf 'expires=%s\nphase=kernel\n' $(( $(date +%s) - 60 )) > "$PROV/fwb-ci6"
+printf 'expires=%s\nphase=kernel\n' $(( $(date +%s) - 60 )) > "$PROV/umbra-ci6"
 rm -f "$FK/doctor.json"
 run_guard 90 "${RB_ENV[@]}"
 if grep -qE '^start' "$FK/calls.log" 2>/dev/null; then
@@ -746,7 +747,7 @@ else
   fail "provisioning: expired marker still kept the guard hands-off"; sed 's/^/        /' "$T/guard.out" | head -5
 fi
 # Another machine's marker does not cover ours.
-mv "$PROV/fwb-ci6" "$PROV/other-vm"; printf 'expires=%s\n' $(( $(date +%s) + 1800 )) > "$PROV/other-vm"
+mv "$PROV/umbra-ci6" "$PROV/other-vm"; printf 'expires=%s\n' $(( $(date +%s) + 1800 )) > "$PROV/other-vm"
 run_guard 90 "${RB_ENV[@]}"
 grep -qE '^start' "$FK/calls.log" 2>/dev/null && pass "provisioning: a marker for another machine does not cover this one" \
   || fail "provisioning: another machine's marker silenced the guard for $UM"
@@ -757,7 +758,7 @@ rm -f "$PROV/other-vm"
 # had EXT4 warnings while every runner showed ONLINE. The remedy is local, so
 # the guard pages with doctor's next action and keeps healing as normal.
 echo running > "$FK/states"
-doctor_json guest-crash-damage fwb-ci6
+doctor_json guest-crash-damage umbra-ci6
 rm -f "$HIST" "$BLK"   # a failed-verification rebuild leaves the block marker; each case starts unblocked
 run_guard 120 "${RB_ENV[@]}"
 if [ "$(rebuilds)" != 0 ]; then
@@ -771,7 +772,7 @@ else
 fi
 # Doctor took 65-66s live; it must get its own wall clock, not the 45s probe
 # ceiling, or the unhealable pre-flight and this page silently never fire.
-doctor_json guest-crash-damage fwb-ci6
+doctor_json guest-crash-damage umbra-ci6
 run_guard 120 "${RB_ENV[@]}" FAKE_DOCTOR_SLEEP=5 UMBRA_TIMEOUT_DOCTOR=20
 grep -q 'guest-crash-damage' "$FK/notify.log" 2>/dev/null \
   && pass "doctor: a doctor slower than UMBRA_TIMEOUT still pages (own UMBRA_TIMEOUT_DOCTOR)" \

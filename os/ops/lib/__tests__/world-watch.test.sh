@@ -99,7 +99,7 @@ JSON
 # ============================================================
 # Fixture whatsapp-like file with old graph API version
 # ============================================================
-WBS_DIR="$ROOT/wbs-fixture"
+WBS_DIR="$ROOT/msg-fixture"
 mkdir -p "$WBS_DIR/src"
 cat > "$WBS_DIR/src/api.ts" << 'JS'
 // WhatsApp cloud API client

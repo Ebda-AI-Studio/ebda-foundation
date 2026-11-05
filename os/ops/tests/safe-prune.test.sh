@@ -18,24 +18,24 @@ EOS
 chmod +x "$TMP/umbra"; export UMBRA_BIN="$TMP/umbra"
 run() { rm -f "$TMP/args"; safe_umbra_prune "$@" >"$TMP/out" 2>&1; RC=$?; ARGS="$(cat "$TMP/args" 2>/dev/null)"; }
 
-SAFE_PRUNE_FREE_GB=80 run fwb-ci6 routine
-ok "routine, host fine: idle-only and no fstrim" "$ARGS" "prune fwb-ci6 --if-idle --no-fstrim"
-SAFE_PRUNE_FREE_GB=35 run fwb-ci6 reclaim
-ok "reclaim (host disk low): idle-only, fstrim allowed" "$ARGS" "prune fwb-ci6 --if-idle"
-SAFE_PRUNE_FREE_GB=20 run fwb-ci6 routine
-ok "host free 20 GB < 25: hard override, plain full prune even if busy" "$ARGS" "prune fwb-ci6"
+SAFE_PRUNE_FREE_GB=80 run umbra-ci6 routine
+ok "routine, host fine: idle-only and no fstrim" "$ARGS" "prune umbra-ci6 --if-idle --no-fstrim"
+SAFE_PRUNE_FREE_GB=35 run umbra-ci6 reclaim
+ok "reclaim (host disk low): idle-only, fstrim allowed" "$ARGS" "prune umbra-ci6 --if-idle"
+SAFE_PRUNE_FREE_GB=20 run umbra-ci6 routine
+ok "host free 20 GB < 25: hard override, plain full prune even if busy" "$ARGS" "prune umbra-ci6"
 ok "override is stated in the output" "$(grep -c 'override' "$TMP/out")" "1"
-SAFE_PRUNE_FREE_GB=80 run fwb-ci6 routine 98
-ok "guest disk 98%: no --if-idle but still NO fstrim" "$ARGS" "prune fwb-ci6 --no-fstrim"
-SAFE_PRUNE_FREE_GB=80 run fwb-ci6 routine 90
-ok "guest disk 90% (crit but not full): still idle-only" "$ARGS" "prune fwb-ci6 --if-idle --no-fstrim"
-SAFE_PRUNE_FREE_GB=80 STUB_OUT="fwb-ci6: skipped, a CI job is running (--if-idle)" run fwb-ci6 routine
+SAFE_PRUNE_FREE_GB=80 run umbra-ci6 routine 98
+ok "guest disk 98%: no --if-idle but still NO fstrim" "$ARGS" "prune umbra-ci6 --no-fstrim"
+SAFE_PRUNE_FREE_GB=80 run umbra-ci6 routine 90
+ok "guest disk 90% (crit but not full): still idle-only" "$ARGS" "prune umbra-ci6 --if-idle --no-fstrim"
+SAFE_PRUNE_FREE_GB=80 STUB_OUT="umbra-ci6: skipped, a CI job is running (--if-idle)" run umbra-ci6 routine
 ok "busy guest: deferred, exit 3 (not a failure)" "$RC" "3"
-SAFE_PRUNE_FREE_GB=80 STUB_RC=1 run fwb-ci6 routine
+SAFE_PRUNE_FREE_GB=80 STUB_RC=1 run umbra-ci6 routine
 ok "a failing prune is exit 1" "$RC" "1"
-SAFE_PRUNE_FREE_GB=80 STUB_OUT="PRUNE_FREED 123" run fwb-ci6 routine
+SAFE_PRUNE_FREE_GB=80 STUB_OUT="PRUNE_FREED 123" run umbra-ci6 routine
 ok "success is exit 0" "$RC" "0"
-SAFE_PRUNE_FREE_GB="unreadable" run fwb-ci6 routine
+SAFE_PRUNE_FREE_GB="unreadable" run umbra-ci6 routine
 ok "unreadable host free is treated as fine, never as an emergency" "$(echo "$ARGS" | grep -c -- '--if-idle')" "1"
 
 # wiring: no automatic caller may run a bare `umbra prune`
@@ -47,7 +47,7 @@ ok "workspace-hygiene refuses to run without the guard lib" "$(grep -c 'lib/safe
 
 # mutation control: drop --if-idle from the routine branch and the first case must go red
 sed 's/flags="--if-idle --no-fstrim"/flags="--no-fstrim"/' "$OPS/lib/safe-prune.sh" > "$TMP/mut.sh"
-( . "$TMP/mut.sh"; SAFE_PRUNE_FREE_GB=80 safe_umbra_prune fwb-ci6 routine >/dev/null 2>&1 ); got="$(cat "$TMP/args")"
-[ "$got" = "prune fwb-ci6 --if-idle --no-fstrim" ] && { echo "FAIL: MC mutation not caught"; fail=$((fail+1)); } || { echo "PASS: MC without --if-idle the routine case differs (so it is a real test)"; pass=$((pass+1)); }
+( . "$TMP/mut.sh"; SAFE_PRUNE_FREE_GB=80 safe_umbra_prune umbra-ci6 routine >/dev/null 2>&1 ); got="$(cat "$TMP/args")"
+[ "$got" = "prune umbra-ci6 --if-idle --no-fstrim" ] && { echo "FAIL: MC mutation not caught"; fail=$((fail+1)); } || { echo "PASS: MC without --if-idle the routine case differs (so it is a real test)"; pass=$((pass+1)); }
 
 echo "$pass passed, $fail failed"; [ "$fail" = 0 ]

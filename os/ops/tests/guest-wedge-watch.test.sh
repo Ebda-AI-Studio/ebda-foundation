@@ -2,6 +2,7 @@
 # guest-wedge-watch: alert on 2 slow guest execs in a row or a job past its ceiling; restart ONLY when the guest
 # is slow AND no job progressed for 30+ min. Fixture-driven: umbra, notify and the GitHub job list are stubs.
 set -uo pipefail
+export OS_UMBRA_VMS=umbra-ci6   # fixture guest name; the shipped default lives only in os.env
 cd "$(dirname "$0")/.."; OPS="$(pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 _pass=0; _fail=0
@@ -60,10 +61,10 @@ echo "\$*" >> "$TMP/umbra.calls"
 exit 0
 EOF3
 chmod +x "$TMP/umbra-new"
-grep -qx 'start fwb-ci6' "$TMP/umbra.calls" && pass "E2 an umbra without the flag is started plainly" || fail "E2 plain start missing ($(cat "$TMP/umbra.calls" | tr '\n' ';'))"
+grep -qx 'start umbra-ci6' "$TMP/umbra.calls" && pass "E2 an umbra without the flag is started plainly" || fail "E2 plain start missing ($(cat "$TMP/umbra.calls" | tr '\n' ';'))"
 rm -rf "$TMP/state-e2"
 UMBRA_OVERRIDE="$TMP/umbra-new" run e2 9999 "$STALE_OK"; UMBRA_OVERRIDE="$TMP/umbra-new" run e2 9999 "$STALE_OK"
-grep -qx 'start --fsck-if-dirty fwb-ci6' "$TMP/umbra.calls" && pass "E3 an umbra WITH the flag is started with --fsck-if-dirty" || fail "E3 flag missing ($(cat "$TMP/umbra.calls" | tr '\n' ';'))"
+grep -qx 'start --fsck-if-dirty umbra-ci6' "$TMP/umbra.calls" && pass "E3 an umbra WITH the flag is started with --fsck-if-dirty" || fail "E3 flag missing ($(cat "$TMP/umbra.calls" | tr '\n' ';'))"
 run e 9999 "$STALE_OK"
 [ "$STOPS" = 0 ] && pass "E2 cooldown: a second restart inside 2 h does not happen" || fail "E2 restarted again"
 
@@ -78,7 +79,7 @@ run g 400 "$FRESH"; run g 5 "$FRESH"; run g 400 "$FRESH"
 run h 9999; run h 9999
 [ "$PAGES" = 1 ] && [ "$STOPS" = 0 ] && pass "H idle guest (no jobs) that is slow x2: alert, but nothing to restart for" || fail "H (pages=$PAGES stops=$STOPS)"
 
-mkdir -p "$TMP/umbra-root/provisioning"; echo "expires=$((NOW+1800))" > "$TMP/umbra-root/provisioning/fwb-ci6"
+mkdir -p "$TMP/umbra-root/provisioning"; echo "expires=$((NOW+1800))" > "$TMP/umbra-root/provisioning/umbra-ci6"
 run i 9999 "$STALE_OK"; run i 9999 "$STALE_OK"
 [ "$PAGES$STOPS" = "00" ] && grep -q "provisioning" "$TMP/log-i" && pass "I a guest that umbra rebuild is provisioning is left alone" || { fail "I provisioning (pages=$PAGES stops=$STOPS)"; cat "$TMP/log-i"; }
 rm -rf "$TMP/umbra-root"
@@ -111,16 +112,16 @@ T_GUEST='echo 2 10 84' run r 5 "$FRESH"
 # ---- U4: order of steps, evidence, verification, restart budget ----
 run e4 9999 "$STALE_OK"; run e4 9999 "$STALE_OK"
 seq="$(grep -nE '^(stop|start|exec .*docker run)' "$TMP/umbra.calls" | grep -v -- ' --help' | sed -E 's/^[0-9]+://' | cut -d' ' -f1-2 | tr '\n' ';')"
-case "$seq" in "stop fwb-ci6;start fwb-ci6;exec fwb-ci6;"*|"stop fwb-ci6;start fwb-ci6;exec fwb-ci6;") pass "U4a order: evidence, then stop, start, then verify (docker run postgres:16-alpine)" ;; *) fail "U4a order ($seq)"; cat "$TMP/umbra.calls" ;; esac
-ls "$TMP"/state-e4/fwb-ci6.evidence-*.txt >/dev/null 2>&1 && pass "U4b evidence file captured before the restart" || fail "U4b no evidence file"
+case "$seq" in "stop umbra-ci6;start umbra-ci6;exec umbra-ci6;"*|"stop umbra-ci6;start umbra-ci6;exec umbra-ci6;") pass "U4a order: evidence, then stop, start, then verify (docker run postgres:16-alpine)" ;; *) fail "U4a order ($seq)"; cat "$TMP/umbra.calls" ;; esac
+ls "$TMP"/state-e4/umbra-ci6.evidence-*.txt >/dev/null 2>&1 && pass "U4b evidence file captured before the restart" || fail "U4b no evidence file"
 grep -q "restarted and healthy" "$TMP/notify.calls" && pass "U4c Telegram summary says restarted and healthy" || fail "U4c no summary ($(cat "$TMP/notify.calls" | tr '\n' ';'))"
 # budget: two restarts already in the last 24 h -> STANDDOWN, no stop/start, one page
-mkdir -p "$TMP/state-e5"; printf '%s\n%s\n' "$((NOW-3*3600))" "$((NOW-9*3600))" > "$TMP/state-e5/fwb-ci6.restarts"
-printf 'last_restart=%s\n' "$((NOW-8*3600))" > "$TMP/state-e5/fwb-ci6.state"
+mkdir -p "$TMP/state-e5"; printf '%s\n%s\n' "$((NOW-3*3600))" "$((NOW-9*3600))" > "$TMP/state-e5/umbra-ci6.restarts"
+printf 'last_restart=%s\n' "$((NOW-8*3600))" > "$TMP/state-e5/umbra-ci6.state"
 run e5 9999 "$STALE_OK"; run e5 9999 "$STALE_OK"
 [ "$STOPS" = 0 ] && [ "$STARTS" = 0 ] && grep -q "budget spent" "$TMP/notify.calls" || grep -q "keeps wedging" "$TMP/notify.calls" && pass "U4d restart budget (2/24h) spent: stands down, pages a human, does NOT restart" || { fail "U4d (stops=$STOPS starts=$STARTS)"; cat "$TMP/notify.calls"; }
 # older restarts do not count
-mkdir -p "$TMP/state-e6"; printf '%s\n%s\n' "$((NOW-30*3600))" "$((NOW-40*3600))" > "$TMP/state-e6/fwb-ci6.restarts"
+mkdir -p "$TMP/state-e6"; printf '%s\n%s\n' "$((NOW-30*3600))" "$((NOW-40*3600))" > "$TMP/state-e6/umbra-ci6.restarts"
 run e6 9999 "$STALE_OK"; run e6 9999 "$STALE_OK"
 [ "$STOPS" = 1 ] && pass "U4e restarts older than 24 h do not use the budget" || fail "U4e (stops=$STOPS)"
 
