@@ -1,44 +1,51 @@
-// One job, end to end: fresh shallow checkout -> branch -> Claude Code headless (capped) -> the repo's own tests ->
-// commit (explicit paths) -> push -> PR -> merge through the repo's merge gate ONLY when policy.mayAutoMerge says so.
-// Every external effect goes through ctx.exec (git, gh, claude, the repo's commands), so tests mock all of it.
-// Returns a JobOutcome for the brain: merged | pr_opened | could_not_fix | timed_out.
-import { mkdir, rm } from 'node:fs/promises';
+// One job, end to end. Two trees per job:
+//   work/   cloned BEFORE Claude runs (base sha recorded then); Claude and the repo's own commands run here, as the
+//           sandbox user in the container, with no credential in their env. Hands git never runs here afterwards.
+//   commit/ a FRESH clone of the same base sha made AFTER Claude; the changed regular files are copied in (found by a
+//           byte comparison, tree.mjs) and this is the only tree git commits and pushes from.
+// base-workflows/ is copied from commit/ before the diff is applied: the merge gate derives the required checks from
+// it, never from the edited tree (security S3). Auto-merge is decided on the ACTUAL changed paths (diffcheck.mjs).
+// Every external effect goes through ctx.exec, so tests mock all of it.
+// Returns a JobOutcome: merged | pr_opened | could_not_fix | timed_out.
+import { chmod, cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fill } from './config.mjs';
+import { diffAllowsAutoMerge, FORMAT_KINDS, scanSecrets } from './diffcheck.mjs';
+import { asSandbox, cloneUrl, gitEnv, prepareJobSecrets, SAFE_GIT, untrustedEnv } from './git.mjs';
 import { mayAutoMerge, mayWork } from './policy.mjs';
 import { buildPrompt, CANNOT_FIX } from './prompt.mjs';
+import { applyChanges, treeDiff } from './tree.mjs';
 
-/** Paths a fix must not change on its own; touching one turns auto-merge off (the PR still opens). */
-export const PROTECTED = /(^|\/)(\.github\/workflows\/|\.env|wrangler\.(json|jsonc|toml)$|migrations?\/|prisma\/schema|Dockerfile$)/;
-/** Credentials Claude and the repo's tests never see: only the hands' own git/gh steps use them. */
-const CREDENTIALS = ['GH_TOKEN', 'GITHUB_TOKEN', 'HANDS_TOKEN', 'GH_ENTERPRISE_TOKEN'];
+export { PROTECTED } from './diffcheck.mjs';
 
-export function scrubbedEnv(env, alsoClaude = false) {
-  const e = { ...env };
-  for (const k of CREDENTIALS) delete e[k];
-  if (alsoClaude) delete e.CLAUDE_CODE_OAUTH_TOKEN;
-  return e;
-}
-
-/** Parse `git status --porcelain=v1 -z` into changed paths (rename = both paths). */
-export function changedPaths(z) {
-  const parts = z.split('\0').filter(Boolean);
-  const out = [];
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i];
-    const xy = p.slice(0, 2);
-    out.push(p.slice(3));
-    if (xy[0] === 'R' || xy[0] === 'C') out.push(parts[++i]);
-  }
-  return out.filter(Boolean);
-}
+const DEP_KINDS = new Set(['dep-bump', 'dependency-advisory', 'cve-bump', 'lockfile-drift']);
 
 export function oneLine(s, n = 300) {
   return String(s ?? '').replace(/\s+/g, ' ').trim().slice(-n);
 }
 
+/** Claude permission flags. Edits are scoped to the checkout; CI, env, .git and test-defining files are denied (the diff
+ *  check enforces the same rule independently: a denied path in the diff = no auto-merge). */
+export function claudePermissionArgs(cfg, repoCfg, kind) {
+  const deny = ['.git/**', '.github/**', '.env*', '**/.env*', '**/vitest.config.*', '**/jest.config.*', '**/playwright.config.*'];
+  if (!DEP_KINDS.has(kind)) deny.push('**/package.json');
+  const denyRules = deny.flatMap((p) => [`Edit(./${p})`, `Write(./${p})`]);
+  if (cfg.sandboxed) return ['--permission-mode', 'bypassPermissions', '--disallowedTools', denyRules.join(',')];
+  const allow = ['Read(./**)', 'Edit(./**)', 'Write(./**)', 'Glob', 'Grep', `Bash(${repoCfg.test.join(' ')}:*)`];
+  return ['--permission-mode', 'acceptEdits', '--allowedTools', allow.join(','), '--disallowedTools', [...denyRules, 'WebFetch', 'WebSearch'].join(',')];
+}
+
+async function exists(p) {
+  try {
+    await stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function runJob(job, ctx) {
-  const { cfg, exec, usage, log = () => {}, now = () => Date.now(), env = process.env } = ctx;
+  const { cfg, exec, usage, log = () => {}, now = () => Date.now(), env = process.env, creds = {} } = ctx;
   const slug = job.finding?.repo;
   const repoCfg = slug ? cfg.repos[slug] : undefined;
   if (!slug || !repoCfg) return { status: 'could_not_fix', note: `question: repo ${slug ?? '(none)'} has no hands config; add it to the hands repo config` };
@@ -46,38 +53,48 @@ export async function runJob(job, ctx) {
   const work = mayWork(job);
   if (!work.ok) return { status: 'could_not_fix', note: `question: ${work.reason}` };
 
+  const kind = String(job.finding.kind ?? '').toLowerCase();
   const capMs = (ctx.capMin ?? cfg.jobCapMin) * 60_000;
   const deadline = Math.min(now() + capMs, ctx.runDeadline ?? Infinity);
   const left = () => Math.max(0, deadline - now());
+  const step = (max = 10 * 60_000) => Math.min(left(), max);
   const base = repoCfg.defaultBranch ?? 'main';
-  const dir = join(cfg.workdir, job.id);
+  const jobDir = join(cfg.workdir, job.id);
+  const W = join(jobDir, 'work');
+  const C = join(jobDir, 'commit');
+  const BW = join(jobDir, 'base-workflows');
+  const T = join(jobDir, 'private');
   const branch = `${cfg.branchPrefix}${job.id}`;
-  const vars = { dir, repo: slug, base, os_home: cfg.osHome };
-  const git = (args, o = {}) => exec('git', args, { cwd: dir, timeoutMs: Math.min(left(), 10 * 60_000), env, ...o });
-  const claudeEnv = scrubbedEnv(env);
-  const quietEnv = scrubbedEnv(env, true); // the repo's install/test commands see no credential at all
+  const safe = cfg.allowFileRemote ? SAFE_GIT.map((a) => (a === 'protocol.file.allow=never' ? 'protocol.file.allow=always' : a)) : SAFE_GIT;
+  const sandboxHome = cfg.sandboxHome ?? env.HOME;
+  const runUntrusted = (cmd, args, o = {}) => {
+    const [c, a] = asSandbox(cfg, cmd, args);
+    return exec(c, a, { cwd: W, ...o, env: untrustedEnv(env, { HOME: sandboxHome, ...(o.extraEnv ?? {}) }) });
+  };
 
   try {
-    await rm(dir, { recursive: true, force: true });
-    await mkdir(cfg.workdir, { recursive: true });
-    const host = cfg.gitHost ?? 'https://github.com';
-    let r = await exec('git', ['clone', '--depth', '1', '--single-branch', '--branch', base, `${host}/${slug}.git`, dir], { cwd: cfg.workdir, timeoutMs: Math.min(left(), 10 * 60_000), env });
-    if (r.code !== 0) return { status: 'could_not_fix', note: `clone failed: ${oneLine(r.stderr)}` };
-    r = await git(['checkout', '-b', branch]);
-    if (r.code !== 0) return { status: 'could_not_fix', note: `branch failed: ${oneLine(r.stderr)}` };
+    await rm(jobDir, { recursive: true, force: true });
+    await mkdir(jobDir, { recursive: true, mode: 0o755 });
+    const secrets = await prepareJobSecrets(T);
+    const git = (cwd, args, o = {}) => exec('git', [...safe, ...args], { cwd, timeoutMs: step(), env: gitEnv(env, secrets, { token: creds.ghToken, auth: o.auth }) });
+    const url = cloneUrl(cfg.gitHost ?? 'https://github.com', slug, creds.ghToken);
 
-    // Claude Code, headless. Sandboxed (container) runs skip permission prompts; on the Mac only edits + the repo's
-    // own test command are allowed.
+    // 1. work tree + base sha, before Claude touches anything
+    let r = await git(jobDir, ['clone', '--depth', '1', '--single-branch', '--branch', base, url, W], { auth: true });
+    if (r.code !== 0) return { status: 'could_not_fix', note: `clone failed: ${oneLine(r.stderr)}` };
+    r = await git(W, ['rev-parse', 'HEAD']);
+    const baseSha = r.stdout.trim();
+    if (r.code !== 0 || !/^[0-9a-f]{7,64}$/.test(baseSha)) return { status: 'could_not_fix', note: 'could not read the base commit' };
+    if (cfg.sandboxUser) await exec('chown', ['-R', `${cfg.sandboxUser}:${cfg.sandboxUser}`, W], { timeoutMs: step(60_000) });
+
+    // 2. Claude Code, headless, capped; token through fd 3 (not the env); no GitHub credential at all
     const prompt = buildPrompt(job, repoCfg, slug);
-    const perm = cfg.sandboxed
-      ? ['--permission-mode', 'bypassPermissions']
-      : ['--permission-mode', 'acceptEdits', '--allowedTools', ['Read', 'Edit', 'Write', 'Glob', 'Grep', `Bash(${repoCfg.test.join(' ')}:*)`].join(',')];
     let result = null;
     log(`job ${job.id}: claude (${cfg.claudeModel}, cap ${Math.round(left() / 60000)} min)`);
-    r = await exec(cfg.claudeBin, ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--model', cfg.claudeModel, '--max-turns', String(cfg.maxTurns), ...perm], {
-      cwd: dir,
-      env: claudeEnv,
+    r = await runUntrusted(cfg.claudeBin, ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--model', cfg.claudeModel, '--max-turns', String(cfg.maxTurns), ...claudePermissionArgs(cfg, repoCfg, kind)], {
       timeoutMs: left(),
+      ...(creds.claudeToken ? { fd3: creds.claudeToken } : {}),
+      extraEnv: { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1', DISABLE_AUTOUPDATER: '1', ...(creds.claudeToken ? { CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR: '3' } : {}) },
       onLine: (line) => {
         let ev;
         try {
@@ -94,52 +111,132 @@ export async function runJob(job, ctx) {
     if (text.includes(CANNOT_FIX)) return { status: 'could_not_fix', note: oneLine(text.slice(text.indexOf(CANNOT_FIX) + CANNOT_FIX.length)) };
     if (r.code !== 0 || result?.is_error) return { status: 'could_not_fix', note: `claude failed: ${oneLine(result?.result ?? r.stderr)}` };
 
-    r = await git(['status', '--porcelain=v1', '-z', '--untracked-files=all']);
-    const files = changedPaths(r.stdout);
-    if (!files.length) return { status: 'could_not_fix', note: 'claude made no change' };
+    // 3. fresh commit tree at the same base sha; pristine base workflows for the merge gate
+    r = await git(jobDir, ['clone', '--depth', '1', '--single-branch', '--branch', base, url, C], { auth: true });
+    if (r.code !== 0) return { status: 'could_not_fix', note: `commit clone failed: ${oneLine(r.stderr)}` };
+    if ((await git(C, ['rev-parse', 'HEAD'])).stdout.trim() !== baseSha) {
+      r = await git(C, ['fetch', '--depth', '1', 'origin', baseSha], { auth: true });
+      if (r.code !== 0 || (await git(C, ['checkout', '--detach', baseSha])).code !== 0) return { status: 'could_not_fix', note: 'base branch moved and the base commit could not be fetched' };
+    }
+    if (await exists(join(C, '.github', 'workflows'))) await cp(join(C, '.github', 'workflows'), BW, { recursive: true, verbatimSymlinks: true });
+    r = await git(C, ['checkout', '-b', branch]);
+    if (r.code !== 0) return { status: 'could_not_fix', note: `branch failed: ${oneLine(r.stderr)}` };
 
-    // The repo's own affected tests (repo-defined command, never hardcoded here).
+    // 4. what Claude changed: byte comparison, never git in the edited tree; ignored files dropped by the clean tree's rules
+    const diff = await treeDiff(W, C);
+    if (diff.refused) return { status: 'could_not_fix', note: `question: ${diff.refused}` };
+    let changes = diff.changes;
+    if (changes.length > 2000) return { status: 'could_not_fix', note: `question: ${changes.length} changed files is not a targeted fix` };
+    if (changes.length) {
+      r = await git(C, ['check-ignore', '-z', '--', ...changes.map((c) => c.path)]);
+      const ignored = new Set(r.stdout.split('\0').filter(Boolean));
+      changes = changes.filter((c) => !ignored.has(c.path));
+    }
+    if (!changes.length) return { status: 'could_not_fix', note: 'claude made no change' };
+
+    // 5. the repo's own install + affected tests, in the work tree, no credential
     if (repoCfg.install) {
-      r = await exec(repoCfg.install[0], fill(repoCfg.install, vars).slice(1), { cwd: dir, env: quietEnv, timeoutMs: left() });
+      const a = fill(repoCfg.install, { dir: W, repo: slug, base });
+      r = await runUntrusted(a[0], a.slice(1), { timeoutMs: left() });
       if (r.timedOut) return { status: 'timed_out', note: 'install hit the cap' };
       if (r.code !== 0) return { status: 'could_not_fix', note: `install failed: ${oneLine(r.stderr || r.stdout)}` };
     }
-    r = await exec(repoCfg.test[0], fill(repoCfg.test, vars).slice(1), { cwd: dir, env: quietEnv, timeoutMs: left() });
+    const t = fill(repoCfg.test, { dir: W, repo: slug, base });
+    r = await runUntrusted(t[0], t.slice(1), { timeoutMs: left() });
     if (r.timedOut) return { status: 'timed_out', note: 'tests hit the cap' };
     if (r.code !== 0) return { status: 'could_not_fix', note: `tests failed after the fix: ${oneLine(r.stdout + r.stderr)}` };
 
-    // Re-read: the install/test step must not smuggle extra files into the commit (lockfile churn, build output).
-    r = await git(['status', '--porcelain=v1', '-z', '--untracked-files=all']);
-    const toAdd = changedPaths(r.stdout).filter((p) => files.includes(p));
+    // 6. lint/format classes: prove the diff is formatting-only by re-running the repo's formatter on the base files
+    let formatting = { ok: false, reason: 'not a formatting class' };
+    if (FORMAT_KINDS.has(kind)) formatting = await verifyFormattingOnly({ changes, repoCfg, W, cfg, runUntrusted, exec, step, left });
+
+    // 7. secret scan of the diff + PR text before anything leaves the box
     const title = `fix(os): ${String(job.finding.title ?? job.finding.kind).replace(/\s+/g, ' ').slice(0, 80)}`.slice(0, 100);
     const summary = oneLine(text, 1500) || 'Automated fix by the Ebda OS hands.';
     const body = `${summary}\n\nFinding: ${job.finding.kind} ${job.finding.key}${job.finding.url ? `\n${job.finding.url}` : ''}\nJob: ${job.id}`;
-    r = await git(['add', '--', ...toAdd]);
+    const leak = await secretScan({ changes, title, body, T, exec, cfg, step });
+    if (leak) return { status: 'could_not_fix', note: `question: secret scan hit (${leak}); nothing pushed` };
+
+    // 8. commit from the fresh tree, explicit paths only, hooks off; then it must be clean
+    await applyChanges(C, changes);
+    const paths = changes.map((c) => c.path);
+    r = await git(C, ['add', '--', ...paths]);
     if (r.code !== 0) return { status: 'could_not_fix', note: `git add failed: ${oneLine(r.stderr)}` };
-    const ident = ['-c', `user.name=${cfg.gitName}`, '-c', `user.email=${cfg.gitEmail}`];
-    r = await git([...ident, 'commit', '-m', title, '-m', body, '-m', `Ebda-OS-Job: ${job.id}`]);
+    r = await git(C, ['-c', `user.name=${cfg.gitName}`, '-c', `user.email=${cfg.gitEmail}`, 'commit', '-m', title, '-m', body, '-m', `Ebda-OS-Job: ${job.id}`]);
     if (r.code !== 0) return { status: 'could_not_fix', note: `commit failed: ${oneLine(r.stderr || r.stdout)}` };
-    const sha = (await git(['rev-parse', 'HEAD'])).stdout.trim();
-    r = await git(['push', '-u', 'origin', `HEAD:refs/heads/${branch}`]);
+    const sha = (await git(C, ['rev-parse', 'HEAD'])).stdout.trim();
+    const clean = async () => (await git(C, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])).stdout === '';
+    if (!(await clean())) return { status: 'could_not_fix', note: 'commit tree has changes beyond the committed diff; nothing pushed' };
+    r = await git(C, ['push', '-u', 'origin', `HEAD:refs/heads/${branch}`], { auth: true });
     if (r.code !== 0) return { status: 'could_not_fix', note: `push failed: ${oneLine(r.stderr)}` };
-    r = await exec('gh', ['pr', 'create', '--repo', slug, '--base', base, '--head', branch, '--title', title, '--body', body], { cwd: dir, env, timeoutMs: Math.min(left() || 60_000, 5 * 60_000) });
+
+    // 9. PR (GH_TOKEN only in this process; cwd is the private dir, --repo explicit)
+    const ghEnv = { PATH: env.PATH, HOME: T, GH_CONFIG_DIR: secrets.ghConfigDir, ...(creds.ghToken ? { GH_TOKEN: creds.ghToken } : {}), GH_PROMPT_DISABLED: '1' };
+    r = await exec('gh', ['pr', 'create', '--repo', slug, '--base', base, '--head', branch, '--title', title, '--body', body], { cwd: T, env: ghEnv, timeoutMs: Math.max(1, Math.min(left() || 60_000, 5 * 60_000)) });
     const prUrl = (r.stdout.match(/https?:\/\/\S+\/pull\/\d+/) ?? [])[0];
     if (r.code !== 0 || !prUrl) return { status: 'could_not_fix', note: `branch ${branch} pushed but PR create failed: ${oneLine(r.stderr)}` };
     const pr = prUrl.split('/').pop();
 
-    // Merge: pre-approved class + no protected path + the repo's merge gate green. Anything else = PR + one question.
-    const eligible = mayAutoMerge(job);
-    const protectedHit = toAdd.find((p) => PROTECTED.test(p));
-    if (!eligible.ok || protectedHit || !repoCfg.mergeGate) {
-      const why = !eligible.ok ? eligible.reason : protectedHit ? `the fix touches ${protectedHit}` : 'the repo has no merge gate configured';
-      return { status: 'pr_opened', prUrl, note: `question: ${why}; needs your review` };
-    }
-    const gate = fill(repoCfg.mergeGate, { ...vars, pr, sha });
+    // 10. merge only when the declared class AND the actual diff allow it, and the repo gate (pristine workflows) is green
+    const declared = mayAutoMerge(job);
+    const actual = declared.ok ? diffAllowsAutoMerge(kind, changes) : declared;
+    const why = !declared.ok
+      ? declared.reason
+      : !actual.ok
+        ? actual.reason
+        : FORMAT_KINDS.has(kind) && !formatting.ok
+          ? `not verified formatting-only: ${formatting.reason}`
+          : !repoCfg.mergeGate
+            ? 'the repo has no merge gate configured'
+            : !(await exists(BW))
+              ? 'the base branch has no workflows for the merge gate'
+              : null;
+    if (why) return { status: 'pr_opened', prUrl, note: `question: ${why}; needs your review` };
+    if (!(await clean())) return { status: 'pr_opened', prUrl, note: 'question: commit tree changed after the commit; not merging' };
+    const gate = fill(repoCfg.mergeGate, { repo: slug, base, os_home: cfg.osHome, pr, sha, base_workflows: BW });
     log(`job ${job.id}: merge gate ${gate.join(' ')}`);
-    r = await exec(gate[0], gate.slice(1), { cwd: dir, env, timeoutMs: Math.max(left(), 60_000) });
-    if (r.code === 0) return { status: 'merged', prUrl, note: `pre-approved ${job.finding.kind}; merge gate green` };
+    // the gate may overrun the job cap by up to 60 s (it needs a few polls); accepted, documented in the README
+    r = await exec(gate[0], gate.slice(1), { cwd: T, env: ghEnv, timeoutMs: Math.max(left(), 60_000) });
+    if (r.code === 0) return { status: 'merged', prUrl, note: `pre-approved ${kind}; diff fits the class; merge gate green` };
     return { status: 'pr_opened', prUrl, note: `question: merge gate not green (exit ${r.code}${r.timedOut ? ', timed out' : ''}): ${oneLine(r.stderr || r.stdout, 200)}` };
   } finally {
-    if (!ctx.keepWorkdir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+    if (!ctx.keepWorkdir) await rm(jobDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/** Write the base version of each changed file into the work tree, run the repo's formatter on exactly those files, and
+ *  require the result to equal Claude's version byte for byte. New or deleted files are never formatting-only. */
+async function verifyFormattingOnly({ changes, repoCfg, W, cfg, runUntrusted, exec, step, left }) {
+  if (!repoCfg.format) return { ok: false, reason: 'the repo has no format command configured' };
+  if (changes.some((c) => c.type !== 'write' || !c.base)) return { ok: false, reason: 'the diff adds or deletes files' };
+  for (const c of changes) await writeFile(join(W, c.path), c.base);
+  if (cfg.sandboxUser) await exec('chown', [`${cfg.sandboxUser}:${cfg.sandboxUser}`, ...changes.map((c) => join(W, c.path))], { timeoutMs: step(60_000) });
+  const a = fill(repoCfg.format, { dir: W }).flatMap((x) => (x === '{files}' ? changes.map((c) => c.path) : [x]));
+  const r = await runUntrusted(a[0], a.slice(1), { timeoutMs: left() });
+  if (r.code !== 0) return { ok: false, reason: `formatter exit ${r.code}` };
+  for (const c of changes) {
+    const after = await readFile(join(W, c.path)).catch(() => null);
+    if (!after || !after.equals(c.buf)) return { ok: false, reason: `${c.path} differs from what the formatter produces` };
+  }
+  return { ok: true, reason: 'formatter reproduces the diff' };
+}
+
+/** Built-in patterns always; gitleaks too when installed. Returns a short reason or null. Never returns the secret. */
+async function secretScan({ changes, title, body, T, exec, cfg, step }) {
+  const written = changes.filter((c) => c.type === 'write');
+  const hits = new Set(scanSecrets(`${title}\n${body}`));
+  for (const c of written) for (const h of scanSecrets(c.buf.toString('utf8'))) hits.add(`${h} in ${c.path}`);
+  if (hits.size) return [...hits].join(', ').slice(0, 300);
+  if (!cfg.gitleaks) return null;
+  const dir = join(T, 'scan');
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  for (const [i, c] of written.entries()) await writeFile(join(dir, `f${i}_${c.path.replace(/[^\w.-]/g, '_')}`), c.buf);
+  await writeFile(join(dir, 'pr-text.txt'), `${title}\n${body}`);
+  await chmod(dir, 0o700);
+  const r = await exec(cfg.gitleaks, ['dir', dir, '--no-banner', '--redact', '--exit-code', '7'], { timeoutMs: step(5 * 60_000) });
+  await rm(dir, { recursive: true, force: true });
+  if (r.code === 7) return 'gitleaks found a secret';
+  if (r.code !== 0) return `gitleaks failed (exit ${r.code}); refusing to push unscanned`;
+  return null;
 }

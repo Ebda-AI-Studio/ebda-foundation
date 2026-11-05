@@ -7,7 +7,7 @@ import { join } from 'node:path';
 export function dryRunExec({ batch, log = () => {}, usagePct = 12 }) {
   const calls = [];
   const knobs = (cwd) => {
-    const j = batch.jobs.find((x) => cwd && cwd.endsWith(x.id));
+    const j = batch.jobs.find((x) => cwd && cwd.includes(x.id));
     return j?.finding?.detail?.dryRun ?? {};
   };
   const ok = (stdout = '') => ({ code: 0, stdout, stderr: '', timedOut: false });
@@ -17,12 +17,16 @@ export function dryRunExec({ batch, log = () => {}, usagePct = 12 }) {
     const k = knobs(opts.cwd);
     log(`  [dry-run] ${cmd} ${args.map((a) => (a.length > 60 ? `${a.slice(0, 57)}...` : a)).join(' ')}`);
     if (cmd === 'git') {
-      if (args[0] === 'clone') {
-        await mkdir(args.at(-1), { recursive: true });
+      const verb = args.filter((a, i) => a !== '-c' && args[i - 1] !== '-c')[0];
+      if (verb === 'clone') {
+        // a tiny base tree: the same workflow file in every clone, so the merge gate has pristine workflows to read
+        await mkdir(join(args.at(-1), '.github', 'workflows'), { recursive: true });
+        await writeFile(join(args.at(-1), '.github', 'workflows', 'ci.yml'), 'on: pull_request\n');
         return ok();
       }
-      if (args[0] === 'status') return ok(k.claude === 'nochange' ? '' : ' M README.md\0');
-      if (args[0] === 'rev-parse') return ok('0123456789abcdef0123456789abcdef01234567\n');
+      if (verb === 'status') return ok(''); // the fresh commit tree is clean after the commit
+      if (verb === 'check-ignore') return { code: 1, stdout: '', stderr: '', timedOut: false };
+      if (verb === 'rev-parse') return ok('0123456789abcdef0123456789abcdef01234567\n');
       return ok();
     }
     if (cmd === 'gh') return ok(`https://github.com/${args[args.indexOf('--repo') + 1]}/pull/101\n`);

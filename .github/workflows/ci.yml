@@ -166,3 +166,7 @@ jobs:
         run: npm run lint:dockerfile
       - if: steps.chg.outputs.changed == 'true'
         run: npm audit --audit-level=low
+      - name: Audit the pinned Claude Code CLI lockfile (image dependency)
+        if: steps.chg.outputs.changed == 'true'
+        working-directory: os/cloud/hands/claude-cli
+        run: npm audit --audit-level=low

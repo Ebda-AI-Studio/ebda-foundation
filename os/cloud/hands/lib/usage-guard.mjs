@@ -70,8 +70,13 @@ export function readingFromManual(raw, nowS) {
   return candidate('manual', pctOf(raw.pct), typeof raw.t === 'number' ? raw.t : undefined, raw.resets_at, MANUAL_MAX_AGE_S, nowS);
 }
 
-/** The decision. No reading = refuse. */
+export function validThreshold(t) {
+  return typeof t === 'number' && Number.isFinite(t) && t >= 1 && t <= 100;
+}
+
+/** The decision. No reading = refuse. A threshold that is not a finite 1..100 number = refuse (fail closed). */
 export function decide(reading, thresholdPct) {
+  if (!validThreshold(thresholdPct)) return { allowed: false, reason: `invalid usage threshold (${String(thresholdPct)}): refusing every job (fail closed)` };
   if (!reading) return { allowed: false, reason: 'usage-unknown: no fresh weekly-usage reading (unknown is never treated as low)' };
   if (reading.pct >= thresholdPct) return { allowed: false, reason: `weekly usage ${reading.pct}% >= threshold ${thresholdPct}% (${reading.src})`, pct: reading.pct };
   return { allowed: true, reason: `weekly usage ${reading.pct}% < threshold ${thresholdPct}% (${reading.src})`, pct: reading.pct };
@@ -126,6 +131,7 @@ export class UsageGuard {
 
   /** Check before a job. Probes the CLI once per run when nothing fresh is known. */
   async check() {
+    if (!validThreshold(this.thresholdPct)) return { ...decide(null, this.thresholdPct), reading: null };
     let { reading, why } = await this.best();
     if (!reading && this.probe && !this.probed) {
       this.probed = true;

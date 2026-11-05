@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Engine-free Dockerfile validation (the host has no Docker daemon; Apple `container` builds are optional).
 // Checks: known instructions + line continuations, base image pinned by digest, every ARG used in FROM declared,
-// multi-stage, COPY sources exist in the build context (os/), no credential baked in (ENV/ARG/RUN), non-root USER,
-// exec-form ENTRYPOINT, pinned tool versions. Exit 1 with the problems listed.
+// multi-stage, COPY sources exist in the build context (os/), no credential baked in (ENV/ARG/RUN), non-root USER (or
+// root with a non-root HANDS_SANDBOX_USER privilege split), exec-form ENTRYPOINT, pinned tool versions + lockfile. Exit 1 with the problems listed.
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,7 +55,11 @@ export function checkDockerfile(text, context = CONTEXT) {
     if (I === 'ENTRYPOINT') entry = body;
   }
   if (froms.length < 2) problems.push('expected a multi-stage build');
-  if (!user || /^(root|0)(:|$)/.test(user)) problems.push('final stage must switch to a non-root USER');
+  // root is allowed only for the privilege-split design: the hands keep the tokens and run every untrusted command as
+  // a named non-root sandbox user (HANDS_SANDBOX_USER) through setpriv
+  const sandbox = (text.match(/HANDS_SANDBOX_USER=([a-z_][a-z0-9_-]*)/) ?? [])[1];
+  if (!user) problems.push('final stage must set USER');
+  else if (/^(root|0)(:|$)/.test(user) && (!sandbox || sandbox === 'root')) problems.push('final stage runs as root without a non-root HANDS_SANDBOX_USER (non-root required)');
   if (!entry) problems.push('no ENTRYPOINT');
   else {
     try {
@@ -65,6 +69,8 @@ export function checkDockerfile(text, context = CONTEXT) {
     }
   }
   if (!/CLAUDE_CODE_VERSION=\d+\.\d+\.\d+/.test(text)) problems.push('Claude Code version not pinned');
+  if (!/npm ci/.test(text) || !/claude-cli\/package-lock\.json/.test(text)) problems.push('Claude Code not installed from an integrity-pinned lockfile (npm ci)');
+  if (!/GITLEAKS_VERSION=\d+\.\d+\.\d+/.test(text)) problems.push('gitleaks not pinned');
   if (!/GH_VERSION=\d+\.\d+\.\d+/.test(text) || !/sha256sum -c/.test(text)) problems.push('gh not pinned + checksum-verified');
   return problems;
 }

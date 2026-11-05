@@ -21,4 +21,9 @@ for k in BRAIN_URL HANDS_TOKEN GH_TOKEN HANDS_GIT_NAME HANDS_GIT_EMAIL; do
   [ -n "${!k:-}" ] || { echo "hands-mac-local: $k unset (put it in OS_SERVICES_ENV); nothing claimed"; exit 0; }
 done
 [ -f "$HANDS_CONFIG_FILE" ] || { echo "hands-mac-local: no repo config at $HANDS_CONFIG_FILE; nothing claimed"; exit 0; }
-exec node "$HERE/run-batch.mjs" --claim --max "${HANDS_MAC_MAX_JOBS:-5}" --provider mac-local
+export HANDS_WORKDIR="${HANDS_WORKDIR:-$HOME/.ebda-os-hands/work}"
+# a crash or a launchd stop must not leave checkouts behind: sweep only job_* dirs (never the whole workdir)
+cleanup() { find "$HANDS_WORKDIR" -mindepth 1 -maxdepth 1 -type d -name 'job_*' -exec rm -rf {} + 2>/dev/null; si_release hands-mac-local; }
+trap cleanup EXIT
+trap 'exit 143' TERM INT HUP
+node "$HERE/run-batch.mjs" --claim --max "${HANDS_MAC_MAX_JOBS:-5}" --provider mac-local

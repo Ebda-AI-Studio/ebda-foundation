@@ -11,8 +11,13 @@ function tail(s) {
 /**
  * exec(cmd, args, { cwd, env, timeoutMs, onLine }) -> { code, stdout, stderr, timedOut }
  * onLine(line) receives each stdout line as it arrives (stream-json parsing).
+ * timeoutMs: undefined = no cap; a number <= 0 (or not finite) = already expired, nothing is started.
+ * fd3: a string written to the child's file descriptor 3 then closed (a credential that must not be in the env).
  */
 export function exec(cmd, args = [], opts = {}) {
+  if (opts.timeoutMs !== undefined && !(Number.isFinite(opts.timeoutMs) && opts.timeoutMs > 0)) {
+    return Promise.resolve({ code: 124, stdout: '', stderr: 'time cap already reached', timedOut: true });
+  }
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -20,7 +25,11 @@ export function exec(cmd, args = [], opts = {}) {
     let timedOut = false;
     let child;
     try {
-      child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+      child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env ?? process.env, stdio: opts.fd3 !== undefined ? ['ignore', 'pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'], detached: true });
+      if (opts.fd3 !== undefined) {
+        child.stdio[3].on('error', () => {});
+        child.stdio[3].end(opts.fd3);
+      }
     } catch (e) {
       resolve({ code: 127, stdout: '', stderr: String(e?.message ?? e), timedOut: false });
       return;

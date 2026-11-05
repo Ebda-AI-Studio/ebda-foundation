@@ -30,6 +30,8 @@ export function buildPrompt(job, repoCfg, slug) {
     '- Make the smallest change that fixes this finding. No refactors, no unrelated edits, no new dependencies unless the finding is a dependency bump.',
     '- Do NOT commit, push, open pull requests, merge, deploy, or call any production system. The hands do that after you finish.',
     '- Do NOT touch secrets, .env files, CI workflow files, deploy configuration, database migrations or billing code unless the finding is exactly about that file.',
+    '- Do NOT change how tests run: no edits to package.json scripts, test configuration (vitest/jest/playwright configs, tsconfig) or .git/. A dependency bump may change dependency versions in manifests and lockfiles only.',
+    '- Work only inside this checkout. Never print, read or copy credentials or environment secrets.',
     '- Never delete data, rotate credentials, purchase anything or change billing. If the fix needs any of that, stop.',
     `- Verify with the repo's own tests: ${(repoCfg.test ?? []).join(' ')}`,
     `- If you cannot fix it safely, change nothing and print one line starting with ${CANNOT_FIX} followed by the reason.`,

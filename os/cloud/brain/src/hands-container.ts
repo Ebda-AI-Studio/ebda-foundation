@@ -41,6 +41,10 @@ export class HandsContainer extends DurableObject<Env> {
     if (c.running) return Response.json({ error: `the ${body.kind} hands container is still running` }, { status: 409 });
     const missing = missingContainerEnv(this.env);
     if (missing.length) return Response.json({ error: `missing secrets/vars: ${missing.join(', ')}` }, { status: 503 });
+    // cap state + alarm FIRST: if storage fails, no container is started without its cap (review M-5)
+    const now = Date.now();
+    await this.ctx.storage.put<RunState>('run', { runId: body.runId, kind: body.kind!, deadline: now + body.capMin! * 60_000 + GRACE_MS });
+    await this.ctx.storage.setAlarm(now + TICK_MS);
     c.start({
       enableInternet: true,
       env: {
@@ -55,9 +59,6 @@ export class HandsContainer extends DurableObject<Env> {
         HANDS_USAGE_THRESHOLD_PCT: String(this.env.USAGE_WEEKLY_THRESHOLD_PCT ?? '80'),
       },
     });
-    const now = Date.now();
-    await this.ctx.storage.put<RunState>('run', { runId: body.runId, kind: body.kind!, deadline: now + body.capMin! * 60_000 + GRACE_MS });
-    await this.ctx.storage.setAlarm(now + TICK_MS);
     return Response.json({ externalId: `hands-${body.kind}:${body.runId}` }, { status: 202 });
   }
 

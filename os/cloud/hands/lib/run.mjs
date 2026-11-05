@@ -1,12 +1,17 @@
 // The run loop: sequential, one job at a time, usage guard before each job, a run-level wall-clock cap, every outcome
 // reported to the brain, then exit. Pure orchestration; run-batch.mjs wires the real or dry-run leaves.
 import { runJob } from './job.mjs';
+import { validThreshold } from './usage-guard.mjs';
 
-export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {}, now = () => Date.now(), runCapMin, keepWorkdir = false, env }) {
+export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {}, now = () => Date.now(), runCapMin, keepWorkdir = false, env, creds }) {
   const results = [];
   const capMin = runCapMin ?? (batch.kind === 'urgent' ? batch.perJobCapMin : cfg.runCapMin);
   const runDeadline = now() + capMin * 60_000;
-  if (typeof batch.usageThresholdPct === 'number') usage.thresholdPct = Math.min(usage.thresholdPct, batch.usageThresholdPct);
+  // the stricter of the two thresholds; a malformed value on either side makes the guard refuse (fail closed, I-1)
+  if (batch.usageThresholdPct !== undefined) {
+    const b = batch.usageThresholdPct;
+    usage.thresholdPct = validThreshold(b) && validThreshold(usage.thresholdPct) ? Math.min(usage.thresholdPct, b) : Number.NaN;
+  }
   const jobs = batch.jobs ?? [];
   for (let i = 0; i < jobs.length; i++) {
     const job = jobs[i];
@@ -24,7 +29,7 @@ export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {},
     log(`job ${job.id} (${job.finding?.kind} ${job.finding?.repo ?? ''}): start, ${g.reason}`);
     let o;
     try {
-      o = await runJob(job, { cfg, exec, usage, log, now, runDeadline, capMin: batch.perJobCapMin, keepWorkdir, env });
+      o = await runJob(job, { cfg, exec, usage, log, now, runDeadline, capMin: batch.perJobCapMin, keepWorkdir, env, creds });
     } catch (e) {
       o = { status: 'could_not_fix', note: `hands error: ${String(e?.message ?? e).slice(0, 300)}` };
     }

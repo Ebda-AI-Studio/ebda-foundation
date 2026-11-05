@@ -20,3 +20,16 @@ describe('exec', () => {
     expect(r.stdout.trim()).toBe('$(echo pwned); ls');
   });
 });
+
+describe('exec time caps (M-1)', () => {
+  it('a cap of 0 (or negative / NaN) is already expired: nothing starts', async () => {
+    for (const t of [0, -5, Number.NaN]) {
+      const r = await exec('node', ['-e', 'require("fs").writeFileSync("/dev/null","x")'], { timeoutMs: t });
+      expect(r).toMatchObject({ timedOut: true, code: 124 });
+    }
+  });
+  it('fd3 hands a secret to the child without putting it in the env', async () => {
+    const r = await exec('node', ['-e', 'const s=require("fs").readFileSync(3,"utf8");console.log(s.length, JSON.stringify(process.env).includes(s))'], { fd3: 'sekret', env: { PATH: process.env.PATH } });
+    expect(r.stdout.trim()).toBe('6 false');
+  });
+});

@@ -14,8 +14,9 @@ Mac awake (launchd, every 30 min) ──────► run-batch.mjs --claim �
 ## Per job (sequential, one at a time)
 
 1. **Usage guard** (`lib/usage-guard.mjs`, Ruling I-4): read the weekly Claude usage; refuse when it is unknown or at /
-   over the threshold (the stricter of the hands config and the brain's `USAGE_WEEKLY_THRESHOLD_PCT`). A refusal reports
-   `skipped_usage` for this job and every job after it (the brain puts them back in the queue) and ends the run.
+   over the threshold (the stricter of the hands threshold and the brain's `USAGE_WEEKLY_THRESHOLD_PCT`). A threshold
+   that is not a finite number 1..100 on either side (empty, typo, placeholder) refuses every job: fail closed (I-1).
+   A refusal reports `skipped_usage` for this job and every job after it (the brain re-queues them) and ends the run.
    Sources, freshest wins, rules ported from `os/ops/lib/usage_sentinel.py`:
    - `claude-cli`: the `rate_limit_event` the Claude Code CLI prints in `--output-format stream-json`. Measured on CLI
      2.1.317 (2026-11-06): `rate_limit_info.unifiedWindows.seven_day.utilization` is a fraction (0.96 = 96 %), `resetsAt`
@@ -25,21 +26,57 @@ Mac awake (launchd, every 30 min) ──────► run-batch.mjs --claim �
    - The brain's stored report is never read back (an echo would keep a stale number "fresh" forever).
 2. **May we work on it?** (`lib/policy.mjs`): destructive / irreversible classes (deletes, prod data writes, purchases,
    secrets, billing) need an explicit `proceed` answer; otherwise nothing runs. A repo without hands config → nothing runs.
-3. Fresh shallow clone of the default branch into `<workdir>/<jobId>`, branch `os/fix-<jobId>`.
-4. Claude Code headless (`claude -p … --output-format stream-json`) with the task prompt (`lib/prompt.mjs`: the finding
-   is fenced as untrusted data; Claude never commits, pushes, deploys or touches secrets), capped at the job's wall-clock
-   cap (urgent 30 min, nightly 45 min) and the run cap. Claude's env has no `GH_TOKEN` / `HANDS_TOKEN`.
-5. The repo's own `install` + `test` commands from the per-repo config (argv arrays, no shell, no credential in their env).
-6. Commit only the files Claude changed (explicit paths, never `-A`, never `--no-verify`), push, `gh pr create`.
-7. **Merge rule** (4a carried requirement 2; the brain accepts any outcome, so it lives here): merge ONLY when the job is
-   `auto-when-gate-green`, its kind is pre-approved (dependency / CVE bumps, docs, tests, lint, flaky), nothing it
-   touches is destructive or sensitive, it changed no protected path (workflows, `.env*`, wrangler config, migrations,
-   Dockerfile), the repo has a `mergeGate` command, and that gate exits 0 (`os/ops/merge-gate.sh`: N green polls,
-   head-pinned). Anything else: `pr_opened` with a `question:` note, and the brain sends ONE review question.
-8. Report the outcome (`merged | pr_opened | could_not_fix | timed_out | skipped_usage`) and the usage reading.
+3. **Work tree** `<workdir>/<jobId>/work`: shallow clone of the default branch; the base sha is recorded BEFORE Claude
+   runs. In the container it is chowned to the sandbox user.
+4. **Claude Code** headless (`claude -p … --output-format stream-json`) in the work tree, capped (urgent 30 min,
+   nightly 45 min, and the run cap). Prompt (`lib/prompt.mjs`): the finding is fenced as untrusted data; Claude never
+   commits, pushes, deploys, touches secrets or changes how tests run. Permissions (`claudePermissionArgs`): Mac =
+   `acceptEdits` with `Read/Edit/Write(./**)` (the checkout only), `Glob`, `Grep` and the repo's own test command;
+   container = `bypassPermissions` as the unprivileged sandbox user. Both deny edits to `.git/**`, `.github/**`, `.env*`,
+   test configs and `package.json` (allowed for dependency bumps only). The permission rules are a first line; the diff
+   check (step 9) enforces the same rule on what actually changed.
+5. **Commit tree** `<jobId>/commit`: a FRESH clone of the same base sha, made after Claude. Its `.github/workflows` is
+   copied to `<jobId>/base-workflows` before anything is applied: the merge gate derives required checks from that
+   pristine copy, never from the edited tree (S3).
+6. **What changed**: a byte comparison of the work tree against the fresh clone (`lib/tree.mjs`, plain file reads that
+   never follow symlinks; `.git` and `node_modules` skipped; ignored files dropped by the CLEAN tree's rules). Symlinks,
+   special files and files over 5 MB in the diff are refused. git is never run in the work tree after Claude (S1).
+7. The repo's own `install` + `test` commands (per-repo config, argv arrays, no shell) in the work tree, as the sandbox
+   user, with an allowlisted env (no credential at all).
+8. **Lint / format classes**: the base version of every changed file is written back and the repo's `format` command is
+   run on exactly those files; the result must equal Claude's version byte for byte, else no auto-merge.
+9. **Secret scan** of every changed file + the PR title/body: built-in patterns always, gitleaks (pinned in the image)
+   when installed. A hit blocks the push (`could_not_fix` + question; the secret is never echoed).
+10. The changes are applied to the commit tree; `git add -- <paths>` (explicit), commit, the tree must be clean
+    afterwards, push, `gh pr create`. Every hands git call: `core.hooksPath=/dev/null`, `core.fsmonitor=false`,
+    `credential.helper=`, `protocol.file.allow=never`, `GIT_CONFIG_NOSYSTEM=1`, an empty `GIT_CONFIG_GLOBAL`.
+11. **Merge rule** (bound to the ACTUAL diff, I-2/S2): merge ONLY when the job is `auto-when-gate-green`, its kind is
+    pre-approved, AND every changed path fits that kind's allowlist (`lib/diffcheck.mjs`): docs → `*.md`/`*.mdx`/
+    `docs/**`; dependency/CVE bumps → manifests + lockfiles, `package.json` only when nothing but dependency fields
+    changed; tests → test files only; lint/format → any path, only when step 8 verified it. No changed path may be
+    protected (`.github/`, `.env*`, wrangler config, migrations, Dockerfile, `.gitattributes`, `.npmrc`), sensitive or
+    destructive by name, or define how tests run (`package.json` scripts, test configs, `tsconfig*`, `Makefile`, …). The
+    repo needs a `mergeGate` command, the commit tree must still be clean, and the gate (`os/ops/merge-gate.sh`, run
+    from the image with `--workflows {base_workflows}`) must exit 0. Anything else: `pr_opened` with a `question:` note
+    and the brain sends ONE review question. The gate may overrun the job cap by up to 60 s (it needs a few polls).
+12. Report the outcome (`merged | pr_opened | could_not_fix | timed_out | skipped_usage`) and the usage reading. The job
+    dir is removed; a crash is swept on the next start (`job_*` dirs only) and on SIGTERM/SIGINT.
 
-A run also has a wall-clock cap (`runCapMin`, nightly 90; urgent = the job cap): jobs it does not reach go back as
-`skipped_usage`.
+### Credentials (S1/S4)
+
+| Credential | Who gets it | How |
+|---|---|---|
+| `GH_TOKEN` | `git clone` / `fetch` / `push` | per-job `GIT_ASKPASS` helper in a root-only private dir, token in that one process's env |
+| `GH_TOKEN` | `gh pr create`, the merge gate | that one process's env, cwd = the private dir, `--repo` explicit |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code (container) | file descriptor 3 (`CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3`), never its env; `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` |
+| none | the repo's install / test / format, Claude's own tools | allowlisted env (`PATH`, locale, `TMPDIR`, `HOME`, …) |
+
+Container: the hands run as root and every untrusted command runs as `node` through `setpriv`, so it cannot read the
+hands' `/proc/<pid>/environ`, the askpass dir or the commit tree. **Mac residual** (Ruling 4b-5): no second user, so a
+same-uid process (the repo's tests, which Claude may have edited) could read `OS_SERVICES_ENV` or the hands' env; the Mac
+keeps Claude to file tools in the checkout plus the test command, and a fix that touches test-defining files is never
+merged. `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` comes from the CLI's own env list (2.1.317); it is NOT VERIFIED with a
+real token until the first container run (a wrong guess fails loudly: every job `could_not_fix: claude failed`).
 
 ## Files
 
@@ -49,7 +86,9 @@ A run also has a wall-clock cap (`runCapMin`, nightly 90; urgent = the job cap):
 | `lib/job.mjs`, `lib/run.mjs` | one job end to end; the sequential run loop |
 | `lib/usage-guard.mjs`, `lib/policy.mjs` | the two refusal rules (usage; merge/destructive) |
 | `lib/config.mjs` | per-repo config (`os/config/hands.example.json`), from `HANDS_CONFIG_FILE` or `HANDS_CONFIG_JSON` |
-| `lib/exec.mjs` | spawn without a shell, cap kills only the process group it started |
+| `lib/exec.mjs` | spawn without a shell, cap kills only the process group it started; a cap of 0 = already expired; `fd3` for a secret |
+| `lib/tree.mjs`, `lib/git.mjs`, `lib/diffcheck.mjs` | work-vs-fresh-clone diff; git/credential/sandbox hygiene; per-kind path allowlists + secret scan |
+| `claude-cli/` | `package.json` + `package-lock.json` pinning Claude Code by version and sha512 integrity (`npm ci` in the image) |
 | `lib/dry-run.mjs`, `fixtures/batch.json` | scripted leaves for `--dry-run` (no network, Claude, git remote or gh) |
 | `providers/` | `cloudflare-sandbox` (default from Task 7), `mac-local` (pull-only), `github-actions` (disabled); `index.mjs` selects by `HANDS_PROVIDER`. Worker-compatible: the brain bundles them. |
 | `providers/mac-local.sh`, `providers/launchd/com.ebda.os.hands-mac-local.plist` | Mac runner + launchd template (installed by Task 5) |
@@ -58,7 +97,8 @@ A run also has a wall-clock cap (`runCapMin`, nightly 90; urgent = the job cap):
 
 The container side of `cloudflare-sandbox` is `os/cloud/brain/src/hands-container.ts` (`HandsContainer` DO): one
 instance per lane (`hands-nightly`, `hands-urgent`), 409 when busy (recorded by the brain as a failed run), credentials
-passed as env at start, a 1-minute alarm keeps the instance alive and destroys it at cap + 5 min.
+passed as env at start, the cap state + a 1-minute alarm are written BEFORE the container starts; the alarm keeps the
+instance alive and destroys it at cap + 5 min.
 
 ## Providers
 
@@ -120,7 +160,9 @@ All on the personal Cloudflare account. Never put a token or id in the repo or t
 3. **Repo config**: write the per-repo config (shape `os/config/hands.example.json`; every repo needs its own `test`
    command; add `mergeGate` only for repos whose merge gate should be allowed to merge pre-approved classes) and store
    it: `wrangler secret put HANDS_CONFIG_JSON < ~/.ebda-os.hands.json`. Also `HANDS_GIT_NAME` and `HANDS_GIT_EMAIL`
-   (the bot identity commits are authored as; use the token owner's noreply address).
+   (the bot identity commits are authored as; use the token owner's noreply address). Add a `format` argv (with
+   `{files}`) for repos where lint/format fixes may auto-merge, and point `mergeGate --workflows` at `{base_workflows}`
+   (config validation rejects a gate that reads `{dir}`).
 4. **Container block** in `os/cloud/brain/wrangler.jsonc` (and redeploy with `scripts/deploy.sh`):
    ```jsonc
    "containers": [{ "class_name": "HandsContainer", "image": "../hands/Dockerfile", "image_build_context": "../..",

@@ -1,10 +1,12 @@
 // End to end without network: run-batch --dry-run walks the fixture through the real pipeline; the example config
 // validates; the Dockerfile passes the engine-free checks; providers obey the selection rules.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { validateConfig } from '../lib/config.mjs';
-import { main } from '../run-batch.mjs';
+import { main, sweepWorkdir } from '../run-batch.mjs';
 import { checkDockerfile } from '../scripts/check-dockerfile.mjs';
 import { selectProvider } from '../providers/index.mjs';
 
@@ -28,6 +30,23 @@ describe('run-batch --dry-run --fixture', () => {
     expect(report.outcomes[1].note).toMatch(/^question:/);
     expect(report.usage.length).toBeGreaterThan(0);
   });
+  it('I-1: a malformed HANDS_USAGE_THRESHOLD_PCT refuses every job and says why', async () => {
+    const lines = [];
+    const code = await main(['--dry-run', '--fixture', join(HERE, 'fixtures', 'batch.json')], { PATH: process.env.PATH, HOME: process.env.HOME, HANDS_USAGE_THRESHOLD_PCT: 'eighty' }, (s) => lines.push(s));
+    expect(code).toBe(0);
+    const report = JSON.parse(lines.at(-1));
+    expect(report.outcomes.map((o) => o.status)).toEqual(['skipped_usage', 'skipped_usage', 'skipped_usage']);
+    expect(lines.join('\n')).toMatch(/not a number 1\.\.100: refusing every job/);
+  });
+  it('sweepWorkdir removes only job_* dirs (crash leftovers), never anything else', async () => {
+    const d = await mkdtemp(join(tmpdir(), 'hands-sweep-'));
+    await mkdir(join(d, 'job_abc', 'work'), { recursive: true });
+    await writeFile(join(d, 'keep.txt'), 'x');
+    expect(sweepWorkdir(d)).toBe(1);
+    expect(existsSync(join(d, 'keep.txt'))).toBe(true);
+    expect(existsSync(join(d, 'job_abc'))).toBe(false);
+    expect(sweepWorkdir(join(d, 'missing'))).toBe(0);
+  });
   it('usage errors exit 64; a real run without brain credentials cannot start (exit 2)', async () => {
     expect(await main(['--dry-run'], {}, () => {})).toBe(64);
     expect(await main(['--run', 'run_x'], { HANDS_CONFIG_JSON: '{"repos":{}}', HANDS_GIT_NAME: 'n', HANDS_GIT_EMAIL: 'e' }, () => {})).toBe(2);
@@ -44,7 +63,7 @@ describe('example config + Dockerfile', () => {
   it('the checker catches an unpinned base, a baked token, a root user and a missing COPY source', () => {
     const bad = 'FROM node:22 AS b\nFROM node:22\nENV GH_TOKEN=ghp_x\nCOPY nope.txt /x\nUSER root\nENTRYPOINT node x\n';
     const p = checkDockerfile(bad).join('\n');
-    for (const re of [/not pinned by digest/, /credential-like/, /non-root/, /COPY source missing/, /exec form/]) expect(p).toMatch(re);
+    for (const re of [/not pinned by digest/, /credential-like/, /non-root required/, /COPY source missing/, /exec form/]) expect(p).toMatch(re);
   });
 });
 
