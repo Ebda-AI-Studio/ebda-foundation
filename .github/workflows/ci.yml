@@ -46,3 +46,37 @@ jobs:
           cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
       - run: npm ci
       - run: npm audit --audit-level=low
+
+  # OS layer (os/): shellcheck, the predecessor-string guard and the Linux smoke. Affected-only: on a PR it does nothing
+  # unless os/ or this workflow changed (one checkout + one git diff, ~10 s). On push to main it always runs.
+  os:
+    name: OS layer (shellcheck, strings, Linux smoke)
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Did os/ change?
+        id: chg
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ] && ! git diff --name-only "$BASE"...HEAD | grep -Eq '^(os/|\.github/workflows/ci\.yml$)'; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "os/ untouched - skipping"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: shellcheck (warnings and above)
+        if: steps.chg.outputs.changed == 'true'
+        run: |
+          command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
+          shellcheck -S warning os/ops/*.sh os/ops/lib/*.sh os/ops/hooks/*.sh os/ops/git-hooks/*.sh os/ops/remediation/*.sh
+      - name: No predecessor strings
+        if: steps.chg.outputs.changed == 'true'
+        run: bash os/tests/no-force-strings.test.sh
+      - name: Linux smoke (bash -n + --help)
+        if: steps.chg.outputs.changed == 'true'
+        run: bash os/tests/linux-smoke.test.sh
