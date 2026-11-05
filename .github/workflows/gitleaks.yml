@@ -1,0 +1,66 @@
+name: gitleaks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Nightly FULL-history scan (a PR scan only sees its own commits).
+    - cron: '23 2 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  # A push to main gets a group of its OWN (keyed by sha) so a burst of merges never collapses
+  # into one. `cancel-in-progress: false` alone was not enough (issue 2454): GitHub keeps at most
+  # ONE pending run per group, so a second merge cancelled the earlier main run while it was still
+  # pending, before it ever scanned, and the required "Scan for leaked secrets" gate went
+  # `cancelled` on main commits. PR pushes keep the per-ref group, where cancelling the superseded
+  # run is correct (a newer sha supersedes it).
+  group: gitleaks-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scan:
+    name: Scan for leaked secrets
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          set -eu
+          GITLEAKS_VERSION=8.21.2
+          # Match the runner's architecture (x64 on ubuntu-latest).
+          case "$(uname -m)" in
+            aarch64|arm64) GITLEAKS_ARCH=arm64 ;;
+            *) GITLEAKS_ARCH=x64 ;;
+          esac
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${GITLEAKS_ARCH}.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Run gitleaks
+        # A pull request is scanned over ITS OWN commit range only (base..head). `gitleaks detect` otherwise walks
+        # `git log --all`, and with fetch-depth 0 that includes every other open PR's branch, so one branch's test
+        # fixture failed this gate on every unrelated PR (#228, 2026-10-25). Pushes to main, the nightly schedule
+        # and manual dispatch keep the full-history scan. The pre-commit hook uses the same .gitleaks.toml.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "gitleaks: scanning the PR range ${BASE_SHA}..${HEAD_SHA}"
+            gitleaks detect --source . --log-opts="${BASE_SHA}..${HEAD_SHA}" --redact --verbose --exit-code 1
+          else
+            echo "gitleaks: scanning the full history"
+            gitleaks detect --source . --redact --verbose --exit-code 1
+          fi
