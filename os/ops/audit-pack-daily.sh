@@ -295,7 +295,7 @@ EOF
             else
               body="$(curl -4 -s --max-time 40 \
                         -H 'Accept: application/vnd.github+json' \
-                        -H 'User-Agent: force-ai-audit-pack/1.0' \
+                        -H 'User-Agent: ebda-os-audit-pack/1.0' \
                         "$u" 2>/dev/null | head -c 400000)"
             fi
             if [ -z "$body" ]; then _say "  skipped: $id ($u unreachable)"; continue; fi

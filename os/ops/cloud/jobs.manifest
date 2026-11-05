@@ -1,4 +1,4 @@
-# Force AI — cloud-tier job manifest (Oracle Free ARM VM).
+# Ebda OS — cloud-tier job manifest (Oracle Free ARM VM).
 # The always-on watchdog half of the OS, ported off the Mac so it survives the Mac
 # being asleep/off. Mirrors the launchd intervals on the Mac (ops/launchd/*.plist).
 #

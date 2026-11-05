@@ -18,9 +18,9 @@
 		<string>export</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-claude-home-export.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-claude-home-export.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-claude-home-export.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-claude-home-export.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>

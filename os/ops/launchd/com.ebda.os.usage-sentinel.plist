@@ -21,8 +21,8 @@
 	<key>StartInterval</key>
 	<integer>300</integer>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-usage-sentinel.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-usage-sentinel.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-usage-sentinel.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-usage-sentinel.log</string>
 </dict>
 </plist>

@@ -7,8 +7,8 @@ _pass=0; _fail=0
 eq() { if [ "$2" = "$3" ]; then echo "PASS: $1"; _pass=$((_pass+1)); else echo "FAIL: $1 — got '$2' want '$3'"; _fail=$((_fail+1)); fi; }
 v()  { printf '%s\n' "$@" | deployable_verdict; }
 
-# ── the real 2026-08-25 case: WBS #158, CI-only ──────────────────────────────
-eq "the WBS drift delta is inert" \
+# ── the real 2026-08-25 case: whatsapp #158, CI-only ──────────────────────────────
+eq "the whatsapp drift delta is inert" \
    "$(v .github/workflows/db-backup.yml .github/workflows/rls-proof.yml .github/workflows/semgrep.yml)" \
    "none"
 

@@ -17,9 +17,9 @@
 		<string>__HOME__/.claude/scripts/session-mining-cron.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-session-mining.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-session-mining.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-session-mining.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-session-mining.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Day</key>

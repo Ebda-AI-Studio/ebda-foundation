@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Force AI — self-hosted runner JOB-STARTED hook: reclaim disk before the job runs.
+# Ebda OS — self-hosted runner JOB-STARTED hook: reclaim disk before the job runs.
 #
 # Deployed INSIDE the Umbra CI guest as /home/umbra/hooks/job-started.sh and
 # wired via ACTIONS_RUNNER_HOOK_JOB_STARTED in each runner's .env.
@@ -14,7 +14,7 @@
 # A job hook that exits non-zero FAILS THE JOB. That exact thing has already
 # cost this fleet dearly: a post-job hook returning non-zero failed every PR at
 # the "Complete runner" step, AFTER all real steps passed, silently blocking
-# every merge on FWB + WBS until found (see runner-hook-health.sh). So:
+# every merge on store + whatsapp until found (see runner-hook-health.sh). So:
 #
 #   • Any internal error here exits 0. A bug in this file must never be able to
 #     block CI — the worst it may do is fail to free space.

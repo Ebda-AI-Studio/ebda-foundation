@@ -1,7 +1,7 @@
 # frontend-quality — Frontend Quality Rubric (i18n/RTL · a11y/WCAG · Perf/CWV · SEO)
 
 tags: [BOTH]
-sources: PLAYBOOK §14 (audit-fleet lenses: a11y/WCAG, Perf/CWV, i18n/RTL, SEO), PLAYBOOK §16 (definition of production-ready: i18n/RTL parity), reference-iceberg-audit.md (term 38 Documentation; Vibe-vs-Reality grading), reference-force-ai-production-grade-standard.md (layer 13 i18n/RTL; gap #6 WCAG 2.2 AA / axe-core), CLAUDE.md (Arabic UTF-8 edit rule; scaling rule 3 image optimization)
+sources: PLAYBOOK §14 (audit-fleet lenses: a11y/WCAG, Perf/CWV, i18n/RTL, SEO), PLAYBOOK §16 (definition of production-ready: i18n/RTL parity), reference-iceberg-audit.md (term 38 Documentation; Vibe-vs-Reality grading), CLAUDE.md (Arabic UTF-8 edit rule; scaling rule 3 image optimization)
 
 ## What "solid" looks like
 Full bilingual AR/EN parity with no missing keys and an RTL-correct admin AND storefront; an accessibility floor (keyboard, contrast, aria, axe-core wired into CI); Core Web Vitals within budget (LCP/CLS/INP) with optimized images and a controlled bundle; and storefront SEO complete (meta, Open Graph, sitemap, structured data, hreflang). Each of the four lenses (i18n/RTL, a11y/WCAG, Perf/CWV, SEO) has a runnable check, not a vibe.
@@ -23,5 +23,5 @@ Full bilingual AR/EN parity with no missing keys and an RTL-correct admin AND st
 | 12 | Page-builder / theme controls verified end-to-end | Every merchant visual control is proven to reach the storefront: admin write-key == storefront read-key, the rendering component actually applies it (not overridden by a hardcoded class), it renders live after save, AND it shows in the unsaved preview. Catches the "saved-but-not-rendered" class with 3 root causes — (a) PAINTED OVER: a component's own opaque class/bg covers the wrapper value (thread the value INTO the component as a prop + inline style); (b) NOT CONSUMED: saved to a settings object no storefront code reads — when one field is dead, sweep EVERY interface that has it and fix all in one pass; (c) NOT IN THE PREVIEW DRAFT BUNDLE: settings on `store.settings` (vs `layout`/`theme`) aren't carried by the preview draft, so they never preview unsaved | for each page-builder card, trace its write-key → the storefront consumer; grep for the key being read; confirm no hardcoded class overrides it; confirm the preview-draft bundle carries the setting's storage location | High |
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …

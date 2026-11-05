@@ -94,7 +94,7 @@ check next to it.
 
 ## 4. The record it produces
 
-A PR touching any defence carries this table. It is what a `/force-audit` run grades.
+A PR touching any defence carries this table. It is what an audit run grades.
 
 | Defence | File:line | Mutation applied | Test that went red | Restored (sha256 match) |
 |---|---|---|---|---|

@@ -96,7 +96,7 @@ _pf_base() { # <repo> -> origin default branch (fallback main)
 
 _pf_prompt() { # <class> <desc>
   cat <<EOF
-You are the Force AI OS Class-B remediation agent fixing ONE finding in this repo.
+You are the Ebda OS Class-B remediation agent fixing ONE finding in this repo.
 FIRST read the memory-first layers: graphify-out/GRAPH_REPORT.md, the relevant scoped
 feedback-*.md / project-*.md, and MEMORY.md. Follow this repo's CLAUDE.md and the global
 15 code-quality non-negotiables.

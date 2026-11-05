@@ -10,9 +10,11 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
 else
   files=$(find . -type f -not -path './.git/*' -not -path './node_modules/*' | sed 's|^\./||')
 fi
+RE2='forceai[-_.]|\bFWB\b|\bWBS\b|force-website-builder|whatsapp-bulk-sender|gcc-horse-market|horse-market|work-wise|legende|olounge|beethoven|al[-_]?assriya|wady|pecan+bee|forcemediakw|force-ai\.co'
+RE_CI='force[-_ ]?ai'
 hits=$(printf '%s\n' "$files" \
   | grep -vE '^(docs/history/|\.superpowers/|node_modules/|\.git/|docs/plans/2026-11-05-foundation-takeover\.md$|os/tests/no-force-strings\.test\.sh$|package-lock\.json$)' \
-  | while IFS= read -r f; do [ -f "$f" ] && grep -InE "$RE" -- "$f" 2>/dev/null | sed "s|^|$f:|"; done)
+  | while IFS= read -r f; do [ -f "$f" ] && { grep -InE "$RE|$RE2" -- "$f" 2>/dev/null; grep -InEi "$RE_CI" -- "$f" 2>/dev/null; } | sort -u | sed "s|^|$f:|"; done)
 if [ -n "$hits" ]; then
   echo "FAIL: predecessor strings found outside docs/history/:"
   printf '%s\n' "$hits"

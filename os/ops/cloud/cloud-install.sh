@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Force AI — cloud-tier installer. Run ON the Oracle Free ARM VM (Ubuntu 22.04/24.04),
+# Ebda OS — cloud-tier installer. Run ON the Oracle Free ARM VM (Ubuntu 22.04/24.04),
 # NOT the Mac. Ports the OS watchdog tier from macOS launchd to systemd --user timers
 # so it runs always-on, headless, surviving the Mac being asleep/off.
 #
@@ -24,7 +24,7 @@ SECRETS="$OS_HOME/secrets.env"
 UNIT_DIR="$HOME/.config/systemd/user"
 MANIFEST="$SRC/cloud/jobs.manifest"
 
-echo "== Force AI cloud-tier install =="
+echo "== Ebda OS cloud-tier install =="
 echo "repo: $REPO"
 
 # 1. Deps (idempotent). gh + node + jq + python3 + git.
@@ -57,7 +57,7 @@ mkdir -p "$BIN" "$STATE" "$UNIT_DIR"
 if [ ! -f "$SECRETS" ]; then
   install -m 600 /dev/null "$SECRETS"
   cat > "$SECRETS" <<'EOF'
-# Force AI cloud-tier secrets — chmod 600, NEVER commit.
+# Ebda OS cloud-tier secrets — chmod 600, NEVER commit.
 # Telegram (Whisky Whoop bot) — required for any --notify job:
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALERT_CHAT_ID=
@@ -123,7 +123,7 @@ while IFS='|' read -r name schedule args; do
 
   cat > "$UNIT_DIR/$unit.service" <<EOF
 [Unit]
-Description=Force AI OS — $name
+Description=Ebda OS — $name
 After=network-online.target
 Wants=network-online.target
 
@@ -143,7 +143,7 @@ EOF
   fi
   cat > "$UNIT_DIR/$unit.timer" <<EOF
 [Unit]
-Description=Force AI OS timer — $name
+Description=Ebda OS timer — $name
 
 [Timer]
 $boot_clause

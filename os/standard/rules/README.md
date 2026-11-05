@@ -22,7 +22,7 @@ Ahmad's actual stack, auto-relevant the moment a matching file is opened.
 
 ## Why these five
 
-They map to Ahmad's actual production stack across FWB, WBS, Salam ERP, and every new Force AI project:
+They map to Ahmad's actual production stack across our products and every new project:
 Next.js/React on the frontend, Node/Express APIs, Prisma+Postgres(Neon) for data, TypeScript everywhere,
 and Bash for ops/CI/automation. This is not a generic "cover every language" set — it's mined from real
 incidents (see each file's `sources:` frontmatter line) rather than invented best-practices, so every

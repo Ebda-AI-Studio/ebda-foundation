@@ -1,7 +1,7 @@
 # observability — Observability & Alerting Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §8, CLAUDE.md (Production Reality gates 6/7/11/12), reference-iceberg-audit.md (terms 23–26: Logging/Alerting/Incident response/Instrumentation), reference-force-ai-production-grade-standard.md (layer 7: observability)
+sources: PLAYBOOK §8, CLAUDE.md (Production Reality gates 6/7/11/12), reference-iceberg-audit.md (terms 23–26: Logging/Alerting/Incident response/Instrumentation)
 
 ## What "solid" looks like
 Sentry wired day 1 on every job failure, webhook, and money mutation; an external uptime monitor with a P0 notification channel before any customer goes live; a log drain with verified ≥30-day retention documented in `docs/DEPLOYMENT.md`; the external-alert bridge token set in prod with a boot-time warning if missing; a defined SLO (p95 latency + error rate) with a queue-depth watch on async jobs; and every monitor distinguishing **"I could not reach it"** from **"it is broken"**.
@@ -41,5 +41,5 @@ Three classes, never two (`ops/lib/net-probe.sh`, `net_class_for`):
 | 10 | A mutating monitor is pre-flight gated | Any watcher whose failure path triggers a WRITE (redeploy, rollback, restart) confirms its own connectivity before acting, so a local network outage cannot mutate production | grep for watchers that invoke a recovery/redeploy script on a probe failure; confirm a connectivity or external-prober check gates the hand-off | Critical |
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …

@@ -20,9 +20,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-alert-triage.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-alert-triage.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-alert-triage.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-alert-triage.log</string>
 	<key>StartInterval</key>
 	<integer>1800</integer>
 </dict>

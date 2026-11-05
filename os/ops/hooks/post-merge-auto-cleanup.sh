@@ -91,7 +91,7 @@ if [ ! -f "$HYGIENE" ]; then
   exit 0
 fi
 
-LOG="$HOME/Library/Logs/forceai-post-merge-cleanup.log"
+LOG="$HOME/Library/Logs/ebda-os-post-merge-cleanup.log"
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 nohup bash "$HYGIENE" --repo "$repo" --skip "$skip" >> "$LOG" 2>&1 &
 disown 2>/dev/null || true
@@ -100,7 +100,7 @@ REPO="$repo" SKIP="$skip" PROJ="$OS_PROJECTS_DIR" python3 -I -c '
 import json, os
 repo, skip = os.environ["REPO"], os.environ["SKIP"]
 msg = ("post-merge cleanup started for " + repo +
-       " (log: ~/Library/Logs/forceai-post-merge-cleanup.log).")
+       " (log: ~/Library/Logs/ebda-os-post-merge-cleanup.log).")
 if skip and os.path.realpath(skip).startswith(os.path.realpath(os.path.join(os.environ["PROJ"], "_worktrees")) + "/"):
     msg += (" The worktree this session is in (" + skip + ") is kept; "
             "it is removed by the hourly sweep once you leave it.")

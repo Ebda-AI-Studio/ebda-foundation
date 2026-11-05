@@ -17,9 +17,9 @@
 		<string>__HOME__/.claude/scripts/instinct-extract.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-instinct-extract.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-instinct-extract.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-instinct-extract.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-instinct-extract.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>

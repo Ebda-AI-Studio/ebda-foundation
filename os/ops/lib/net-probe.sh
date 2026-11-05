@@ -5,7 +5,7 @@
 # while. SEVEN scheduled monitors then reported their targets as broken, each
 # naming a different and mutually contradictory cause:
 #
-#   wbs-monitor      "WBS auth: login FAILED (HTTP 000) — auth is broken for all users"
+#   wbs-monitor      "whatsapp auth: login FAILED (HTTP 000) — auth is broken for all users"
 #   checkout-monitor "catalogue/store-resolve FAILED"           (both live stores)
 #   cf-workers-watch "could not verify the token (CF API unreachable?)"
 #   deploy-drift     "Railway API query failed (check RAILWAY_API_TOKEN)"
@@ -28,7 +28,7 @@
 #     || . "$HOME/.claude/scripts/lib/net-probe.sh" 2>/dev/null || true
 #
 # PRIOR ART: ops/self-heal.sh §1.5 has carried a bespoke version of the
-# pre-flight since 2026-07-06, after a Mac network blip faked an FWB outage and
+# pre-flight since 2026-07-06, after a Mac network blip faked an store outage and
 # would have redeployed production. That guard is latency-based (a baseline host
 # must answer in <2.5s) and therefore STRICTER than host_online here, so it is
 # deliberately left alone rather than refactored onto this — see Ruling M-5 in
@@ -85,7 +85,7 @@ net_class_for() {
 #   NET_CURL_EXIT  curl's exit code
 #   NET_BODY       the response body, for callers that parse JSON
 #
-# Callers may re-interpret NET_STATUS for their own endpoint (WBS /api/health
+# Callers may re-interpret NET_STATUS for their own endpoint (whatsapp /api/health
 # legitimately accepts any HTTP answer as "the API layer is up"). No caller may
 # re-interpret `unreachable` as a status-based verdict — that is the entire
 # point of this file.
@@ -123,7 +123,7 @@ net_unreachable_note() {
 # asserts this with a positive control.
 #
 # Both targets are deliberately unrelated to anything the OS monitors, so a
-# Force AI outage can never look like a local network outage.
+# Ebda OS outage can never look like a local network outage.
 NET_PREFLIGHT_URLS="${NET_PREFLIGHT_URLS:-https://api.github.com/ https://www.cloudflare.com/cdn-cgi/trace}"
 NET_PREFLIGHT_TRIES="${NET_PREFLIGHT_TRIES:-2}"
 NET_PREFLIGHT_TIMEOUT="${NET_PREFLIGHT_TIMEOUT:-5}"

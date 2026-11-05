@@ -7,7 +7,7 @@
 # loop), skills, agents, workflows, commands, keybindings, scoped memory, and
 # the instinct store. Without it a new Mac gets the launchd fleet but a Claude
 # with no rules, no skills, and no memory. (Found 2026-07-11 preparing the
-# ForceAI Studio move.)
+# the Ebda Studio Mac move.)
 #
 #   ops/migrate-claude-home.sh export            # old Mac → ~/Desktop/claude-home-<date>.tgz
 #   ops/migrate-claude-home.sh import <tarball>  # new Mac (run AFTER bootstrap.sh)

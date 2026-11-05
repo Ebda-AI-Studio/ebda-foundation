@@ -50,7 +50,7 @@ lock() { mkdir -p "$(dirname "$1")"; echo '{}' > "$1"; }
 
 # --- 1. depth-5 repo with a space in its path is found and audited -------------
 R="$T/t1"
-mkrepo "$R/Force-AI/clients/some client/my repo"; lock "$R/Force-AI/clients/some client/my repo/package-lock.json"
+mkrepo "$R/Whisky-11/clients/some client/my repo"; lock "$R/Whisky-11/clients/some client/my repo/package-lock.json"
 mkrepo "$R/Personal/projects/plain"; lock "$R/Personal/projects/plain/package-lock.json"
 run_audit "$R"
 [ "$RC" = 0 ] && [ "$(field "d['detail']['repos']")" = 2 ] && [ "$(field "d['detail']['lockfiles']")" = 2 ] \
@@ -89,7 +89,7 @@ okflag=$(python3 -c "import json;print(json.load(open('$ST'))['ok'])" 2>/dev/nul
 
 # --- 4. pnpm repo + sub-dir lockfiles are audited; vulns reported --------------
 R="$T/t4"
-mkrepo "$R/Force-AI/clients/c/pn"; lock "$R/Force-AI/clients/c/pn/pnpm-lock.yaml"
+mkrepo "$R/Whisky-11/clients/c/pn"; lock "$R/Whisky-11/clients/c/pn/pnpm-lock.yaml"
 mkrepo "$R/Ebda-AI-Studio/internal-projects/wbs"
 lock "$R/Ebda-AI-Studio/internal-projects/wbs/backend/package-lock.json"; lock "$R/Ebda-AI-Studio/internal-projects/wbs/frontend/package-lock.json"
 echo '{"advisories":{"1":{"module_name":"lodash","severity":"critical","url":"https://github.com/advisories/GHSA-aaaa-bbbb-cccc"}},"metadata":{"vulnerabilities":{"critical":1,"high":0}}}' > "$T/pn.json"

@@ -16,7 +16,7 @@ SECURITY='gitleaks|semgrep|secret|leaked|security|sast|zap|trufflehog|codeql|vul
 br=$(gh pr view "$num" --repo "$slug" --json headRefName --jq .headRefName 2>/dev/null)
 # `cancelled`, `timed_out`, `stale`, `action_required` and `startup_failure` are
 # NOT failures, but they are not passes either. Selecting only "failure" let
-# pr-shepherd merge gcc-horse-market#99 on an all-cancelled CI run (fixed in
+# pr-shepherd merge client-repo#99 on an all-cancelled CI run (fixed in
 # lib/pr-merge-gate.sh). The required-checks gate below already demands an actual
 # SUCCESS, but it only runs when the base branch is PROTECTED — on an
 # unprotected branch this list is the only gate, so it has to catch them too.

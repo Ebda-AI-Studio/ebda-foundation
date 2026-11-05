@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# auto-fix-check.sh — shared CI watchdog for Force AI Suite.
-# Polls GitHub for failed CI runs across FWB/WBS/CRM in the last ~30 min.
+# auto-fix-check.sh — shared CI watchdog for Ebda OS Suite.
+# Polls GitHub for failed CI runs across store/whatsapp/studio in the last ~30 min.
 # For each NEW failure (not seen in state file), invokes `claude -p` to
 # investigate + propose a fix as a PR. Pings Telegram with the result.
 #
@@ -46,7 +46,7 @@ if command -v require_projects_access >/dev/null 2>&1; then require_projects_acc
 
 
 # ---------------------- Config ----------------------
-# repo:workflow_filename — per-repo because WBS uses pr-validation.yml, others use ci.yml
+# repo:workflow_filename — per-repo because whatsapp uses pr-validation.yml, others use ci.yml
 REPOS=(
   "$OS_ORG/ebda-store:ci.yml"
   "$OS_ORG/ebda-whatsapp:pr-validation.yml"
@@ -243,8 +243,8 @@ for REPO_ENTRY in "${REPOS[@]}"; do
   # another commit, run, or session has already addressed. Before spending a
   # claude -p investigation, confirm the failure is still live & worth fixing.
   # All checks fail-OPEN on lookup error (proceed) EXCEPT positive "resolved"
-  # signals, which fail-SAFE (skip). Verified-stale cases here: WBS #36 (cloud
-  # already active), FWB #79's E2E (already fixed properly in a merged PR).
+  # signals, which fail-SAFE (skip). Verified-stale cases here: whatsapp #36 (cloud
+  # already active), store #79's E2E (already fixed properly in a merged PR).
 
   # Resolve the PR (if any) for the failing head branch BEFORE claiming, so the
   # claim uses the SAME canonical key babysit-prs uses (pr:<slug>#<n>) instead

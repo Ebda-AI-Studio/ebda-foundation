@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Force AI — install/repair the self-hosted runner's post-job cleanup hook so it
+# Ebda OS — install/repair the self-hosted runner's post-job cleanup hook so it
 # NEVER fails a job. Run this ON THE RUNNER HOST (the Umbra $OS_VM Ubuntu VM: umbra shell $OS_VM --), not macOS directly.
 #
 # Why: a post-job hook that exits non-zero fails the job at "Complete runner" after
@@ -19,9 +19,9 @@ set -u
 HOOK="${HOOK:-/home/$(whoami)/runner-hooks/post-job-cleanup.sh}"
 HOOK_DIR="$(dirname "$HOOK")"
 REAL="$HOOK_DIR/post-job-cleanup.real.sh"
-MARKER="# Force AI best-effort wrapper"
+MARKER="# Ebda OS best-effort wrapper"
 
-echo "== Force AI runner-hook setup =="
+echo "== Ebda OS runner-hook setup =="
 echo "hook: $HOOK"
 
 mkdir -p "$HOOK_DIR"

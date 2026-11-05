@@ -5,7 +5,7 @@
 # FINDING (#197, 2026-10-03): the log held 104 runs saying "no 'CI' runs found for
 # <repo> (workflow renamed?)" for ALL FOUR repos at once, next to "gmail ... nodename
 # nor servname not known" and "0 still-firing". Every named workflow exists
-# (verified with `gh workflow list`); FWB's `CI` returns runs fine online. The
+# (verified with `gh workflow list`); store's `CI` returns runs fine online. The
 # runs were OFFLINE: gh failed, stderr was discarded, and the empty result was
 # treated as "everything resolved" -> alert-seen.json wiped -> the next online run
 # re-alerted every open issue as NEW.
@@ -56,7 +56,7 @@ echo "$OUT" | grep -q "no 'CI' runs found for Ebda-AI-Studio/ebda-store" && ! ec
 
 run_at "$D" red 0
 grep -q "main CI FAILING: Ebda-AI-Studio/ebda-store @ abcdef12" "$NOTIFY_LOG" \
-  && pass "online + red main CI: FWB CI failure is detected and paged" || fail "red CI not alerted: $(cat "$NOTIFY_LOG") / $OUT"
+  && pass "online + red main CI: store CI failure is detected and paged" || fail "red CI not alerted: $(cat "$NOTIFY_LOG") / $OUT"
 
 echo "== MUTATION CHECKS =="
 M1="$T/m1.sh"; python3 - "$OPS/alert-triage.sh" "$M1" <<'PY' || fail "mutation 1 setup"

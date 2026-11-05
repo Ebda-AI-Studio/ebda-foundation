@@ -54,7 +54,7 @@ senses() {
 🧠 WHISKY AI OS — AWARENESS MAP (what the brain can perceive + act on)
 
 SEE (inputs the OS reads):
-  • Gmail            IMAP alert bridge (gmail-alert-poller in FWB API) → alerts from
+  • Gmail            IMAP alert bridge (gmail-alert-poller in store API) → alerts from
                      Sentry/UptimeRobot/PostHog/Railway/Neon land in Telegram.
                      Creds: ~/.whisky-services.env (GMAIL_IMAP_*).
   • Health/monitors  ~/.whisky-os-state/*-status.json — every subsystem (services, checkout,

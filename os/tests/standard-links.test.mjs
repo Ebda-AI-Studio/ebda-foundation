@@ -32,9 +32,17 @@ for (const r of roots) {
     }
   }
 }
+// Every numbered lens row in the index (| N | `id` | ...) must have a standard/<id>.md.
+const index = readFileSync(join(root, 'os/standard/00-index.md'), 'utf8');
+let rows = 0;
+for (const m of index.matchAll(/^\|\s*\d+\s*\|\s*`([a-z0-9-]+)`\s*\|/gm)) {
+  rows++;
+  if (!existsSync(join(root, 'os/standard', `${m[1]}.md`))) broken.push(`00-index.md row \`${m[1]}\` -> no os/standard/${m[1]}.md`);
+}
+if (rows === 0) broken.push('00-index.md: no numbered lens rows found (parser drift)');
 if (broken.length) {
   console.error(`FAIL: ${broken.length} broken relative link(s) in ${files} file(s):`);
   for (const b of broken) console.error('  ' + b);
   process.exit(1);
 }
-console.log(`PASS: ${links} relative link(s) across ${files} markdown file(s) all resolve`);
+console.log(`PASS: ${links} relative link(s) across ${files} markdown file(s) resolve; ${rows} index rows all have a standard file`);

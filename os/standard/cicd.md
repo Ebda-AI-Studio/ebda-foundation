@@ -1,7 +1,7 @@
 # cicd — CI/CD & Workflow File Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §6, CLAUDE.md (Rule 15 — CI/CD + workflow file standard), reference-iceberg-audit.md (term 27: CI/CD), reference-force-ai-production-grade-standard.md (layer 9: CI/CD)
+sources: PLAYBOOK §6, CLAUDE.md (Rule 15 — CI/CD + workflow file standard), reference-iceberg-audit.md (term 27: CI/CD)
 
 ## What "solid" looks like
 Every repo's `.github/workflows/` converges to one canonical shape: a `ci.yml` with a top-level concurrency group that cancels superseded runs; `timeout-minutes` on every job; Prisma `db:generate` before typecheck; a split audit gate (prod zero-tolerance, dev gated at high); a sleep-proof `notify-failure` Telegram job that always stays on cloud; a gitleaks all-branch secret scan paired with allowlist files; clean branch hygiene; runner routing that defaults to cloud with a non-input override; and a pre-push hook mirroring a CI subset.
@@ -32,8 +32,8 @@ lens because it is a provenance concern, not a workflow-shape concern: a perfect
 workflow that floats on `@v4` still executes whatever the action's owner pushes next.
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …
 
 ## Merge-automation safety (added 2026-06-08, learned the hard way)
 
@@ -155,7 +155,7 @@ A GitHub Actions self-hosted runner can run a hook after every job via the runne
 job at the **"Complete runner"** step — *after* every real step (lint, build, gitleaks,
 semgrep, npm-audit, tests) already succeeded. Every required check then shows red for
 an infra reason unrelated to the PR, so **green code can't merge**. A broken hook
-silently blocked EVERY PR on `force-website-builder` + `whatsapp-broadcaster` (a
+silently blocked EVERY PR on two repos (a
 `docker prune` / root-owned-file `rm` hitting EACCES made it exit 1 ~once per run).
 
 **The rule:** a post-job hook is best-effort housekeeping and must **never** red a job.
@@ -204,7 +204,7 @@ that is *indistinguishable from a code regression* and *persists across runs and
 3. CI's tests write to the service-container DB; requests are served by the leftover process
    pointed at a different DB → auth/lookup failures everywhere, with a green readiness step.
 
-FWB 2026-08-19: a hand-started `apps/api` on port 4000 (pointed at a local postgres, not the
+a previous storefront product 2026-08-19: a hand-started `apps/api` on port 4000 (pointed at a local postgres, not the
 service container) produced `INVALID_CREDENTIALS` across 12 integration files on users the tests
 had just created. Killing it turned CI green on the next run with **no code change**.
 

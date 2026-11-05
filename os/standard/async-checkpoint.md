@@ -6,7 +6,7 @@ Pack: reliability | Probe type: S | Source: Iceberg term 40 (2026-07-11)
 A worker that loops over N items must checkpoint per batch (step.run per chunk), so a crash resumes instead of restarting.
 
 ## Scenario
-8 of 10 FWB bulk-ai sweeps had a single mark-running step; one died at 130/156 after 71 minutes with zero resume.
+8 of 10 a previous storefront product bulk-ai sweeps had a single mark-running step; one died at 130/156 after 71 minutes with zero resume.
 
 ## Source candidate
 - (medium) Function with a loop has at most one step.run checkpoint.

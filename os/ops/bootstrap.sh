@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Whisky AI OS — one-command bring-up on a fresh Mac (e.g. the ForceAI Studio).
+# Whisky AI OS — one-command bring-up on a fresh Mac (e.g. the the Ebda Studio Mac).
 #
 #   git clone <foundation> && cd ebda-foundation && ./ops/bootstrap.sh
 #

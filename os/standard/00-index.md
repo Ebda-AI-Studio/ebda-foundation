@@ -1,12 +1,12 @@
 # Ebda Foundation — Standard Index
 
-The canonical, **gradeable** Ebda AI Studio production standard: one file per concern, merged from the 6 scattered sources. Used as the rubric for BOTH building (`/force-build`) and auditing (`/force-audit`) every Ebda AI Studio product.
+The canonical, **gradeable** Ebda AI Studio production standard: one file per concern, merged from the 6 scattered sources. Used as the rubric for BOTH building and auditing every Ebda AI Studio product.
 
-> **🔭 `unified-audit.md` is THE entry point for "audit this repo" / `/force-audit`.** It blends ALL audit types (layers + blast-radius + feature×feature interaction + security + RLS-writer-coverage + iceberg-38 + scaling/money + reliability/observability + save-integrity S1–S6 + data→UI + UI/UX consistency + CI/testing + deps + docs-parity + mobile) into ONE report: what's broken, WHERE exactly (file:line / page / field), and the **blast radius** that must be fixed in lockstep so the whole system reaches one level of maturity. The 42 lenses below are its rubric. It is steps 1–3 of the self-improving loop (`~/.claude/.../memory/feedback-os-self-improving-audit-loop`).
+> **🔭 `unified-audit.md` is THE entry point for "audit this repo".** It blends ALL audit types (layers + blast-radius + feature×feature interaction + security + RLS-writer-coverage + iceberg-38 + scaling/money + reliability/observability + save-integrity S1–S6 + data→UI + UI/UX consistency + CI/testing + deps + docs-parity + mobile) into ONE report: what's broken, WHERE exactly (file:line / page / field), and the **blast radius** that must be fixed in lockstep so the whole system reaches one level of maturity. The 42 lenses below are its rubric. It is steps 1–3 of the self-improving loop (`~/.claude/.../memory/feedback-os-self-improving-audit-loop`).
 
 ## Concern taxonomy (the rubric)
 
-The numbered lenses below each become one file `standard/<id>.md`. `mobile` is N/A for web-only repos (FWB/WBS) and is authored but not graded in Phase 1.
+The numbered lenses below each become one file `standard/<id>.md`. `mobile` is N/A for web-only repos (previous products) and is authored but not graded in Phase 1.
 
 | # | id | Concern | Primary source |
 |---|---|---|---|
@@ -29,8 +29,8 @@ The numbered lenses below each become one file `standard/<id>.md`. `mobile` is N
 | 17 | `data-ui-coverage` | Every meaningful table has a viewer; admin-endpoint connection; redundancy | Playbook §3.7/§14 |
 | 18 | `deps` | Registry-exists, <12mo, license-compat, `npm audit` 0/0/0/0, override-the-leaf | Rule 1 |
 | 19 | `frontend-quality` | i18n/RTL parity, a11y/WCAG, perf/CWV, SEO | iceberg + grading matrix |
-| 20 | `mobile` | Store compliance, MASVS, push, OTA staged rollout (N/A for FWB/WBS) | reference-mobile-* methodology |
-| 21 | `migration-safety` | Expand/contract, rollback-with-migration, staging mirror, constraint pre-checks, boot-time migration risk | Reel fleet 2026-08-08 + FWB sku/index incidents |
+| 20 | `mobile` | Store compliance, MASVS, push, OTA staged rollout (N/A for previous products) | reference-mobile-* methodology |
+| 21 | `migration-safety` | Expand/contract, rollback-with-migration, staging mirror, constraint pre-checks, boot-time migration risk | Reel fleet 2026-08-08 + a previous storefront product sku/index incidents |
 | 22 | `error-surface` | Public vs private error layers, every boundary, correlation ids, redacted log pipeline | Reel fleet 2026-08-08 |
 | 23 | `ai-transparency` | EU AI Act SGI labelling, consent gate, immutable generation log, jurisdictional reach | Reel fleet 2026-08-08 (Act live 2026-08-02) |
 | 24 | `edge-protection` | WAF in front of the whole stack, adaptive rate limiting, abuse playbook | Reel fleet 2026-08-08 |
@@ -38,7 +38,7 @@ The numbered lenses below each become one file `standard/<id>.md`. `mobile` is N
 | 26 | `skill-hygiene` | Installed-skill expiry (apply/verify/dispose), reviewer-vendor rotation — grades the AGENT's config, not its output | Reel fleet 2026-08-31 |
 | 27 | `gate-integrity` | A gate's PASS must be reachable only by reading the artifact: receipt-bound verdicts, empty-input fails, exit codes are not evidence, `=== true` at injected seams | Corpus-pipeline session 2026-09-02 |
 | 28 | `mutation-proof` | Every defence carries a recorded mutation that made its named test go red, plus a byte-identical restore | Session 2026-09-02 (4 false-green defences) |
-| 30 | `absent-filter-matches-everything` | A query filter built from an optional value must be proven present before the query runs — a dropped condition widens the result set, it does not narrow it | Reel lens pack 2026-09 L6 + `force-website-builder` P0 2026-09-03 |
+| 30 | `absent-filter-matches-everything` | A query filter built from an optional value must be proven present before the query runs — a dropped condition widens the result set, it does not narrow it | Reel lens pack 2026-09 L6 + a storefront P0 2026-09-03 |
 | 29 | `enumeration-integrity` | Counts reconcile against an independent total, NUL-safe iteration, path-not-basename ids, score-not-first-match classification | Corpus-census session 2026-09-02 |
 | 31 | `supply-chain` | Action refs pinned to SHAs, no branch refs, consumers pin our reusable workflows, `npm audit signatures`, vendored-source provenance | Harness extraction 2026-09-04 (223/229 refs mutable) |
 | 32 | `agent-containment` | Hook-bypass and gate-config-weakening blocked in code, every declared hook registered, credentials scrubbed before spawn | Harness extraction 2026-09-04 (a shipped hook that had never fired) |
@@ -47,7 +47,7 @@ The numbered lenses below each become one file `standard/<id>.md`. `mobile` is N
 | 35 | `model-currency` | One source per product, vendor alias over a versioned pin, verified against the vendor's list, loud failure on an unknown id | Reel lens pack 2026-09 L18 + CLAUDE.md model-routing rule |
 | 36 | `auth-token-lifecycle` | Session id regenerated on login/privilege change, reset token expires ≤15min + single-use + invalidated on any password change + rate-limited issuance | Reel lens pack 2026-09 L21, L23 |
 | 37 | `api-schema-exposure` | Introspection/Swagger/Playground disabled in prod, query depth limited, no exposed source maps — the self-describing-endpoint sibling of `rsc-payload-exposure` | Reel lens pack 2026-09 L24 |
-| 38 | `aeo-integrity` | Locale-matched meta content per URL (not just present), canonical on every page, single canonical brand entity, deliberate+documented AI-crawler policy, rendered-text substance floor | Reel lens pack 2026-09 A1-A5 (live measurement, `pecannbee.com.kw`, 2026-09-19/22) |
+| 38 | `aeo-integrity` | Locale-matched meta content per URL (not just present), canonical on every page, single canonical brand entity, deliberate+documented AI-crawler policy, rendered-text substance floor | Reel lens pack 2026-09 A1-A5 (live measurement, a live merchant domain, 2026-09-19/22) |
 | 39 | `navigation-integrity` | Native-stack dismiss vetoed only via `usePreventRemove`, never a raw `beforeRemove`+`preventDefault` (ignored by iOS swipe-dismiss → ghost route, dead navigation); explicit close on every blocked screen | a marketplace launch device audit 2026-10-07 (memory `feedback-native-stack-beforeremove-swipe-dismiss`) |
 | 40 | `state-transition-integrity` | Approve/review/revoke/publish/restore/grant/suspend are conditional on the current state (`updateMany where status = expected`), a repeat is a no-op/409 with one audit row, resubmission blocked while settled, undo derives its target, UI shows per-entity status | a marketplace launch sense audit 2026-10-07 (PRs #205, #209) |
 | 41 | `real-world-sense` | Location pairing, gate order (guest → signed-in → verified → owner), money + lifecycle (no 0-for-unknown, no live-when-ended, Range/206 video), identity reuse — "nothing is logical until it makes sense" | a marketplace launch sense audit 2026-10-07 (memory `feedback-sense-audit-real-world-logic`) |
@@ -212,23 +212,23 @@ engineering session on 2026-09-02 and are sourced from memory files rather than 
 Lenses 33–35 came from three reels watched 2026-09-19 (pack L16–L18); L18's source claim was
 false on verification, and the lens is the first-party rule that survived it. Lenses 36–38 came
 from a second `@mattmurphyai` batch watched 2026-09-22 (pack L21/L23, L24) plus five live AEO
-findings (pack A1–A5) measured the same day against a real FWB merchant store; three other
+findings (pack A1–A5) measured the same day against a real merchant store; three other
 claims in that batch (L19 clickjacking, L20 Redis-as-a-database, L22 open redirect) extended
 existing docs (`security.md` crit 14, `cache-ratelimit.md` crit 10, `auth.md` crit 11) instead
 of becoming new lenses, and two (L25 compliance docs, L26 vendor sovereignty) were ruled
 process-only and are recorded in the pack without a graded doc.
-Lenses 39–41 came from a marketplace launch-readiness day, 2026-10-07 (pack `docs/history/lens-pack-gcc-horse-market-2026-10.md`: device test + four-lens sense audit, PRs #197–#209); the fourth lesson of that day, the lockfile written by a different npm major than CI, extended `deploy-verify.md` criterion 8 instead of becoming a lens.
+Lenses 39–41 came from a marketplace launch-readiness day, 2026-10-07 (pack [lens-pack-marketplace-launch-2026-10](../../docs/history/lens-pack-marketplace-launch-2026-10.md): device test + four-lens sense audit); the fourth lesson of that day, the lockfile written by a different npm major than CI, extended `deploy-verify.md` criterion 8 instead of becoming a lens.
 
 ## Grade scale
 
-- `0` = absent · `1` = partial · `2` = solid (matches the FWB/WBS reference).
+- `0` = absent · `1` = partial · `2` = solid (matches the previous products reference).
 - Layer grade = rounded mean of its criteria; any **Critical-severity FAIL caps the layer at 0**.
 
 ## Cross-cutting standard docs
 
 Beyond the 29 per-concern lenses above, twelve docs describe HOW the standard is applied rather than a single concern:
 
-- `unified-audit.md` — THE entry point for "audit this repo" (`/force-audit`); blends all lenses + blast-radius into one report (see the 🔭 callout above).
+- `unified-audit.md` — THE entry point for "audit this repo"; blends all lenses + blast-radius into one report (see the 🔭 callout above).
 - `lens-calibration.md` — a new audit lens is not done until it has been wrong on a real repo: five artifacts (probe, manifest, rubric, known-bad fixture, CLEAN TWIN), a per-finding REAL/FALSE-POSITIVE verdict against a real repository, and a mutation proof. Severity follows reachability; zero is a claim that needs a measurement.
 - `audit-gating.md` — per-PR scoped (blast-radius) audit vs full nightly/on-demand fleet; what blocks a merge (P0/P1) vs what's tracked (P2/P3).
 - `closed-loop-audit.md` — a finding without a rerun is half an audit: identify → fix →
@@ -237,7 +237,7 @@ Beyond the 29 per-concern lenses above, twelve docs describe HOW the standard is
   commit; declined findings close via a ruling, not silence.
 - `dreaming-cycle.md` — the daily autonomous LEARN→SCAN→ACT loop (CVE/dep research → scan all repos → auto-fix safe tier / propose the rest).
 - `worktree-lifecycle.md` — per-task worktree birth→merge→teardown; delete the local worktree+branch right after a merge, behind 4 safety gates (`ops/post-merge-cleanup.sh`), so zombie branches / root-owned leftovers never pile up.
-- `agent-security.md` — agent-RUNTIME security (lethal trifecta, prompt-injection→tool-exec, MCP Top-10) applied to WBS/Zero/dream-fix; the code-security gates live in `security.md`.
+- `agent-security.md` — agent-RUNTIME security (lethal trifecta, prompt-injection→tool-exec, MCP Top-10) applied to an earlier messaging product/Zero/dream-fix; the code-security gates live in `security.md`.
 - `self-healing.md` — the OS medic: auto-remediation (railway redeploy / vercel rollback) on confirmed-down, heal-immediately-then-notify, with anti-flap + cooldown + escalation. The action layer atop the detect+alert monitors.
 - `verify-before-assert.md` — check ground truth before calling anything stale/unused/violating; an instruction describes the world, it is not evidence about it. The 60-second checks (curl the `server:` header, `gh api` every repo, `git ls-remote` not push output, confirm a gate's binary exists). Born from 4 false assertions in one session, 2026-07-20.
 - `coding-hygiene.md` — Karpathy universal LLM-coding-pitfall guardrails (think-before-coding, simplicity, surgical changes, goal-driven); the always-on hygiene layer in the operator CLAUDE.md.
@@ -302,4 +302,4 @@ Cross-reference so `dream-standard-drift.sh` (which matches the memory-file slug
 - `~/.claude/PRODUCTION-SAAS-BUILD-PLAYBOOK.md` — 16-section playbook
 - `~/.claude/projects/-Users-ahmadsharaf/memory/reference-iceberg-audit.md` — 38-term audit
 - `~/.claude/projects/-Users-ahmadsharaf/memory/reference-audit-fleet-and-build-playbook.md`
-- `~/.claude/projects/-Users-ahmadsharaf/memory/reference-force-ai-production-grade-standard.md` — 15-layer grading matrix
+- `~/.claude/projects/-Users-ahmadsharaf/memory/` — 15-layer grading matrix

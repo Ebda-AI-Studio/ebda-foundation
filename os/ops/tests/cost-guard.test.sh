@@ -6,7 +6,7 @@
 #   • GH_ORG was Ebda-AI-Studio only. The Whisky-11 org's Actions billing failed and
 #     every GitHub-hosted job was refused at startup ("The job was not started
 #     because recent account payments have failed or your spending limit needs to
-#     be increased") — beethoven-menu, olounge-menu, whisky11-site and zero had no
+#     be increased") — menu-site-a, menu-site-b, whisky11-site and zero had no
 #     CI. Nothing in the OS noticed; it was found by reading a red PR by hand.
 #   • The refused runs look like ordinary red CI (conclusion=failure), so a
 #     failure-count monitor reads them as "tests are broken".

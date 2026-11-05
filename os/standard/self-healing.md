@@ -5,7 +5,7 @@ The observability fleet (`services-watch`, `wbs-monitor`, `checkout-monitor`, `c
 **"Confirmed down" excludes "I could not reach it."** A probe that got no HTTP response (curl exit 5/6/7/28/35/56, or `000`) says nothing about the service — it may only mean the monitoring Mac lost DNS. Because the recovery here is `railway-redeploy`, believing such a probe would **redeploy production services that were never down**. Two independent guards enforce this, deliberately kept separate:
 
 - **`heal-watch`** consults the shared host pre-flight (`host_online`, `ops/lib/net-probe.sh`) before forming any DOWN verdict, and while this Mac is offline it records nothing and hands off nothing — see `standard/observability.md` § "Unreachable is not broken".
-- **`self-heal.sh` §1.5** keeps its own, *stricter* baseline check: a baseline host must answer in under 2.5s, so a network that is degraded-but-technically-up is also caught. It is not refactored onto the shared helper precisely because it is stronger, and this is the one script that mutates production (2026-07-06: a Mac network blip faked an FWB API outage and would have redeployed prod).
+- **`self-heal.sh` §1.5** keeps its own, *stricter* baseline check: a baseline host must answer in under 2.5s, so a network that is degraded-but-technically-up is also caught. It is not refactored onto the shared helper precisely because it is stronger, and this is the one script that mutates production (2026-07-06: a Mac network blip faked an a previous storefront product API outage and would have redeployed prod).
 
 **Strategy (Ahmad, 2026-07-05): heal-immediately-then-notify.** On confirmed-down, recover right away, then Telegram the result. Escalate only if healing fails.
 

@@ -14,7 +14,7 @@
 #
 # Credentials (chmod 600, OUTSIDE ~/Desktop): $EBDA_R2_PULL_CREDS (default ~/.claude/.ebda-r2-pull-creds) with
 #   R2_ACCOUNT_ID=69188202efc4df480140dd76545aa3ab  R2_ACCESS_KEY_ID=...  R2_SECRET_ACCESS_KEY=...
-# an R2 API token, Object READ ONLY, scoped to bucket ebda-private. (The Force AI backup creds belong to a
+# an R2 API token, Object READ ONLY, scoped to bucket ebda-private. (The Ebda OS backup creds belong to a
 # DIFFERENT Cloudflare account and cannot read this bucket, checked 2026-10-24.)
 #
 # Daily via launchd: ops/launchd/${OS_LAUNCHD_PREFIX}.ebda-cf-backup.plist (07:15 local = after the Worker 03:00 UTC sweep).  Manual: bash ops/backup-ebda-cloudflare.sh
@@ -188,7 +188,7 @@ done
 
 if [ "${#FAILS[@]}" -gt 0 ]; then
   stamp "done - ${OK_UNITS} ok, ${#FAILS[@]} problem(s)."
-  page "🚨 Ebda Cloudflare backup problem" "${#FAILS[@]} problem(s): $(printf '%s; ' ${FAILS[@]+"${FAILS[@]}"}). ${OK_UNITS} unit(s) verified. Detail: ~/Library/Logs/forceai-ebda-cf-backup.log"
+  page "🚨 Ebda Cloudflare backup problem" "${#FAILS[@]} problem(s): $(printf '%s; ' ${FAILS[@]+"${FAILS[@]}"}). ${OK_UNITS} unit(s) verified. Detail: ~/Library/Logs/ebda-os-ebda-cf-backup.log"
   exit 1
 fi
 stamp "done - ${OK_UNITS} ok, 0 problems."

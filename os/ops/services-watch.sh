@@ -3,7 +3,7 @@
 # Read-only. Watches COST/quota across paid infra (Neon, GitHub Actions, Vercel, Railway)
 # and HEALTH signal from the free observability stack (UptimeRobot, Sentry, Axiom,
 # PostHog, OneSignal). Aggregates all findings and alerts ONCE through the Whisky
-# Whoop / Force AI bot via notify.sh. Never mutates anything.
+# Whoop / Ebda OS bot via notify.sh. Never mutates anything.
 #
 # Infra probes use the already-authed CLIs (gh, vercel, railway, neonctl).
 # Observability probes are token-gated: they read API keys from ~/.whisky-services.env
@@ -139,7 +139,7 @@ probe_uptimerobot() {
     IFS='|' read -ra _mons <<< "$downmons"
     for m in "${_mons[@]}"; do
       case "$m" in
-        WBS|wbs|WBS\ *) service_paused wbs 2>/dev/null && { skip "uptimerobot WBS (paused on purpose)"; continue; } ;;
+        whatsapp|wbs|whatsapp\ *) service_paused wbs 2>/dev/null && { skip "uptimerobot whatsapp (paused on purpose)"; continue; } ;;
       esac
       kept="${kept:+$kept|}$m"
     done
@@ -319,7 +319,7 @@ fi
 
 # ---------- a pause that stopped holding ----------
 # Enumerating wakers does not scale. 2026-08-09: merging PRs to main triggered
-# RAILWAY GITHUB AUTO-DEPLOY, which rebuilt both "paused" WBS services while the
+# RAILWAY GITHUB AUTO-DEPLOY, which rebuilt both "paused" whatsapp services while the
 # marker still read PAUSED and every watcher stayed silent — the pause was undone
 # and nothing said so. Railway's CLI has no auto-deploy switch, so prevention
 # isn't available from here; enforce the INVARIANT instead.
@@ -330,7 +330,7 @@ fi
 # under a green dashboard.
 if service_paused wbs 2>/dev/null && [ -x "$HERE/wbs-power.sh" ]; then
   if ! bash "$HERE/wbs-power.sh" enforce >/dev/null 2>&1; then
-    down "WBS is marked PAUSED but its API is answering — the pause is NOT holding. Known cause: Railway GitHub auto-deploy on a push to main (any merge does it). Re-pause: ops/wbs-power.sh pause — or if it was resumed deliberately, ops/wbs-power.sh resume (clears the marker + SERVICE_PAUSED so CI smoke tests run again)."
+    down "whatsapp is marked PAUSED but its API is answering — the pause is NOT holding. Known cause: Railway GitHub auto-deploy on a push to main (any merge does it). Re-pause: ops/wbs-power.sh pause — or if it was resumed deliberately, ops/wbs-power.sh resume (clears the marker + SERVICE_PAUSED so CI smoke tests run again)."
   fi
 fi
 

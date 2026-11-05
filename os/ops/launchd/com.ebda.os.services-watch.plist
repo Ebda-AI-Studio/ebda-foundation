@@ -17,9 +17,9 @@
 		<string>__HOME__/.claude/scripts/services-watch.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-services-watch.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-services-watch.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-services-watch.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-services-watch.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>

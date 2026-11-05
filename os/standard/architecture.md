@@ -1,7 +1,7 @@
 # architecture — Architecture & Stack Decisions Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §2 (architecture decisions), §3.3 (money + transactions), reference-iceberg-audit.md (term 1: architecture), reference-force-ai-production-grade-standard.md (layer 1: architecture)
+sources: PLAYBOOK §2 (architecture decisions), §3.3 (money + transactions), reference-iceberg-audit.md (term 1: architecture)
 
 ## What "solid" looks like
 A monorepo with shared types/Zod across API + frontends as one source of truth for contracts; the day-1 stack decisions locked (Express/TS API, Next.js App Router per-app frontends, Prisma+Postgres on Neon, Redis cache, Inngest/BullMQ async, custom-JWT-in-cookies auth, Railway/Vercel deploy); all money handled as integers in the smallest unit through one centralized, tested helper module; Prisma transactions wrapped with explicit maxWait/timeout.
@@ -21,5 +21,5 @@ A monorepo with shared types/Zod across API + frontends as one source of truth f
 | 10 | Deterministic findFirst ordering | Any `findFirst` with an `OR` that can match multiple rows has an explicit `orderBy` | grep for `findFirst(` blocks containing `OR:` and lacking `orderBy:` | Medium |
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …

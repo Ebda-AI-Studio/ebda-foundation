@@ -1,7 +1,7 @@
 # aeo-integrity — an answer engine gets what you actually served, not what you intended
 
 tags: [BOTH]
-sources: live measurement, `pecannbee.com.kw` (a Force AI Website Builder merchant store),
+sources: live measurement, a live merchant storefront,
 2026-09-19/22 — not a reel claim; `frontend-quality.md` crit 9/11 grade tag *presence*, this
 doc grades locale/entity *correctness*
 

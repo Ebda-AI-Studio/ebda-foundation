@@ -62,13 +62,7 @@ NORMALIZE_LIB="./lib"
 
 # repo list — keep in sync with dream-scan.sh get_repos()
 get_repos() {
-  printf '%s\n' \
-    "ebda-store" \
-    "ebda-whatsapp" \
-    "ebda-studio" \
-    "mypovonai" \
-    "digital-card" \
-    "gcc-horse-market"
+  os_local_list repos ebda-store ebda-whatsapp ebda-studio
 }
 repos_iter() { if [ -n "$ONE_REPO" ]; then printf '%s\n' "$ONE_REPO"; else get_repos; fi; }
 

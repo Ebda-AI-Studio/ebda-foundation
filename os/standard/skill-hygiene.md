@@ -1,7 +1,7 @@
 # skill-hygiene — Installed-Skill and Reviewer-Rotation Rubric
 
 tags: [BOTH]
-sources: reel lens pack 2026-08 (`@-MM`, `#aidirectedengineering` — L2 stale skills, L5 same-vendor review), live evidence: 19 Google/Gemini skills installed 2026-08-16 with no review-or-dispose step; FWB PR #1099 written and AI-reviewed by the same vendor, `docs/audits/2026-08-31-reel-derived-lenses.md` in force-website-builder
+sources: reel lens pack 2026-08 (`@-MM`, `#aidirectedengineering` — L2 stale skills, L5 same-vendor review), live evidence: 19 Google/Gemini skills installed 2026-08-16 with no review-or-dispose step; a storefront PR written and AI-reviewed by the same vendor, the 2026-08-31 reel-derived lens report (history)
 
 This closes a gap the other 25 lenses do not cover. They grade **the code an agent
 produces**. This one grades **the agent's own configuration** — the skills loaded into its
@@ -46,7 +46,7 @@ The shortcuts that produce a vulnerability are the same shortcuts that miss it i
 One vendor's blind spots are correlated across both roles, so single-vendor review measures
 style adherence, not correctness.
 
-Live evidence from this org: FWB PR #1099 was authored by Claude and passed by CI's "AI
+Live evidence from this org: a previous storefront product PR #1099 was authored by Claude and passed by CI's "AI
 Review" (Claude) and "Blast-radius scoped audit" (Opus). Both defects that surfaced
 afterwards — an unrun prettier gate and a revived `TRUNCATE` — were the author's, and the
 same-vendor review passed both.
@@ -100,4 +100,4 @@ instructions and grading its own homework. Nothing else in `standard/` looks at 
 agent's configuration, so if this file does not check it, nothing does.
 
 Full lens pack (21 lenses, incl. the 17 code-auditable ones already covered elsewhere in
-this rubric): `force-website-builder/docs/audits/lenses/reel-lenses-2026-08.md`.
+this rubric): `os/audit/lenses/reel-lenses-2026-08.md`.

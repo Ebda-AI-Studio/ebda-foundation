@@ -14,7 +14,7 @@
 #
 # Services monitored:
 #
-#   Railway (primary) — WBS + FWB, fetched via Railway GraphQL API.
+#   Railway (primary) — the services listed in the local config, fetched via Railway GraphQL API.
 #   Token: ~/.railway/config.json → .user.accessToken (already present).
 #   Alternatively: set RAILWAY_API_TOKEN in ~/.whisky-services.env.
 #
@@ -59,7 +59,7 @@ if [ -f "$SERVICES_ENV" ]; then
   . "$SERVICES_ENV"
 fi
 
-echo "deploy-drift: checking Force prod services"
+echo "deploy-drift: checking prod services"
 
 # ── Railway token ─────────────────────────────────────────────────────────────
 # Prefer explicit env var, then fall back to the Railway CLI config.
@@ -311,7 +311,7 @@ check_railway_service() {
 
   if [ "$over_commits" -eq 1 ] || [ "$over_hours" -eq 1 ]; then
     # Drift means prod is running DIFFERENT CODE, not that its sha != HEAD.
-    # WBS sat "1 commit behind, ~68h old" for 32h over a delta of three
+    # whatsapp sat "1 commit behind, ~68h old" for 32h over a delta of three
     # .github/workflows files — nothing deployable. Alerting on that makes the
     # only remedy a pointless prod deploy, which is how a REAL drift alert gets
     # ignored later. "unknown" is treated exactly like deployable, so a failed
@@ -399,48 +399,22 @@ except Exception:
 }
 
 # ── service definitions ───────────────────────────────────────────────────────
-# Railway PRODUCTION environment IDs — verified live 2026-06-13 (NOT service/project ids).
-#   WBS  project lively-sun (754a2b35...), service ebda-whatsapp 426470f7-96ed-408f-b09a-79c22d8c3943
-#   FWB  project 9374a107-9b2e-4b0c-8b74-42cdd0a02894, service api 17dbaf6f-3881-4747-84bf-0ed4e6dfd043
-WBS_RAILWAY_ENV="${WBS_RAILWAY_ENV:-40a574c6-b2c7-4136-a0a8-41a52f345c14}"  # whatsapp-saas-backend-production
-WBS_RAILWAY_SVC="${WBS_RAILWAY_SVC:-426470f7-96ed-408f-b09a-79c22d8c3943}"  # ebda-whatsapp service
-FWB_RAILWAY_ENV="${FWB_RAILWAY_ENV:-1e0e82d5-8bf3-4bec-a75f-faca3dbc8594}"  # production
-FWB_RAILWAY_SVC="${FWB_RAILWAY_SVC:-17dbaf6f-3881-4747-84bf-0ed4e6dfd043}"  # api service
-
-# WBS API (Railway)
-# A parked service has no deployment, which reads as drift and pages. It is off on
-# purpose, so say so once and move on rather than alerting nightly.
-if service_paused wbs 2>/dev/null; then
-  echo "  SKIP WBS api — paused on purpose (ops/wbs-power.sh status)"
-else
-check_railway_service \
-  "WBS api" \
-  "ebda-whatsapp" \
-  "$WBS_RAILWAY_ENV" \
-  "$WBS_RAILWAY_SVC" \
-  "main"
-fi
-
-# FWB API (Railway)
-check_railway_service \
-  "FWB api" \
-  "ebda-store" \
-  "$FWB_RAILWAY_ENV" \
-  "$FWB_RAILWAY_SVC" \
-  "main"
-
-# FWB storefront (Vercel) — optional, skipped if no VERCEL_TOKEN
-# Vercel project ID for the FWB storefront (set VERCEL_FWB_PROJECT_ID to override)
-FWB_VERCEL_PROJECT_ID="${FWB_VERCEL_PROJECT_ID:-}"
-if [ -n "$FWB_VERCEL_PROJECT_ID" ]; then
-  check_vercel_service \
-    "FWB storefront" \
-    "$FWB_VERCEL_PROJECT_ID" \
-    "ebda-store" \
-    "master"
-else
-  echo "  SKIP FWB storefront (Vercel) — FWB_VERCEL_PROJECT_ID not set (optional)"
-fi
+# Per-machine, never in git: ~/.ebda-os.local.json
+#   "railway_services": ["<label>|<repo>|<railway env id>|<railway service id>|<branch>", ...]
+#   "vercel_services":  ["<label>|<vercel project id>|<repo>|<branch>", ...]
+# (see os/config/local.example.json). Nothing configured = nothing to compare (one log line, exit 0).
+_configured=0
+while IFS='|' read -r _label _repo _env _svc _branch; do
+  [ -n "${_label:-}" ] || continue
+  _configured=$((_configured + 1))
+  check_railway_service "$_label" "$_repo" "$_env" "$_svc" "${_branch:-main}"
+done < <(os_local_list railway_services)
+while IFS='|' read -r _label _pid _repo _branch; do
+  [ -n "${_label:-}" ] || continue
+  _configured=$((_configured + 1))
+  check_vercel_service "$_label" "$_pid" "$_repo" "${_branch:-main}"
+done < <(os_local_list vercel_services)
+[ "$_configured" -gt 0 ] || echo "  SKIP no railway_services / vercel_services configured in the local config"
 
 # ── report ─────────────────────────────────────────────────────────────────────
 
@@ -469,7 +443,7 @@ if [ $(( total_fails + total_alerts )) -gt 0 ]; then
   # EMPTY array's expansion an unbound variable. Reaching here means
   # fails+alerts is non-zero, NOT that both are non-empty: the real case was 0
   # fails and 1 alert, which aborted the script right here for 32 consecutive
-  # hourly runs. The WBS prod drift was detected and printed, then thrown away
+  # hourly runs. The whatsapp prod drift was detected and printed, then thrown away
   # before write_status — so a live drift went unreported for 32h while the job
   # looked merely stale. See lib/__tests__/empty-array-guard.test.sh.
   if [ "$NOTIFY" = "1" ]; then

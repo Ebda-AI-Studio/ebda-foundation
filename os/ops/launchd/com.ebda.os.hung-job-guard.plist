@@ -8,6 +8,6 @@
   </array>
   <key>StartInterval</key><integer>1800</integer>
   <key>RunAtLoad</key><true/>
-  <key>StandardOutPath</key><string>/Users/ahmadsharaf/Library/Logs/forceai-hung-job-guard.log</string>
-  <key>StandardErrorPath</key><string>/Users/ahmadsharaf/Library/Logs/forceai-hung-job-guard.err</string>
+  <key>StandardOutPath</key><string>/Users/ahmadsharaf/Library/Logs/ebda-os-hung-job-guard.log</string>
+  <key>StandardErrorPath</key><string>/Users/ahmadsharaf/Library/Logs/ebda-os-hung-job-guard.err</string>
 </dict></plist>

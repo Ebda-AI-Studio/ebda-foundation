@@ -79,7 +79,7 @@ try {
 ## Verify
 
 ```bash
-# use the repo's package manager (pnpm in Force AI repos)
+# use the repo's package manager (this repo's package manager)
 pnpm lint --fix
 pnpm typecheck
 pnpm test --related path/to/file.ts

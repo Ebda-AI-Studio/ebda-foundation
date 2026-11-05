@@ -19,9 +19,9 @@
 		<string>__HOME__/.claude/scripts/dr-drill.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-dr-drill.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-dr-drill.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-dr-drill.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-dr-drill.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>

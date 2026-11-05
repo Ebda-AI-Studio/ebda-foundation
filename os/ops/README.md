@@ -7,7 +7,7 @@ Two loaded `com.ebda.os.*` agents on the workstation have no plist here, on purp
 
 - **`com.ebda.os.umbrad`** runs `/usr/local/bin/umbrad` — Umbra's own daemon, not a foundation
   ops script. It is Umbra's to install and version.
-- **`com.ebda.os.fwb-babysit`** was a single-incident job (FWB PRs #814/#815, installed
+- **`com.ebda.os.fwb-babysit`** was a single-incident job (store PRs #814/#815, installed
   2026-07-19) written to self-destruct once both merged. Both merged on 2026-07-19 and the
   self-destruct never fired, so it stayed loaded and idle until 2026-08-03. Unloaded and archived
   to `~/.claude/scripts/_retired/`. **A self-destructing job needs an external sweep** — if its
@@ -27,7 +27,7 @@ so the fleet parks with the same marker convention as every other paused Force s
 `~/.whisky-os-state/runner-fleet-paused`. **Park = create the file, un-park = delete it.**
 Nothing else to edit — `ci-runner-guard.sh` and `os-watch.sh` both read `fleet_parked`.
 
-It deliberately does NOT invent its own check. The WBS pause on 2026-08-06 established that
+It deliberately does NOT invent its own check. The whatsapp pause on 2026-08-06 established that
 a watcher which grows a private pause check is how the noise comes back, and that pause state
 must be RUNTIME state (`~/.whisky-os-state/`), not deployed config — a `heal-registry.json`
 edit was silently reverted by the next script sync, re-arming the healer mid-pause.
@@ -35,7 +35,7 @@ edit was silently reverted by the next script sync, re-arming the healer mid-pau
 Why it exists: on 2026-08-06 `fwb-ci6` stopped booting, and on 2026-08-08 every repo was
 routed to cloud (`USE_SELF_HOSTED=false`) — but nothing told the fleet's watchers or its
 healer. `ci-runner-guard` hard-rebooted a dead guest **every 30 minutes for three days**,
-Telegramming each failure, while the `runner-health-check` crons on CRM + WBS fired every
+Telegramming each failure, while the `runner-health-check` crons on CRM + whatsapp fired every
 15 minutes at the same dead runner. ~30 pages overnight about infrastructure that was
 deliberately out of service. That is the [service-pause] rule: parking a service means
 sweeping every WAKER, WATCHER and the HEALER.
@@ -111,4 +111,4 @@ Full design + grading: `standard/disk-discipline.md`. In short:
   cache hit (`wt-deps.sh --check`); escape hatch `WT_ALLOW_INSTALL=1`. Register with `ops/install-hooks.sh`.
 - `workspace-hygiene.sh` runs `umbra prune <vm>` on running machines when host free < 40 GB or disk.img grew > 10 GB since
   the last prune (`UMBRA_PRUNE_FREE_GB`, `UMBRA_PRUNE_GROWTH_GB`; state `~/.cache/wt-deps/umbra-prune.tsv`; log
-  `~/Library/Logs/forceai-umbra-prune.log`); skips a VM under `umbra rebuild`; Telegram if still < 30 GB after.
+  `~/Library/Logs/ebda-os-umbra-prune.log`); skips a VM under `umbra rebuild`; Telegram if still < 30 GB after.

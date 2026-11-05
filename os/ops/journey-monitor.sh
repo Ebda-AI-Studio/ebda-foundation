@@ -37,7 +37,7 @@ cd "$(dirname "$0")" || exit 1
 
 # Optional env file (same pattern as checkout-monitor / other OS scripts)
 # set -a: journeys run as child `node` processes. Sourced WITHOUT allexport,
-# JOURNEY_FWB_STORE_URL stayed shell-local and node never saw it, so even a
+# JOURNEY_STORE_STORE_URL stayed shell-local and node never saw it, so even a
 # configured env file produced all-skip (#197). WHISKY_SERVICES_ENV: test seam.
 SVC_ENV="${WHISKY_SERVICES_ENV:-$OS_SERVICES_ENV}"
 [ -f "$SVC_ENV" ] && { set -a; . "$SVC_ENV"; set +a; } 2>/dev/null || true
@@ -278,8 +278,8 @@ elif [ "$WARN_COUNT" -gt 0 ]; then
 elif [ "$PASS_COUNT" -eq 0 ] && [ "$SKIP_COUNT" -gt 0 ]; then
   # ALL-SKIP: nothing was asserted. "0 pass / 1 skip" used to be written as
   # ok=true, i.e. a monitor that checks nothing reported healthy for weeks
-  # (JOURNEY_FWB_STORE_URL unset). Say so loudly; do not page (not an outage).
-  echo "journey-monitor: WARN — all $SKIP_COUNT journey(s) SKIPPED, no revenue path was checked. Set JOURNEY_FWB_STORE_URL (e.g. https://wadyaljuz.com) in ~/.whisky-services.env — see ops/journeys/README.md."
+  # (JOURNEY_STORE_STORE_URL unset). Say so loudly; do not page (not an outage).
+  echo "journey-monitor: WARN — all $SKIP_COUNT journey(s) SKIPPED, no revenue path was checked. Set JOURNEY_STORE_STORE_URL (e.g. https://shop.example.com) in ~/.whisky-services.env — see ops/journeys/README.md."
   write_status "journey-monitor" "warn" \
     "BLIND: all $SKIP_COUNT journey(s) skipped (env unset) — nothing was checked" \
     "{\"total\":$TOTAL,\"pass\":0,\"skip\":$SKIP_COUNT,\"blind\":true}"

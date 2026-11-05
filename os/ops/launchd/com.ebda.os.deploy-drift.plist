@@ -20,9 +20,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-deploy-drift.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-deploy-drift.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-deploy-drift.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-deploy-drift.log</string>
 	<key>StartInterval</key>
 	<integer>3600</integer>
 </dict>

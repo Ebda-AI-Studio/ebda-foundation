@@ -1,7 +1,7 @@
 # rls — Multi-Tenant Row-Level Security Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §3.2 (multi-tenant RLS), §3 (table H10.4 GUC, §10.4 snapshot re-verify, §11 local-points-at-scratch-DB, §16 production-ready checklist), CLAUDE.md (RLS-readiness note in feedback-ai-pr-reviewer-and-security-hardening), reference-iceberg-audit.md (term: multi-tenant isolation), reference-force-ai-production-grade-standard.md (layer 3: data layer — RLS GUC)
+sources: PLAYBOOK §3.2 (multi-tenant RLS), §3 (table H10.4 GUC, §10.4 snapshot re-verify, §11 local-points-at-scratch-DB, §16 production-ready checklist), CLAUDE.md (RLS-readiness note in feedback-ai-pr-reviewer-and-security-hardening), reference-iceberg-audit.md (term: multi-tenant isolation)
 
 ## What "solid" looks like
 RLS plus `FORCE ROW LEVEL SECURITY` on every tenant-scoped table; the app connects as a NON-owner role (not the `rolbypassrls` owner) so policies are actually exercised; tenant context is set per-request via a GUC (`app.current_store_id`); cross-tenant access goes through ONE named bypass helper on super-admin-guarded routes only; the policy shape (allow-all-when-unset vs block-when-unset) is standardized and known per table class; and before the owner→app-role cutover every super-admin handler and every job has been swept and classified.
@@ -23,5 +23,5 @@ RLS plus `FORCE ROW LEVEL SECURITY` on every tenant-scoped table; the app connec
 | 12 | Pre-auth + own-row reads bypass-wrapped | `/login` `/refresh` `/forgot` and `/me`-family own-row reads of a policed table run under withRlsBypass (no tenant GUC exists pre-auth; admins have null tenant id) — a 401 on a policed-table login means RLS-empty, not a bad password | grep auth + self-service routes for reads of an RLS table not wrapped in bypass | Critical |
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …

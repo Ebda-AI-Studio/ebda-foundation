@@ -20,7 +20,7 @@
 #
 # NOT synced any more (2026-08-24): graphify-out/. It stays TRACKED (the
 # .gitignore deliberately un-ignores the 3 canonical artifacts, matching
-# CRM/FWB) but is no longer auto-committed — `graphify update .` rewrites it
+# studio/store) but is no longer auto-committed — `graphify update .` rewrites it
 # every run, and 99.3% of the resulting ~1,700-line diff was community-id
 # renumbering across unchanged nodes.
 #
@@ -55,7 +55,7 @@ REPO="${FOUNDATION_REPO:-$REPO_DEFAULT}"
 #
 # graphify-out/ was REMOVED from this list on 2026-08-24. It stays TRACKED in the
 # repo (.gitignore deliberately un-ignores the 3 canonical artifacts, matching
-# CRM/FWB) — it is just no longer auto-committed, because regenerating it on every
+# studio/store) — it is just no longer auto-committed, because regenerating it on every
 # pipeline run produced ~1,700 insertions per sync of which 99.3% were community-id
 # renumbering ("community": 22 -> 23) across unchanged nodes. A 4 MB blob whose
 # diffs carry no information. It is refreshed by whatever PR actually changes the
@@ -94,7 +94,7 @@ is_outside_allowlist() {
     case "$p" in "$a"|"$a"/*) return 1 ;; esac
   done
   # graphify-out/ differs on EVERY run: `graphify update .` rewrites it locally each
-  # tick. It stays tracked (canonical artifacts, matching CRM/FWB) but is no longer
+  # tick. It stays tracked (canonical artifacts, matching studio/store) but is no longer
   # auto-committed, so it is neither allowlisted nor drift — it is noise. Reporting
   # it as CONTENT DRIFT every run would train everyone to ignore the drift warning,
   # which is the one that catches real un-PR'd edits.

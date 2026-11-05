@@ -3,7 +3,7 @@
 #
 # The layout (Ahmad, 2026-09-25): every business is a folder that holds everything
 # about it. A repo lives in exactly one slot:
-#   <business>/internal-projects/<repo>        (business = Force-AI | Whisky-11 | Ebda-AI-Studio)
+#   <business>/internal-projects/<repo>        (business = Whisky-11 | Ebda-AI-Studio)
 #   <business>/clients/<client>/<repo>
 #   Personal/projects/<repo>
 # The legacy `_clients/_personal/_landing-pages` paths survive only as compat
@@ -64,7 +64,7 @@ out=$(PROJECTS_LAYOUT_PENDING="$TMP/pending.tsv" bash "$OPS/projects-layout-chec
 # blast-radius at ebda-whatsapp and _clients/digital-card — never real).
 rm -rf "$R/_clients/busy-repo"; mkdir -p "$TMP/scripts"
 printf 'A="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/fwb"\n' > "$TMP/scripts/ok.sh"
-sed -i.bak 's#force-ai/internal-projects/fwb#Ebda-AI-Studio/internal-projects/fwb#' "$TMP/scripts/ok.sh" 2>/dev/null; rm -f "$TMP/scripts/ok.sh.bak"
+sed -i.bak 's#ebda-os/internal-projects/fwb#Ebda-AI-Studio/internal-projects/fwb#' "$TMP/scripts/ok.sh" 2>/dev/null; rm -f "$TMP/scripts/ok.sh.bak"
 out=$(bash "$OPS/projects-layout-check.sh" --refs "$TMP/scripts" 2>&1); rc=$?
 [ $rc -eq 0 ] && pass "a script naming a real project path passes --refs" || fail "real path flagged: $out"
 printf 'B="$HOME/Desktop/projects/_clients/digital-card"\n' > "$TMP/scripts/dead.sh"

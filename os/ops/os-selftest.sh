@@ -201,7 +201,7 @@ check_plist_freshness() {
       # unloads wbs-monitor deliberately, and resume reloads it.
       case "$label" in
         "${OS_LAUNCHD_PREFIX}.wbs-monitor")
-          service_paused wbs 2>/dev/null && { _info "$label: SKIPPED — unloaded by the WBS pause"; return 0; } ;;
+          service_paused wbs 2>/dev/null && { _info "$label: SKIPPED — unloaded by the whatsapp pause"; return 0; } ;;
       esac
       add_medium "$label: not loaded in launchctl and no log found — job may be unregistered"
       _fail "$label: not loaded in launchctl and no log" ;;

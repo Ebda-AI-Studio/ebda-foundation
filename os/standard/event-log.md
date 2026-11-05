@@ -1,7 +1,7 @@
 # event-log — Append-Only Event Log Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §3.4 (append-only `<entity>_events`), §3.3 (idempotency/SAVEPOINT), §13 (Event-log / mutate-in-place review), §16 (production-ready checklist), reference-iceberg-audit.md (term 6: Data integrity), reference-force-ai-production-grade-standard.md (data layer: double-entry append-only ledger)
+sources: PLAYBOOK §3.4 (append-only `<entity>_events`), §3.3 (idempotency/SAVEPOINT), §13 (Event-log / mutate-in-place review), §16 (production-ready checklist), reference-iceberg-audit.md (term 6: Data integrity)
 
 ## What "solid" looks like
 Every business-critical state machine (payment, order, subscription, payout, loyalty tier) writes to an append-only `<entity>_events` table at every mutation, preserving the raw 3rd-party webhook payload. `entity.status` carries the current state; the events table records how it got there. Rows are insert-only — no UPDATE/DELETE mutates an event in place. For money/trust state this is non-negotiable: the log is the source of truth for auditability and dispute resolution.
@@ -17,5 +17,5 @@ Every business-critical state machine (payment, order, subscription, payout, loy
 | 6 | Idempotent event writes | Webhook/gateway re-delivery does not create duplicate events or double-apply state; uses `SAVEPOINT` (not `create+catch(P2002)` inside a `$transaction`) | grep transactional money paths for `create` + `catch`/`P2002` inside `$transaction` (broken pattern); confirm `SAVEPOINT` or a unique idempotency key on the event | High |
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …

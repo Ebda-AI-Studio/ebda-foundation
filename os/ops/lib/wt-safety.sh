@@ -70,7 +70,7 @@ wt_merge_verdict() {
 # dir. A worktree whose own directory name has no `__` (an EnterWorktree / Agent-isolation dir such as `wbs-guard-1`) is not
 # itself a candidate, so find DESCENDED into it, saw `frontend/__tests__` with no `.git` of its own, called it an
 # "orphan worktree" and `rm -rf`'d it. The next `git status` there showed backend/__tests__ and frontend/__tests__ as deleted
-# (WBS, 2026-10-30; hygiene log: "orphan dirs removed: ... wbs-guard-1/frontend/__tests__ ... wbs-guard-1/backend/__tests__").
+# (whatsapp, 2026-10-30; hygiene log: "orphan dirs removed: ... wbs-guard-1/frontend/__tests__ ... wbs-guard-1/backend/__tests__").
 # A candidate must (1) be named <repo>__<slug> with an alphanumeric on BOTH sides of the `__`, and (2) have NO ancestor
 # below <root> that is a git work tree or a node_modules dir (anything inside a repo is repo content, never a worktree).
 wt_candidates() {

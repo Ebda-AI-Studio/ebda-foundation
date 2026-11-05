@@ -2,7 +2,7 @@
 # ops/workspace-hygiene.sh — the _worktrees sweep must never delete a business/client CONTAINER dir.
 #
 # Why: since the 2026-09-25 business-folder layout, new-task-worktree.sh nests worktrees
-# (_worktrees/Whisky-11/clients/work-wise/work-wise-app__feat-x). The sweep only looked one level down,
+# (_worktrees/Whisky-11/clients/acme-client/acme-client-app__feat-x). The sweep only looked one level down,
 # saw _worktrees/Whisky-11 (no .git of its own), called it an orphan and rm -rf'd it — twice
 # (2026-09-27, 2026-09-28), with live worktrees holding unpushed commits inside.
 set -uo pipefail

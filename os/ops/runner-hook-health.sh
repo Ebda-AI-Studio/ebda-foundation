@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Force AI — runner post-job-hook health detector (Whisky AI OS).
+# Ebda OS — runner post-job-hook health detector (Whisky AI OS).
 #
 # Detects the specific infra signature where a self-hosted runner's post-job hook
 # (ACTIONS_RUNNER_HOOK_JOB_COMPLETED) exits non-zero and fails jobs at the
 # "Complete runner" step — AFTER every real step passed. That turns green code into
 # un-mergeable PRs (each required check shows red for a reason unrelated to the PR).
-# It silently blocked EVERY PR on FWB + WBS until found on 2026-06-11.
+# It silently blocked EVERY PR on store + whatsapp until found on 2026-06-11.
 #
 # This is the reactive complement to ci-runner-guard.sh: that one handles
 # cloud-minutes exhaustion → self-hosted failover; THIS one handles a broken
@@ -44,7 +44,7 @@ disk_hits=()  # "repo#run" — runner out-of-disk signature (added 2026-07-11:
               # a routine deploy died mid-checkout with "No space left on device"
               # despite weekly maintenance; detect + alert with the fix)
 browser_hits=()  # "repo#run" — runner TOOLCHAIN/BROWSER-CACHE corruption (G7,
-              # 2026-07-22): WBS #139 died every run on a corrupt puppeteer chrome
+              # 2026-07-22): whatsapp #139 died every run on a corrupt puppeteer chrome
               # download ("end of central directory record signature not found");
               # runner env rot a code fix can't clear — detect + alert the cache wipe.
 

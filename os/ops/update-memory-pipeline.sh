@@ -267,7 +267,7 @@ PYEOF
 #     (umbra 11 local/1 mirrored, quote-studio 3/0, mypovonai-learn 11/0, fwb 218/208).
 #
 #     ADDITIVE ON PURPOSE — never --delete. Two scopes had MORE in the mirror than on
-#     disk (gcc-horse-market 9/10, ebda-whatsapp 63/64), because other machines
+#     disk (client-repo 9/10, ebda-whatsapp 63/64), because other machines
 #     and older runs contributed files this Mac never had. A --delete here would
 #     destroy them. `--update` also means a newer mirror copy is left alone, so this
 #     composes with mirror_scoped_to_vault's own back-propagation step.

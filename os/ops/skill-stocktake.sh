@@ -35,4 +35,4 @@ sort "$tmp" | uniq -d | sed 's/^/  ⚠ /' || echo "  none"
 rm -f "$tmp"
 echo
 echo "summary: $n skills · $noprov no-provenance · $nodesc no-description · $stub stubs"
-echo "provenance convention: add 'metadata.origin: ECC-adapted|community|force-ai|<upstream>' so installed/3rd-party skills are traceable (supply-chain)."
+echo "provenance convention: add 'metadata.origin: ECC-adapted|community|ebda-os|<upstream>' so installed/3rd-party skills are traceable (supply-chain)."

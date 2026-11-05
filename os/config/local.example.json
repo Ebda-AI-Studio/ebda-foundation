@@ -1,0 +1,7 @@
+{
+  "repos": ["example-app", "example-api"],
+  "health_domains": ["app.example.com", "admin.example.com"],
+  "originality_entities": ["example-client", "example-brand"],
+  "railway_services": ["example-api|example-repo|RAILWAY_ENV_ID|RAILWAY_SERVICE_ID|main"],
+  "vercel_services": ["example-web|VERCEL_PROJECT_ID|example-repo|main"]
+}

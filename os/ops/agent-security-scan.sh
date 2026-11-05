@@ -123,7 +123,7 @@ echo
 # ─────────────────────────────────────────────────────────────────────────────
 # Check 3 — untrusted-input -> exec patterns in whatsapp bot runtime
 # ─────────────────────────────────────────────────────────────────────────────
-echo "--- 3. exec/eval/child_process near message handling (WBS bot runtime) ---"
+echo "--- 3. exec/eval/child_process near message handling (whatsapp bot runtime) ---"
 EXEC_HITS=0
 if [ -n "$WBS_SRC" ]; then
   echo "  scanning: $WBS_SRC"
@@ -143,7 +143,7 @@ if [ -n "$WBS_SRC" ]; then
   fi
 else
   echo "  ebda-whatsapp/ebda-whatsapp backend/src not found on this machine — skipping"
-  add_info "WBS backend/src not found locally — check 3 skipped"
+  add_info "whatsapp backend/src not found locally — check 3 skipped"
 fi
 echo "  -> $EXEC_HITS hit(s) to review"
 echo

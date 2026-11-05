@@ -81,7 +81,7 @@ while IFS= read -r unit <&3; do
   ownerrepo="${middle%%.*}"          # e.g. <owner>-<repo>
   runner="${middle#*.}"              # e.g. <vm>-crm-1
   # Owner and repo are joined by a dash in the unit name, and BOTH sides contain
-  # dashes — splitting on the first one yields owner "ForceAI" / repo "KW-...".
+  # dashes — splitting on the first one yields owner "Ebda" / repo "KW-...".
   # Match the known owners by prefix instead of guessing where the boundary is.
   owner=""; repo=""
   for known in $KNOWN_OWNERS; do

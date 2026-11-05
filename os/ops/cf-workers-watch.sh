@@ -170,8 +170,10 @@ except Exception: print('','','')" 2>/dev/null)"
 done
 
 # ---- health of the live domains ----
-declare -a HEALTH=( "store.force-ai.co" "admin.force-ai.co" "orders.force-ai.co" "whatsapp.force-ai.co" "crm.force-ai.co" "www.forcemediakw.com" "wadyaljuz.com" )
-for h in "${HEALTH[@]}"; do
+# Live domains to probe: the "health_domains" list in ~/.ebda-os.local.json (none configured = no domain probe).
+HEALTH=()
+while IFS= read -r _h; do [ -n "$_h" ] && HEALTH+=("$_h"); done < <(os_local_list health_domains)
+for h in ${HEALTH[@]+"${HEALTH[@]}"}; do
   code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 "https://$h/" 2>/dev/null)
   case "$code" in 200|301|302|307|308) ;; *) note "⚠️ $h unhealthy (HTTP ${code:-000})" ;; esac
 done

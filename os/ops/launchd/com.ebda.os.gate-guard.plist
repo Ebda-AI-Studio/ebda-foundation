@@ -19,9 +19,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>/Users/ahmadsharaf/Library/Logs/forceai-gate-guard.log</string>
+	<string>/Users/ahmadsharaf/Library/Logs/ebda-os-gate-guard.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/ahmadsharaf/Library/Logs/forceai-gate-guard.log</string>
+	<string>/Users/ahmadsharaf/Library/Logs/ebda-os-gate-guard.log</string>
 	<key>StartInterval</key>
 	<integer>21600</integer>
 </dict>

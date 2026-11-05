@@ -17,9 +17,9 @@
 		<string>__HOME__/.claude/scripts/cost-guard.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-cost-guard.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-cost-guard.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-cost-guard.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-cost-guard.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>

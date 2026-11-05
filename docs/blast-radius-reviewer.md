@@ -27,13 +27,13 @@ MAXIMUM is always flagged for `packages/shared` and `packages/database` changes 
 
 ```bash
 # Standard: by PR number
-DRY_RUN=1 ops/blast-radius.sh force-website-builder 94
+DRY_RUN=1 ops/blast-radius.sh my-repo 94
 
 # Ref-based (for CI use later): base..head + optional repo root path
-DRY_RUN=1 ops/blast-radius.sh force-website-builder main..feat/my-branch /path/to/repo
+DRY_RUN=1 ops/blast-radius.sh my-repo main..feat/my-branch /path/to/repo
 
 # Real run (sends Telegram alert when risk > NONE)
-ops/blast-radius.sh force-website-builder 94
+ops/blast-radius.sh my-repo 94
 ```
 
 ### Environment variables

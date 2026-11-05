@@ -10,7 +10,7 @@ locate candidates, not to judge. Two candidates were discarded on inspection dur
 first run (see `../2026-08-31-reel-derived-lenses.md`), and a count reported as a finding
 without reading the code is how an audit manufactures false accusations.
 
-**Fleet status.** Applied to `force-website-builder` (2026-08-31): 17 code-auditable,
+**Fleet status.** Applied to a storefront product (2026-08-31): 17 code-auditable,
 14 pass, 3 gaps — full report in that repo at
 `docs/audits/2026-08-31-reel-derived-lenses.md`. **Not yet applied** to
 the predecessor repos (see `docs/history/`) — run them there and record the result here.

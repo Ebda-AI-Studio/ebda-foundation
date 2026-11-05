@@ -51,7 +51,7 @@ any git hook, only by the AGENTS.md rule. Settles with a PATH `git` wrapper if i
 `workspace-hygiene.sh` (hourly) runs `umbra prune <vm>` for each **running** Umbra machine when host free is under
 `UMBRA_PRUNE_FREE_GB` (40) **or** its `disk.img` allocation grew more than `UMBRA_PRUNE_GROWTH_GB` (10) since the last
 prune. State: `~/.cache/wt-deps/umbra-prune.tsv` (`vm<TAB>epoch<TAB>allocated_kb after prune`); the first sighting only
-records a baseline. Log: `~/Library/Logs/forceai-umbra-prune.log`.
+records a baseline. Log: `~/Library/Logs/ebda-os-umbra-prune.log`.
 
 - **Idle guests only, no fstrim (2026-10-25):** `umbra prune` runs `fstrim`, which stalls guest I/O ~80 s and made CI tests time out; the automatic prune therefore runs `--if-idle --no-fstrim` (#255, umbra #63). CPU/RAM/I-O overload is the other guest killer: `host-capacity.md`.
 - **Never during a stop/rebuild:** `lib/umbra-provisioning.sh` (`~/.umbra/provisioning/<vm>`, expiry-based) skips the VM.

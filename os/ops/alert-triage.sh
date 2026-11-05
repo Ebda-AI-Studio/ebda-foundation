@@ -2,7 +2,7 @@
 # alert-triage.sh — the OS reads ALL alert channels FOR me, so I know about
 # production problems without Ahmad pinging me.
 #
-# WHY: the Force AI Telegram bot is OUTBOUND-ONLY — a bot cannot read its own
+# WHY: the Ebda OS Telegram bot is OUTBOUND-ONLY — a bot cannot read its own
 # sent history, so the OS can't "read the bot." Instead it reads every SOURCE the
 # bot alerts on, in one place, and mirrors the result to an OS-readable file.
 #

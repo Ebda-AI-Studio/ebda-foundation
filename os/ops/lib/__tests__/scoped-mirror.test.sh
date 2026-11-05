@@ -13,7 +13,7 @@
 # Two properties are load-bearing and both are asserted below:
 #
 #   1. ADDITIVE. Two scopes held MORE in the mirror than on disk
-#      (gcc-horse-market 9/10, ebda-whatsapp 63/64) because other machines
+#      (client-repo 9/10, ebda-whatsapp 63/64) because other machines
 #      contributed files this Mac never had. A --delete here destroys them.
 #   2. NEVER SELF-COPY. Global memory lives under projects/ too. An earlier draft
 #      guarded by comparing basenames, which stops guarding the moment GLOBAL_MEM

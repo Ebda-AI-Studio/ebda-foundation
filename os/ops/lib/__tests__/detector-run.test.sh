@@ -93,7 +93,7 @@ assert not any('safe/route.ts' in x for x in files), 'zod route false-positive: 
 "
 # storeurl-trailing-slash was RETIRED in #48 — it flagged every storeUrl('') call
 # but the helper returns the prefix (never '//') for '', so it was 20/20 false on
-# FWB. Retirement is implemented by the leading underscore in the filename, which
+# store. Retirement is implemented by the leading underscore in the filename, which
 # detector-run.py:72 skips. This test asserted the OLD behaviour and had been red
 # ever since; it now locks in the retirement instead, so re-enabling the detector
 # by dropping the underscore fails loudly rather than silently returning the

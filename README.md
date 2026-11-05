@@ -8,7 +8,7 @@ Consumers (vendored, sha-pinned): Ebda Store `packages/shared/src/foundation`, E
 
 | Layer | Path | What it is | Who uses it |
 |---|---|---|---|
-| AI OS | `os/` (config in `os/config/os.env`, manifest in `os/MANIFEST.md`) | The operating tooling: merge gate, standards, audits, hooks, scheduled jobs. Ported in from the frozen predecessor. | Every business: Ebda AI Studio, Whisky 11, Force AI |
+| AI OS | `os/` (config in `os/config/os.env`, manifest in `os/MANIFEST.md`) | The operating tooling: merge gate, standards, audits, hooks, scheduled jobs. Ported in from the frozen predecessor. | Every business under Ebda AI Studio |
 | Product library | `packages/`, `create/`, `vectors/`, `parity/` | The code two or more Ebda products must run identically, plus the `new` generator. | Every Ebda product, by vendoring |
 
 Why one repo: Ruling FDN-OS-1 (`docs/rulings/FDN-OS-1.md`). The OS port is in progress; history of the move is in `docs/history/`.

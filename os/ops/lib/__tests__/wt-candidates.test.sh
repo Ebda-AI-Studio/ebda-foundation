@@ -15,13 +15,13 @@ mk() { mkdir -p "$R/$1"; }
 mk wbs-guard-1/frontend/__tests__; mk wbs-guard-1/backend/__tests__; mk wbs-guard-1/backend/node_modules/@types/babel__core
 mk wbs-guard-1/backend/node_modules/jsx-ast-utils/__tests__; mk wbs-guard-1/backend/third/__snapshots__; echo "gitdir: x" > "$R/wbs-guard-1/.git"
 # a live worktree named by the convention, an orphan one, and nested containers
-mk Whisky-11/clients/work-wise/work-wise-app__feat-x; echo "gitdir: x" > "$R/Whisky-11/clients/work-wise/work-wise-app__feat-x/.git"
-mk Whisky-11/clients/work-wise/work-wise-app__feat-x/src/__tests__
-mk Whisky-11/clients/work-wise/work-wise-app__crashed
+mk Whisky-11/clients/acme-client/acme-client-app__feat-x; echo "gitdir: x" > "$R/Whisky-11/clients/acme-client/acme-client-app__feat-x/.git"
+mk Whisky-11/clients/acme-client/acme-client-app__feat-x/src/__tests__
+mk Whisky-11/clients/acme-client/acme-client-app__crashed
 # an un-registered dir that is NOT a worktree but has no .git and lives under a container (a plain tests dir at depth)
 mk scratch/pkg/__mocks__
 OUT="$(wt_candidates "$R" | sed "s#^$R/##" | sort)"
-EXP="$(printf '%s\n' 'Whisky-11/clients/work-wise/work-wise-app__crashed' 'Whisky-11/clients/work-wise/work-wise-app__feat-x' | sort)"
+EXP="$(printf '%s\n' 'Whisky-11/clients/acme-client/acme-client-app__crashed' 'Whisky-11/clients/acme-client/acme-client-app__feat-x' | sort)"
 [ "$OUT" = "$EXP" ] && ok "only <repo>__<slug> dirs outside any repo are candidates" || { no "candidates differ"; echo "got:"; echo "$OUT"; }
 echo "$OUT" | grep -q "__tests__" && no "a __tests__ dir became a candidate" || ok "no __tests__ / __mocks__ / __snapshots__ dir is a candidate"
 echo "$OUT" | grep -q "babel__core" && no "a node_modules package dir became a candidate" || ok "a node_modules package dir (babel__core) is never a candidate"

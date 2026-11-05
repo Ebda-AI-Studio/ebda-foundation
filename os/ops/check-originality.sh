@@ -39,7 +39,10 @@ done
 [ -n "$DIR" ] || { echo "check-originality: --dir is required" >&2; exit 64; }
 [ -d "$DIR" ] || { echo "check-originality: no such directory: $DIR" >&2; exit 64; }
 
-DIR="$DIR" FAIL_AT="$FAIL_AT" WARN_AT="$WARN_AT" TOP="$TOP" EXCLUDES="$EXCLUDES" python3 <<'PYORIG'
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+ENTITIES="$(command -v os_local_list >/dev/null 2>&1 && os_local_list originality_entities 2>/dev/null || true)"
+DIR="$DIR" FAIL_AT="$FAIL_AT" WARN_AT="$WARN_AT" TOP="$TOP" EXCLUDES="$EXCLUDES" ENTITIES="$ENTITIES" python3 <<'PYORIG'
 import os, re, sys, glob, itertools
 
 d        = os.environ["DIR"]
@@ -50,12 +53,12 @@ excludes = [e for e in (os.environ.get("EXCLUDES") or "").split(":") if e]
 
 # Proper nouns neutralised so a find-and-replace re-skin (swap the repo/client and
 # little else) still scores as a near-duplicate. Extend as new names appear.
+# Client / brand names come from the per-machine ~/.ebda-os.local.json "originality_entities" list (ENTITIES env,
+# newline separated); only generic platform words are built in.
+_extra = [re.escape(e) for e in (os.environ.get("ENTITIES") or "").split("\n") if e.strip()]
 ENTITY = re.compile(
-    r'\b(fwb|wbs|force[\-_ ]?ai|forceai|force[\-_ ]?media|whisky|umbra|neon|cloudflare|'
-    r'railway|vercel|supabase|prisma|inngest|myfatoorah|gcc[\-_ ]?horse[\-_ ]?market|'
-    r'horse[\-_ ]?market|mypovonai|legende|salam|elsalam|om[\-_ ]?hassan|da[\-_ ]?gusto|'
-    r'pecannbee|wady[\-_ ]?aljuz|quote[\-_ ]?studio|digital[\-_ ]?card|kuwait|egypt|'
-    r'arabic|english)\b', re.I)
+    r'\b(' + '|'.join(['ebda', 'whisky', 'umbra', 'neon', 'cloudflare', 'railway', 'vercel', 'supabase',
+                       'prisma', 'inngest', 'mypovonai', 'arabic', 'english'] + _extra) + r')\b', re.I)
 
 def strip_frontmatter(t):
     if t.startswith("---"):

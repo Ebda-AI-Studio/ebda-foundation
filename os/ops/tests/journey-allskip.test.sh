@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # journey-monitor: an all-skip run is WARN (blind), never "all passed"; and the
 # env file must reach the journeys (set -a). Fake HOME, fixture journeys, offline.
-# (#197: JOURNEY_FWB_STORE_URL unset -> 0 pass / 1 skip was written ok=true.)
+# (#197: JOURNEY_STORE_STORE_URL unset -> 0 pass / 1 skip was written ok=true.)
 set -uo pipefail
 cd "$(dirname "$0")/.."; OPS="$(pwd)"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
@@ -27,16 +27,16 @@ st_ok() { printf '%s' "$STATUS" | python3 -c "import sys,json;print(json.load(sy
 run "$T/j-skip" /dev/null
 [ "$(st_ok)" = "warn" ] && pass "all-skip -> status ok='warn' (not true)" || fail "all-skip status ok=$(st_ok): $STATUS"
 echo "$OUT" | grep -q "WARN — all 1 journey(s) SKIPPED" && pass "all-skip prints a WARN naming the var to set" || fail "no WARN line: $OUT"
-echo "$OUT" | grep -q "JOURNEY_FWB_STORE_URL" && pass "WARN names JOURNEY_FWB_STORE_URL" || fail "var not named"
+echo "$OUT" | grep -q "JOURNEY_STORE_STORE_URL" && pass "WARN names JOURNEY_STORE_STORE_URL" || fail "var not named"
 [ "$RC" -eq 0 ] && pass "all-skip stays fail-open (exit 0)" || fail "rc=$RC"
 
 run "$T/j-mixed" /dev/null
 [ "$(st_ok)" = "true" ] && pass "1 pass + 1 skip is still healthy (ok=true)" || fail "mixed status ok=$(st_ok): $STATUS"
 
 # plain KEY=value (no export) must reach the node journey
-echo 'JOURNEY_TEST_URL=https://wadyaljuz.com' > "$T/svc.env"
+echo 'JOURNEY_TEST_URL=https://shop.example.com' > "$T/svc.env"
 run "$T/j-env" "$T/svc.env"
-echo "$OUT" | grep -q "PASS  needs-env — saw https://wadyaljuz.com" && [ "$(st_ok)" = "true" ] \
+echo "$OUT" | grep -q "PASS  needs-env — saw https://shop.example.com" && [ "$(st_ok)" = "true" ] \
   && pass "env file value reaches the journey (set -a): real run, not skip" || fail "env not exported: $OUT"
 
 echo "== MUTATION CHECKS =="

@@ -10,5 +10,5 @@
   "include_regex": "(export\\s+)?(async\\s+)?function\\s+getCached\\b|getCached\\s*[:=]\\s*(async\\s*)?(function\\s*)?\\(|function\\s+wrap\\s*\\(\\s*key",
   "absent_regex": "inFlight|inflight|pendingPromises|singleFlight|promiseMap",
   "cap": 20,
-  "source_lesson": "cache-stampede reel audit 2026-07-13 (FWB/WBS): stampede = concurrent misses -> N rebuilds; single-flight promise map is the standard fix"
+  "source_lesson": "cache-stampede reel audit 2026-07-13 (store/whatsapp): stampede = concurrent misses -> N rebuilds; single-flight promise map is the standard fix"
 }

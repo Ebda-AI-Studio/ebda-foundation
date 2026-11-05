@@ -1,6 +1,6 @@
 # os/ manifest
 
-The AI OS layer of ebda-foundation: the operating tooling that every business (Ebda AI Studio, Whisky 11, Force AI) runs under. It is ported in from the frozen predecessor at tag `final-before-ebda`; see the freeze note in `docs/history/`.
+The AI OS layer of ebda-foundation: the operating tooling that every business (Ebda AI Studio and its sibling businesses) runs under. It is ported in from the frozen predecessor at tag `final-before-ebda`; see the freeze note in `docs/history/`.
 
 ## Layout
 
@@ -14,6 +14,7 @@ The AI OS layer of ebda-foundation: the operating tooling that every business (E
 | `ops/tests/`, `ops/lib/__tests__/`, `tests/remediation/` | The ported suites. Run all: `bash os/tests/run-all.sh`. | ported (Task 2) |
 | `tests/no-force-strings.test.sh`, `tests/linux-smoke.test.sh`, `tests/run-all.sh` | Predecessor-string guard, Linux `bash -n` + `--help` smoke, one-command runner. | new (Task 2) |
 | `standard/` (242 files: the 95-file base set, the 111+ Ebda 2026-10 graded lens standards, `umbra-guest-integrity`, `rules/`), `agents/` (25), `skills/` (benchmark-vet, blast-radius, correct, THIRD-PARTY.md), `schemas/hooks.schema.json`, `vendor/landlock-run/`, `audit/lenses/` (source packs), `template/VENDOR-PROVENANCE.md` | Standards, lens packs, agents, skills, hook schema, vendored Landlock launcher, vendor-provenance template. `skills/force-audit` is NOT ported (open decision in `docs/history/standards/incidents.md`). | ported (Task 3) |
+| `config/local.example.json`, `tests/os-local-list.test.sh` | Placeholder shape of the gitignored per-machine `~/.ebda-os.local.json` (repo lists, health domains, originality entities, deploy-drift services) and the test for its reader `os_local_list`. | new (Task 3 fix 1) |
 | `tests/standard-links.test.mjs` | Every relative link in `standard/` and `audit/lenses/` resolves. | new (Task 3) |
 | dashboard, command-center app, dream cycle, self-heal and heal-watch, watchers, event listener, page-load monitor, daily brief, companion | The AI-OS components beyond the core. | Task 4 |
 

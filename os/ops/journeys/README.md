@@ -44,31 +44,31 @@ The framework is ready; Playwright journeys are the next evolution.
 
 Set these in `~/.whisky-services.env` on the monitoring Mac to enable real prod journeys. The runner sources this file automatically (with `set -a`, so plain `KEY=value` lines reach the journeys; `export` is not needed). A run in which every journey skipped is reported as **WARN (blind)**, not as healthy.
 
-### FWB (Force Store) journeys
+### store (Force Store) journeys
 
 ```bash
 # fwb-storefront-smoke.mjs  -- REQUIRED: with this unset every journey SKIPS and
 # journey-monitor reports WARN "BLIND: all journeys skipped" (nothing was checked).
-JOURNEY_FWB_STORE_URL="https://wadyaljuz.com"
+JOURNEY_STORE_STORE_URL="https://shop.example.com"
 
 # Future: add-to-cart outcome journey (needs API base + a product ID)
-JOURNEY_FWB_API_BASE="https://api.force-ai.co/api/v1"
-JOURNEY_FWB_PRODUCT_ID=""          # a real product ID in the prod store
-JOURNEY_FWB_STORE_DOMAIN="wadyaljuz.com"
+JOURNEY_STORE_API_BASE="https://api.example.com/api/v1"
+JOURNEY_STORE_PRODUCT_ID=""          # a real product ID in the prod store
+JOURNEY_STORE_STORE_DOMAIN="shop.example.com"
 
 # Future: authenticated admin journey (checks merchant dashboard renders)
-JOURNEY_FWB_ADMIN_URL="https://admin.forcemediakw.com"
-JOURNEY_FWB_ADMIN_EMAIL=""         # test merchant account
-JOURNEY_FWB_ADMIN_PASSWORD=""      # test merchant password
+JOURNEY_STORE_ADMIN_URL="https://example.com"
+JOURNEY_STORE_ADMIN_EMAIL=""         # test merchant account
+JOURNEY_STORE_ADMIN_PASSWORD=""      # test merchant password
 ```
 
-### WBS (WhatsApp Bulk Sender) journeys
+### whatsapp (WhatsApp Bulk Sender) journeys
 
 ```bash
-# Future: WBS login outcome journey
-JOURNEY_WBS_URL="https://wbs.forcemediakw.com"
-JOURNEY_WBS_EMAIL=""               # test user email
-JOURNEY_WBS_PASSWORD=""            # test user password
+# Future: whatsapp login outcome journey
+JOURNEY_MSG_URL="https://example.com"
+JOURNEY_MSG_EMAIL=""               # test user email
+JOURNEY_MSG_PASSWORD=""            # test user password
 ```
 
 ### General
@@ -79,13 +79,13 @@ JOURNEY_TEMPLATE_URL=""
 JOURNEY_TEMPLATE_MARKER=""
 ```
 
-> NOTE: These are **prod creds for a dedicated test account** — never use a real merchant's account. Create a `force-os-monitor@forcemediakw.com` test account on each system and revoke it if compromised.
+> NOTE: These are **prod creds for a dedicated test account** — never use a real merchant's account. Create a `os-monitor@example.com` test account on each system and revoke it if compromised.
 
 ## Registered journeys
 
 | File | Env required | What it asserts |
 |---|---|---|
-| `fwb-storefront-smoke.mjs` | `JOURNEY_FWB_STORE_URL` | GET store URL → HTTP 200 AND structural storefront markers in HTML (product grid / cart / nav) — not just 200 |
+| `fwb-storefront-smoke.mjs` | `JOURNEY_STORE_STORE_URL` | GET store URL → HTTP 200 AND structural storefront markers in HTML (product grid / cart / nav) — not just 200 |
 
 ## Scheduling
 

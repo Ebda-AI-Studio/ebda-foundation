@@ -1,7 +1,7 @@
 # deps — Dependency Discipline Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §6 (audit split), §7 (lockfile regen), §9 (dependency discipline), CLAUDE.md (Rule 1 — dependency discipline), reference-iceberg-audit.md (rule 1 source), reference-force-ai-production-grade-standard.md (layer 5: security / supply-chain)
+sources: PLAYBOOK §6 (audit split), §7 (lockfile regen), §9 (dependency discipline), CLAUDE.md (Rule 1 — dependency discipline), reference-iceberg-audit.md (rule 1 source)
 
 ## What "solid" looks like
 Every added dependency passes a 5-point gate before commit: it exists in the registry, was released within the last 12 months, carries a compatible license, and keeps the dep tree sane; `npm audit` reports 0/0/0/0 at every severity; the CI audit gate enforces zero-tolerance on prod deps; transitive vulns are fixed by overriding the leaf (never by downgrading a framework), and in a monorepo overrides use the nested form.
@@ -25,5 +25,5 @@ Every added dependency passes a 5-point gate before commit: it exists in the reg
 _Sources: `feedback-subagent-pnpm-pollution-dual-react` (crit 10), `feedback-pnpm-react18-19-types-coexistence` (crit 11)._
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …

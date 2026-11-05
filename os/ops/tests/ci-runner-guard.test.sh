@@ -606,7 +606,7 @@ else
 fi
 
 # ── CI_ROUTING_PIN (2026-10-03) ─────────────────────────────────────────────
-# The owner moved FWB CI to cloud; the guard flipped it back 7 minutes later
+# The owner moved store CI to cloud; the guard flipped it back 7 minutes later
 # (cancelled runs read as "cloud infra failing"). A pin is an owner decision the
 # guard must enforce, not override.
 rm -f "$FK/varset.log"

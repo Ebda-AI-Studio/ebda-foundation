@@ -17,9 +17,9 @@
 		<string>__HOME__/.claude/scripts/workspace-hygiene.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-workspace-hygiene.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-workspace-hygiene.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-workspace-hygiene.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-workspace-hygiene.log</string>
 	<key>StartInterval</key>
 	<integer>3600</integer>
 </dict>

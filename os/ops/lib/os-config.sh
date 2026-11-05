@@ -46,3 +46,29 @@ os_config_load() {
   set +a
   return 0
 }
+
+# os_local_list <key> [default...] - print the string items of a list in the per-machine, gitignored
+# ~/.ebda-os.local.json (path overridable with EBDA_OS_LOCAL_JSON), one per line. Client repo names, client
+# domains and similar per-machine lists live there, never in git (see os/config/local.example.json).
+# File absent or key missing -> prints the given defaults (if any), logs ONE line to stderr, returns 0.
+os_local_list() {
+  local _key="${1:?os_local_list needs a key}"; shift
+  local _f="${EBDA_OS_LOCAL_JSON:-$HOME/.ebda-os.local.json}" _out="" _d
+  if [ -f "$_f" ] && command -v python3 >/dev/null 2>&1; then
+    _out="$(python3 -I - "$_f" "$_key" <<'PY' 2>/dev/null
+import json, sys
+try:
+    v = json.load(open(sys.argv[1], encoding="utf-8")).get(sys.argv[2], [])
+except Exception:
+    sys.exit(0)
+for x in v if isinstance(v, list) else []:
+    if isinstance(x, str) and x.strip():
+        print(x.strip())
+PY
+)"
+  fi
+  if [ -n "$_out" ]; then printf '%s\n' "$_out"; return 0; fi
+  if [ "$#" -gt 0 ]; then for _d in "$@"; do printf '%s\n' "$_d"; done; return 0; fi
+  echo "os-config: no '$_key' list in $_f (copy os/config/local.example.json there to enable); skipping" >&2
+  return 0
+}

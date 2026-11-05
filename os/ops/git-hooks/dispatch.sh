@@ -42,7 +42,7 @@ if [ "$name" = "post-checkout" ]; then
       if [ "${free_kb:-0}" -ge $(( ${WT_MIN_FREE_GB:-30} * 1024 * 1024 )) ] || bash "$WTD" --check "$top" >/dev/null 2>&1; then
         mkdir -p "$HOME/Library/Logs" 2>/dev/null
         { echo "$(date -u +%FT%TZ) post-checkout new worktree $top"; WT_DEPS_HOOK=1 bash "$WTD" "$top" 2>&1; } \
-          | tee -a "$HOME/Library/Logs/forceai-wt-deps-hook.log" >&2 || true
+          | tee -a "$HOME/Library/Logs/ebda-os-wt-deps-hook.log" >&2 || true
       else
         echo "wt-deps hook: host free < ${WT_MIN_FREE_GB:-30} GB and no cache hit - NOT installing deps in $top. Free disk first (workspace-hygiene.sh)." >&2
       fi

@@ -76,7 +76,7 @@ packages/database`. Source of truth: `DREAM_NEVER_RE` in `ops/lib/dream-safety.s
   `DREAM_AUTOMERGE` env var still overrides when set, for manual/CI runs. Add a repo
   to the allowlist only after: (a) one clean weekly dry-run, (b) ≥3 Tier-A PRs
   reviewed-as-correct, (c) the server-side guard is merged into that repo. Flagships
-  (FWB/WBS) LAST. All other gates (safe tier, NEVER-paths, size cap, green CI) still
+  (previous products) LAST. All other gates (safe tier, NEVER-paths, size cap, green CI) still
   apply regardless of allowlist membership.
 - `DREAM_MAX_FIXES` (default 3) — caps auto-fixes per run.
 - `DRY_RUN=1` — every script prints what it WOULD do, mutates nothing.

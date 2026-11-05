@@ -6,7 +6,7 @@ Pack: reliability | Probe type: S | Source: Playbook sec 14 Memory-leak (setInte
 A setInterval at module scope keeps the process alive and leaks; clear it or unref it.
 
 ## Scenario
-The FWB setInterval CI hang: a module-level timer kept every test process alive until the job timeout.
+The a previous storefront product setInterval CI hang: a module-level timer kept every test process alive until the job timeout.
 
 ## Source candidate
 - (low) Module-level setInterval with no clearInterval/unref in the file.

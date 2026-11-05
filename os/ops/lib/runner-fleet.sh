@@ -5,7 +5,7 @@
 # (USE_SELF_HOSTED=false) on 2026-08-08 05:17, but nothing told the fleet's
 # WATCHERS or its HEALER. So a runner that no CI depended on kept paging:
 # ci-runner-guard hard-rebooted a dead guest every ~32.7 min for three days, and
-# the runner-health-check crons on CRM + WBS fired every 15 min. ~30 Telegram
+# the runner-health-check crons on CRM + whatsapp fired every 15 min. ~30 Telegram
 # messages + as many red "Run failed" GitHub notifications overnight, all about
 # infrastructure that was deliberately out of service.
 #
@@ -20,7 +20,7 @@
 # non-comment line is used as the human reason); only its EXISTENCE is the signal.
 #
 # Runtime state, not deployed config: a marker under ~/.whisky-os-state survives
-# the script sync that silently re-armed the WBS healer mid-pause on 2026-08-06.
+# the script sync that silently re-armed the whatsapp healer mid-pause on 2026-08-06.
 #
 # PARKED MUST NOT MEAN BLIND. Callers that stand down on `fleet_parked` are
 # still required to assert the safety invariant — every CI repo must be on

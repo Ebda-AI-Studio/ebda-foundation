@@ -17,9 +17,9 @@
 		<string>__HOME__/.claude/scripts/graphify-backfill.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-graph-backfill.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-graph-backfill.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-graph-backfill.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-graph-backfill.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>

@@ -129,7 +129,7 @@ print(' '.join(str(r['databaseId']) for r in d if r.get('conclusion') in ('failu
     # an INFRA failure = the run failed but NO job has a step with conclusion 'failure'.
   # 'cancelled' is NOT counted (2026-10-03): concurrency groups, superseded PR
   # pushes and a human/babysitter cancelling runs all produce it, and counting it
-  # flipped FWB back to self-hosted 7 minutes after the owner moved CI to cloud.
+  # flipped store back to self-hosted 7 minutes after the owner moved CI to cloud.
     local realfail; realfail=$(gh run view "$id" --repo "$slug" --json jobs 2>/dev/null | python3 -c "
 import sys,json
 try:
@@ -923,7 +923,7 @@ if fleet_parked; then
   fi
   # Healthy parked state. Report it on the dashboard rather than exiting silent —
   # a watcher that stands down without saying so is how a park becomes an outage.
-  echo "[ci-runner-guard] PARKED — $(fleet_park_reason); the ${#REPOS[@]} monitored Force AI repos are on cloud CI (Umbra serves Ebda only). Standing down (no heal, no alert)."
+  echo "[ci-runner-guard] PARKED — $(fleet_park_reason); the ${#REPOS[@]} monitored Ebda OS repos are on cloud CI (Umbra serves Ebda only). Standing down (no heal, no alert)."
   write_status "runner" "true" "fleet parked on purpose — all repos on cloud CI" \
     "$(FPR="$(fleet_park_reason)" FPF="$FLEET_PARK_FILE" python3 -c 'import json,os; print(json.dumps({"parked":True,"reason":os.environ["FPR"],"unpark":"rm "+os.environ["FPF"]}))')"
   exit 0
@@ -1170,7 +1170,7 @@ for r in "${REPOS[@]}"; do
   if all_runners_busy "$slug" && ci_queue_backed_up "$slug"; then
     # ALERT-FIRST by default. Flipping USE_SELF_HOSTED=false routes CI to cloud
     # (ubuntu-latest), but the Force workflows are self-hosted-tuned: verified
-    # 2026-06-13 that flipping WBS to cloud FAILED gitleaks + Semgrep + Production
+    # 2026-06-13 that flipping whatsapp to cloud FAILED gitleaks + Semgrep + Production
     # CI gates on branches that passed on self-hosted (allowlist/tool/service
     # config differs on cloud). A blind auto-flip would block all merges on false
     # security failures. So only auto-flip when CLOUD_CI_VERIFIED=true (a human has

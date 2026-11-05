@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Is a PR's check rollup ACTUALLY green enough to merge?
 #
-# 2026-08-25: pr-shepherd squash-merged gcc-horse-market#99 whose entire CI run
+# 2026-08-25: pr-shepherd squash-merged client-repo#99 whose entire CI run
 # was CANCELLED and had never once passed. The merged code then broke that
 # repo's CI.
 #

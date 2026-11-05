@@ -19,9 +19,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-cf-workers-watch.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-cf-workers-watch.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-cf-workers-watch.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-cf-workers-watch.log</string>
 	<key>StartInterval</key>
 	<integer>600</integer>
 </dict>

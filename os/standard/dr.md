@@ -1,7 +1,7 @@
 # dr — Disaster Recovery & Backup Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §10 (Data lifecycle + DR), CLAUDE.md (production rollback + backup discipline), reference-iceberg-audit.md (terms 21 DR / 29 Rollbacks / DR-drill), reference-force-ai-production-grade-standard.md (layer 3: data — snapshots, rollback kit)
+sources: PLAYBOOK §10 (Data lifecycle + DR), CLAUDE.md (production rollback + backup discipline), reference-iceberg-audit.md (terms 21 DR / 29 Rollbacks / DR-drill)
 
 ## What "solid" looks like
 A scheduled, restorable DB backup that dumps full data (RLS tables included) independent of repo `.env`; a `scripts/rollback.sh` that reverts code and blocks on migrations; migrations that are additive-only by default so an auto-applied schema bug is forward-compatible; a `docs/ROLLBACK.md` with concrete recovery paths; RLS policy state re-verified after any restore; and the whole snapshot → rollback → restore loop rehearsed, not discovered mid-incident.
@@ -21,5 +21,5 @@ A scheduled, restorable DB backup that dumps full data (RLS tables included) ind
 | 10 | Snapshot + rollback + restore rehearsed | The full DR loop is rehearsed (DR-drill), not discovered during an incident; local/staging never touch prod during the drill | grep `docs/ROLLBACK.md` for a rehearsal/drill note; confirm restore target is non-prod | High |
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …

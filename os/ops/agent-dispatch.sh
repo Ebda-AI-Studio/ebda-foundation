@@ -301,7 +301,7 @@ with open(path, "a") as f:
     f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 PY
 
-# Surface the agent loop in Force AI Ops (:7717 aggregator reads *-status.json
+# Surface the agent loop in Ebda OS Ops (:7717 aggregator reads *-status.json
 # from the state dir). Without this the whole Telegram->agent loop is invisible
 # in the one place Ahmad looks for "where are we".
 python3 - "$STATE_DIR/agent-status.json" "$JOBS_LOG" "$RC" "$DUR" "$TEXT" "$CWD" <<'PY' 2>/dev/null || true

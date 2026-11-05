@@ -126,7 +126,7 @@ print("\n".join(out))
 PY
 }
 
-# pending_status_json — writes the Ops tile so the queue is visible in Force AI Ops
+# pending_status_json — writes the Ops tile so the queue is visible in Ebda OS Ops
 pending_status_json() {
   python3 - "$PENDING_FILE" "$STATE_DIR/pending-status.json" <<'PY'
 import json, os, sys, datetime

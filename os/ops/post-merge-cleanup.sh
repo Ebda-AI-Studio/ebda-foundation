@@ -59,7 +59,7 @@ WORKTREES_ROOT="$PROJECTS_ROOT/_worktrees"
 
 # Common test-infra files that MUST exist in every Force repo (see
 # standard/common-test-files.md). The canonical one is the destructive-reset
-# prod-guard whose ABSENCE wiped the WBS prod DB (feedback-test-truncate-wiped-prod-db).
+# prod-guard whose ABSENCE wiped the whatsapp prod DB (feedback-test-truncate-wiped-prod-db).
 # Globs are checked as "at least one match exists"; a repo only needs the ones
 # that apply to its test stack, so a miss is a WARNING, not a teardown blocker —
 # but it is always reported so the gap gets propagated, never silently lost.

@@ -17,7 +17,7 @@
 #   SSL SYSCALL error: Operation timed out
 #
 # That is exactly how the fleet backup failed every night from 2026-08-04
-# (0 succeeded, 6 failed) while running perfectly by hand: FWB died 42 minutes in,
+# (0 succeeded, 6 failed) while running perfectly by hand: store died 42 minutes in,
 # CRM 98 minutes in against the most distant region. Nothing was wrong with Neon,
 # the credentials, or pg_dump — the host went back to sleep.
 #
@@ -76,7 +76,7 @@ if command -v require_projects_access_critical >/dev/null 2>&1; then require_pro
 #
 # postgresql@18 FIRST (measured 2026-09-19): Neon has started creating projects
 # on PG18, and pg_dump refuses to dump a server newer than itself —
-# "server version: 18.6; pg_dump version: 17.11" aborted al-assriya-landing
+# "server version: 18.6; pg_dump version: 17.11" aborted landing-site
 # outright. A newer client dumps an older server happily, so @18 covers the PG17
 # projects too; @17 stays as the fallback for a machine without @18 installed.
 # Overridable ONLY so the test suite can point this at stub binaries — a test
@@ -198,7 +198,7 @@ for entry in ${PROJECTS[@]+"${PROJECTS[@]}"}; do
   out="${dir}/$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
 
   # Always dump as the OWNER (neondb_owner) — full data, not the restricted
-  # RLS app role (e.g. FWB's force_app). Required where a project has >1 role.
+  # RLS app role (e.g. store's force_app). Required where a project has >1 role.
   url="$(NEON_API_KEY="$neon_key" neonctl connection-string --project-id "$pid" --org-id "$org" --role-name neondb_owner 2>/dev/null)"
   if [ -z "$url" ]; then
     # This is a FAILURE, not a warning: no connection string means no dump for
@@ -311,7 +311,7 @@ else
     _failed_list="$(printf '%s, ' ${FAILED_NAMES[@]+"${FAILED_NAMES[@]}"})"
     _failed_list="${_failed_list%, }"
     ALERT_TITLE="🚨 Neon backup FAILED"
-    ALERT_BODY="${FAIL} of $(( OK + FAIL )) project(s) did NOT get a valid dump: ${_failed_list}. ${OK} succeeded. Detail (no credentials): ~/Library/Logs/forceai-neon-backup.log"
+    ALERT_BODY="${FAIL} of $(( OK + FAIL )) project(s) did NOT get a valid dump: ${_failed_list}. ${OK} succeeded. Detail (no credentials): ~/Library/Logs/ebda-os-neon-backup.log"
   fi
 fi
 # The send outcome is logged, never swallowed — a notify.sh failure at the exact

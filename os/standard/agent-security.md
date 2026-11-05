@@ -1,7 +1,7 @@
 # agent-security — Agent-Runtime Security Gates Rubric
 
 tags: [BOTH]
-sources: Simon Willison "lethal trifecta" (2025), CVE-2025-59536, CVE-2026-21852, MCP Top-10 (2026), `ops/self-check.sh` pattern, live agents: whatsapp-bulk-sender bot runtime, zero voice assistant, `ops/dream-fix.sh`
+sources: Simon Willison "lethal trifecta" (2025), CVE-2025-59536, CVE-2026-21852, MCP Top-10 (2026), `ops/self-check.sh` pattern, live agents: a WhatsApp bot runtime, zero voice assistant, `ops/dream-fix.sh`
 
 This is the **agent-runtime** counterpart to `security.md`. `security.md` covers app code
 (XSS, injection, secrets, headers). This file covers a different attack surface: **an LLM
@@ -85,7 +85,7 @@ threat class as a WhatsApp message or a scraped web page.** Vet a server before 
 
 ## Applied to our live agents
 
-### WBS (whatsapp-broadcaster / whatsapp-bulk-sender) — the canonical trifecta example
+### A messaging bot runtime — the canonical trifecta example
 
 The bot runtime has all three legs at once: it holds merchant/customer data (private
 data), it reads inbound WhatsApp message text directly (untrusted content), and it sends
@@ -203,6 +203,6 @@ write + git access — the "external comms" leg is a live `git push` / `gh pr cr
 
 ## Evidence (filled during audit, per agent runtime)
 
-- whatsapp-bulk-sender bot runtime: …
+- messaging bot runtime: …
 - zero voice assistant: …
 - dream-fix / autonomous harnesses: …

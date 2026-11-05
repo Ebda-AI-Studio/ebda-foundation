@@ -1,7 +1,7 @@
 # feature-flags — Feature Flags & Plan Gating Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §3.6, CLAUDE.md (source-of-truth = plan-baselines.ts + features.ts), reference-iceberg-audit.md (term 30: Feature flags), reference-force-ai-production-grade-standard.md (layer 12: feature flags — 4-layer plan-aware)
+sources: PLAYBOOK §3.6, CLAUDE.md (source-of-truth = plan-baselines.ts + features.ts), reference-iceberg-audit.md (term 30: Feature flags)
 
 ## What "solid" looks like
 Every plan-gated feature is enforced at FOUR layers — UI hide + API gate (`requireFeature → 503`) + async-job gate + service-level dual-gate — never UI-hide alone (that is a billing leak). A single resolver computes `enabled = override ?? PLAN_BASELINE[plan].includes(key)`; plan changes never mutate per-store override rows; super-admin bypasses every gate consistently; and the plan→feature map lives in one code file that is the source of truth for docs.
@@ -19,13 +19,9 @@ Every plan-gated feature is enforced at FOUR layers — UI hide + API gate (`req
 | 8 | Super-admin bypass consistent | Super-admin bypasses every gate via the SAME bypass path across all four layers | grep the gate/resolver for a single super-admin/`isSuperAdmin` bypass branch; flag any layer that re-implements its own bypass or omits it | Medium |
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …
 
-## Managed-agency note (Force AI products) — added 2026-06-08
+## Managed-agency products
 
-Force AI is **managed-agency, not self-serve** (Ahmad onboards every client personally; no signup, no self-serve plan). For these products, DO NOT grade this lens as "ungated premium routes = billing leak." Instead grade:
-- the gate **enforces at all 4 layers** (so a deliberately-limited client can be restricted), AND
-- the **default is full access** (`@default(w_enterprise)`-style) so a newly-onboarded client isn't accidentally locked out, AND
-- onboarding sets the client's access bundle (plan/`ClientFeature`) — the "plan" is an internal access bundle Ahmad assigns, not a price tier customers pick.
-Report a gap as "no default access / onboarding doesn't set the bundle," not "billing leak." Ref: [[feedback-force-ai-managed-agency-no-self-serve-plans]] · WBS PR #38.
+Where a product is onboarded by the operator rather than self-serve (no signup, no self-serve plan), do NOT grade this lens as "ungated premium routes = billing leak." Grade instead that the gate enforces at all 4 layers, that the default is full access so a newly-onboarded client is not locked out, and that onboarding sets the client's access bundle. Report a gap as "no default access / onboarding doesn't set the bundle," not "billing leak." Origin: [incidents](../../docs/history/standards/incidents.md).

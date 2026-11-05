@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Force AI Foundation — Cost Guard (OS oversight function)
+# Ebda Foundation — Cost Guard (OS oversight function)
 # Read-only watchdog. Detects the cost/billing regressions that bled the budget:
 #   1) any repo where neon-snapshot.yml is ACTIVE again
 #   2) any Neon project with prod-* snapshot branches or > BRANCH_MAX branches
@@ -94,7 +94,7 @@ if [ ${#violations[@]} -eq 0 ]; then
   exit 0
 fi
 
-msg="⚠️ Force AI Cost Guard — $(printf '%s' "${#violations[@]}") violation(s):"$'\n'"$(printf '  - %s\n' ${violations[@]+"${violations[@]}"})"
+msg="⚠️ Ebda OS Cost Guard — $(printf '%s' "${#violations[@]}") violation(s):"$'\n'"$(printf '  - %s\n' ${violations[@]+"${violations[@]}"})"
 echo "$msg"
 # Notify through the OS's single channel (Whisky Whoop) via the shared primitive.
 "$(dirname "$0")/notify.sh" "Cost Guard" "$msg" >/dev/null 2>&1 || true

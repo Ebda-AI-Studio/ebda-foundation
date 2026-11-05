@@ -7,7 +7,7 @@
 #   1. FRAMEWORK EOL  — endoflife.date public JSON API
 #      Checks nextjs, nodejs, react, prisma, express installed
 #      majors against EOL/sunset dates. class "framework-eol".
-#   2. META/WHATSAPP API version drift — grep WBS source for
+#   2. META/WHATSAPP API version drift — grep whatsapp source for
 #      hardcoded graph API versions lagging the known-current.
 #      class "api-version-drift".
 #   3. NPM DEPRECATION — samples direct deps per repo, queries
@@ -87,13 +87,7 @@ _now_iso() { python3 -c "import datetime; print(datetime.datetime.now().isoforma
 
 # repo list — keep in sync with dream-research.sh
 get_repos() {
-  printf '%s\n' \
-    "ebda-store" \
-    "ebda-whatsapp" \
-    "ebda-studio" \
-    "mypovonai" \
-    "digital-card" \
-    "gcc-horse-market"
+  os_local_list repos ebda-store ebda-whatsapp ebda-studio
 }
 
 # ---------- read installed version from package.json ----------
@@ -295,7 +289,7 @@ print(json.dumps(a+b))
 }
 
 # ---------- LENS 2: Meta/WhatsApp Graph API version drift ----------
-# Grep WBS source for hardcoded `v<NN>.0` graph API versions.
+# Grep whatsapp source for hardcoded `v<NN>.0` graph API versions.
 # Compare against WW_GRAPH_API_CURRENT.
 
 _check_api_version_drift() {
@@ -327,7 +321,7 @@ skip_dirs = {"node_modules", ".git", ".next", "dist", "build", ".husky", "vendor
 # A bare `vNN.0` is not evidence of a Graph API pin — it matches semvers,
 # changelog prose and tool output. A real pin always names the thing it is a
 # version OF, on the same line: a Meta host, a Graph path, or an API-version
-# identifier. Every true positive in WBS satisfies this
+# identifier. Every true positive in whatsapp satisfies this
 # (`WHATSAPP_API_VERSION=v20.0`, `api_version = 'v18.0'`,
 # `https://www.facebook.com/v18.0/dialog/oauth`); the husky shim does not.
 GRAPH_CONTEXT = re.compile(
@@ -382,7 +376,7 @@ for root, dirs, files in os.walk(wbs_dir):
                                "and may be sunset without notice.") % (
                                found_major, rel_path, lineno, "v%d.0" % current_major),
                     "fix": ("Replace 'v%d.0' with '%s' (or use an env/config constant). "
-                            "Test against the WBS sandbox before rolling to prod.") % (
+                            "Test against the whatsapp sandbox before rolling to prod.") % (
                             found_major, "v%d.0" % current_major),
                     "autofixable": False,
                 })

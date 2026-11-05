@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check-provenance.sh — gate a repo that carries code taken from another repo.
 #
-# WHY: Whisky 11's plan is clean-room clones of Force AI products with one-way sync
+# WHY: Whisky 11's plan is clean-room clones of Ebda OS products with one-way sync
 # and client-config scrubbing at the boundary. Both halves rot silently without a
 # gate: provenance becomes "some commit last spring", and a scrubbed identifier
 # creeps back in through a copied config. deepseek-harness's vendor/README.md is
@@ -20,7 +20,7 @@
 # --scope limits the scrub scan to one subtree. Needed whenever the vendored code
 # lives INSIDE a larger repo that legitimately contains the scrubbed terms: running
 # the gate over all of ebda-foundation reports 52 "violations" because Force
-# AI's own OS names Force AI's own clients. The scrub list guards a BOUNDARY, so it
+# AI's own OS names Ebda OS's own clients. The scrub list guards a BOUNDARY, so it
 # has to be pointed at the thing on the other side of it.
 # Exit: 0 clean · 1 a violation · 2 the provenance file is missing
 set -uo pipefail

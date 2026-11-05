@@ -5,7 +5,7 @@
 #
 # 2026-08-25: deploy-drift.sh died at `for f in "${FAILS[@]}"` on 32 consecutive
 # hourly runs. It had 0 fails and 1 alert; the guard above that line only
-# checked fails+alerts > 0. It detected a real WBS prod drift, printed it, then
+# checked fails+alerts > 0. It detected a real whatsapp prod drift, printed it, then
 # aborted before write_status — so the drift went unreported AND the stale
 # status file made the job look merely dead. Both symptoms, one missing `+`.
 #
@@ -58,7 +58,7 @@ eq  "guard is word-safe in array assignment" "$v" "1"
 
 # ── 2. the exact deploy-drift shape: 0 fails, 1 alert ────────────────────────
 if [ "$HAZARD" = 1 ]; then
-  bash -uc 'FAILS=(); ALERTS=("WBS api: DRIFT")
+  bash -uc 'FAILS=(); ALERTS=("whatsapp api: DRIFT")
     parts=()
     for f in "${FAILS[@]}"; do parts+=("FAIL: $f"); done
     for a in "${ALERTS[@]}"; do parts+=("ALERT: $a"); done' 2>/dev/null; rc=$?
@@ -67,12 +67,12 @@ else
   echo "SKIP: 0-fail/1-alert abort (needs bash <4.4)"
 fi
 
-out=$(bash -uc 'FAILS=(); ALERTS=("WBS api: DRIFT")
+out=$(bash -uc 'FAILS=(); ALERTS=("whatsapp api: DRIFT")
   parts=()
   for f in ${FAILS[@]+"${FAILS[@]}"}; do parts+=("FAIL: $f"); done
   for a in ${ALERTS[@]+"${ALERTS[@]}"}; do parts+=("ALERT: $a"); done
   printf "%s\n" ${parts[@]+"${parts[@]}"}' 2>/dev/null)
-eq  "the 0-fail/1-alert shape survives guarded" "$out" "ALERT: WBS api: DRIFT"
+eq  "the 0-fail/1-alert shape survives guarded" "$out" "ALERT: whatsapp api: DRIFT"
 
 # ── 3. GATE: no ops script may reintroduce a bare accumulator expansion ──────
 report=$(OPS="$OPS" python3 - <<'PY'

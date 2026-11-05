@@ -23,7 +23,7 @@ CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 
 OUT_DIR="$HOME/.claude/instincts"
 REPORT="$OUT_DIR/session-mining-$(date +%Y-%m).md"
-LOG="$HOME/Library/Logs/forceai-session-mining.log"
+LOG="$HOME/Library/Logs/ebda-os-session-mining.log"
 mkdir -p "$OUT_DIR"
 
 echo "$(date +%Y-%m-%dT%H:%M:%S) session-mining start" >> "$LOG"

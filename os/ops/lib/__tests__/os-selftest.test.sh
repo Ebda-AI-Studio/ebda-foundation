@@ -101,7 +101,7 @@ for g in result.get('grouped', []):
 . "$(cd "$(dirname "$0")/.." && pwd)/job-freshness.sh"
 
 FAKE_LAUNCHD="$WORK/launchd"
-FAKE_LOG="$WORK/forceai-fake-job.log"
+FAKE_LOG="$WORK/ebda-os-fake-job.log"
 FAKE_STATE="$WORK/state"
 mkdir -p "$FAKE_LAUNCHD" "$FAKE_STATE"
 NOW_T=$(date +%s)

@@ -39,7 +39,7 @@ eq "one still running is pending" \
 eq "pending outranks blocked" \
    "$(v FAILURE COMPLETED '' IN_PROGRESS)"                      "pending"
 
-# ── THE REGRESSION: gcc-horse-market#99, merged on a cancelled CI run ────────
+# ── THE REGRESSION: client-repo#99, merged on a cancelled CI run ────────
 # Its real rollup: gitleaks passed, the CI run was cancelled.
 eq "gcc#99 shape is BLOCKED, not mergeable" \
    "$(v SUCCESS COMPLETED CANCELLED COMPLETED)"                 "blocked"

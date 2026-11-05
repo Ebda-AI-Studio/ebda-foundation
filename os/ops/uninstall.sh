@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Whisky AI OS — teardown. Stops + unloads every OS job on THIS machine.
 #
-# Use on the OLD (personal) Mac after the OS has moved to the ForceAI Studio, so
+# Use on the OLD (personal) Mac after the OS has moved to the the Ebda Studio Mac, so
 # this machine becomes a pure controller (SSH into the Studio) and stops running
 # the automations itself.
 #

@@ -3,7 +3,7 @@
 # caught only reactively, per-PR, when a repo's zero-vuln CI gate happened to run
 # — so one transitive advisory (brace-expansion GHSA-3jxr) sat red across BOTH
 # ebda-studio and digital-card at once with no proactive signal. This sweeps
-# every local Force AI repo weekly, runs `npm audit`, and alerts with the exact
+# every local Ebda OS repo weekly, runs `npm audit`, and alerts with the exact
 # advisories + fix, so a fleet-wide advisory is seen and fixed before it blocks
 # delivery. Detect+alert by default; set FLEET_AUDIT_AUTOPR=1 to also open fix
 # PRs (off by default — a cron must not silently spam PRs across the fleet).

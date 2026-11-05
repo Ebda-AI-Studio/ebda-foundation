@@ -7,7 +7,7 @@
 #
 # 2026-09-23 — three defects, all measured on this machine:
 #   1. REPOS was a HARDCODED list of four repos while SEVENTEEN had worktrees. The
-#      thirteen others (ebda-foundation, umbra, gcc-horse-market, mypovonai,
+#      thirteen others (ebda-foundation, umbra, client-repo, mypovonai,
 #      quote-studio, …) were never cleaned, so their worktrees accumulated
 #      indefinitely — ebda-foundation alone had 14. A cleanup tool that names
 #      the things it cleans stops covering anything added afterwards, silently.
@@ -96,7 +96,7 @@ for ROOT in ${roots[@]+"${roots[@]}"}; do
     fi
   else
     # already parked: STILL ff-pull — stale roots made docs-scan report a
-    # DEPLOYMENT.md move as un-done 5 days after it merged (2026-07-12; FWB root
+    # DEPLOYMENT.md move as un-done 5 days after it merged (2026-07-12; store root
     # was 47 commits behind). Roots must track origin or every root-reading scan lies.
     if [ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]; then
       git -C "$ROOT" pull --ff-only -q origin "$DEF" 2>/dev/null && echo "  root: $DEF freshened"

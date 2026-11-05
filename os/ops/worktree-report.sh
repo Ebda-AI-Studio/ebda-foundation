@@ -8,7 +8,7 @@
 # It NEVER deletes, and that is deliberate, not timidity:
 #   * A worktree can hold uncommitted work that exists nowhere else.
 #   * Parallel sessions run in worktrees RIGHT NOW. On 2026-08-11 three
-#     gcc-horse-market and two ERP worktrees were 0 days old and belonged to
+#     client-repo and two ERP worktrees were 0 days old and belonged to
 #     other live sessions — auto-deleting on an age heuristic would have
 #     destroyed active work from a session this one cannot see.
 # So: classify, print the exact command, let a human run it.

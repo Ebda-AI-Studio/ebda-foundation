@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# fix-launchd-path.sh — add /usr/local/bin and /opt/local/bin to every Force AI
+# fix-launchd-path.sh — add /usr/local/bin and /opt/local/bin to every Ebda OS
 # launchd agent's PATH.
 #
 # WHY

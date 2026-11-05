@@ -1,7 +1,7 @@
 # absent-filter-matches-everything — a dropped condition is not a narrower query, it is a wider one
 
 tags: [BOTH]
-sources: reel lens pack `audit/lenses/reel-lenses-2026-09.md` L6 (`@haydenschmitty`, 2026-09-02); `force-website-builder` P0 2026-09-03 (cash-on-delivery return refunded an arbitrary other order)
+sources: reel lens pack `audit/lenses/reel-lenses-2026-09.md` L6 (`@haydenschmitty`, 2026-09-02); a storefront P0 2026-09-03 (cash-on-delivery return refunded an arbitrary other order)
 
 Born from a claim that arrived from outside — "there is at least one misused dynamic condition in
 your app's ORM code" — landing the day before the same failure was paid for inside: a gateway refund

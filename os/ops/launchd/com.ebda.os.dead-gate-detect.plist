@@ -17,9 +17,9 @@
 		<string>__HOME__/.claude/scripts/dead-gate-detect.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-dead-gate-detect.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-dead-gate-detect.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-dead-gate-detect.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-dead-gate-detect.log</string>
 	<key>StartInterval</key>
 	<integer>86400</integer>
 </dict>

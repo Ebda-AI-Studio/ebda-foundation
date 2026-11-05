@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Does a commit delta contain anything that can change a RUNNING service?
 #
-# 2026-08-25: deploy-drift alerted for 32h on "WBS api: DRIFT — prod running
+# 2026-08-25: deploy-drift alerted for 32h on "whatsapp api: DRIFT — prod running
 # 92b47c14, HEAD is 7279f774, running sha is ~68h old". The entire delta was:
 #
 #   .github/workflows/db-backup.yml | .github/workflows/rls-proof.yml

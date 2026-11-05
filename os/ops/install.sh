@@ -8,7 +8,7 @@
 #     it up. No hardcoded script list to keep in sync.
 #   - PORTABLE: plists are stored as templates with __HOME__ / __PATH__ tokens.
 #     This installer substitutes the CURRENT machine's home + a computed PATH, so
-#     the OS moves to a Mac with a different username (e.g. the ForceAI Studio)
+#     the OS moves to a Mac with a different username (e.g. the the Ebda Studio Mac)
 #     unchanged. Service tokens live in ~/.whisky-services.env (local, never git).
 # shellcheck source=lib/os-config.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true

@@ -4,7 +4,7 @@ tags: [DECISION-INPUT]
 sources: ai-market-doctrine (global memory slug), 7 reels sent by Ahmad 2026-09-08 (Factorian Group / "Grandpa AI" — a Gen X operator selling AI systems to SMBs), transcribed in full
 
 **This is NOT a `standard/` lens.** `standard/` is the gradeable engineering rubric for
-`/force-build` and `/force-audit` — code concerns with pass/fail criteria. This file is a
+the build and audit standards — code concerns with pass/fail criteria. This file is a
 **decision input**: it governs *whether a thing is worth building at all*, before any rubric
 applies. Filed in `docs/` deliberately so it does not dilute the 32-lens rubric.
 
@@ -38,7 +38,7 @@ The gap is no longer who CAN build — it is who builds something someone pays f
 
 ## Standing gate — apply before any NEW project plan
 
-The `/ecosystem-research` trigger already fires before a new Force AI project plan. Add these four
+The `/ecosystem-research` trigger already fires before a new project plan. Add these four
 questions to it, answered in order. **A "no" on 1 or 2 is a stop, not a caveat.**
 
 1. Does the audience already exist, or is this build-first? (rule 2)

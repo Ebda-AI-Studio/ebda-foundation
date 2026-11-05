@@ -1,7 +1,7 @@
 # scaling — Vertical & Horizontal Scaling Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §4 (vertical + horizontal scaling), PLAYBOOK §3.5 (caching + rate-limiting replica-safe), CLAUDE.md (rule 3 scaling-from-day-1), reference-iceberg-audit.md (scaling-cliff term), reference-force-ai-production-grade-standard.md (layer 6: scaling/perf)
+sources: PLAYBOOK §4 (vertical + horizontal scaling), PLAYBOOK §3.5 (caching + rate-limiting replica-safe), CLAUDE.md (rule 3 scaling-from-day-1), reference-iceberg-audit.md (scaling-cliff term)
 
 ## What "solid" looks like
 Vertical sliders set to sane production values and validated against real RSS; horizontal replicas only after the code prerequisites are met — Socket.io on the Redis adapter, every recurring timer behind a Redis leader-election lock, Redis-backed rate limit + shared cache + pooled DB — with a Redis-absent fallback so single-instance dev still runs; reads built scaling-from-day-1 (explicit `select`, indexed WHERE/ORDER BY, cursor pagination + hard take cap, edge cache + tag invalidation); slow work offloaded to Inngest; a k6 load test with a documented p95 ceiling; and a `docs/SCALING.md` capturing the prereqs checklist + what to watch after scaling.
@@ -23,5 +23,5 @@ Vertical sliders set to sane production values and validated against real RSS; h
 | 12 | docs/SCALING.md prereqs + watch list | `docs/SCALING.md` documents the horizontal prereqs checklist, dashboard steps, and post-scale watch items (DB connection count vs pool limit, Redis memory) | file-exists check for `docs/SCALING.md`; grep it for the prereqs checklist + "connection"/"pool"/"Redis memory" watch items | Medium |
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …

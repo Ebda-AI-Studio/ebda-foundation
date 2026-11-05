@@ -12,7 +12,7 @@
 - **MVP → production (the common case):** run **§15 The Gap Audit Fleet** first to find where the MVP is below bar, then close gaps in priority order using §3–§13 as the target state.
 - **Every section is a checklist.** A line is "done" only when it is landed on `main`, verified, and (if it touches data a human reads) has a UI surface.
 
-The iceberg metaphor: an MVP that "works in the demo" is ~10% of a production product. The other 90% — auth edges, RLS, idempotency, observability, rate-limiting, DR, scaling, compliance, CI, the five test layers — is below the waterline and is what this playbook makes explicit.
+The iceberg metaphor: an MVP that "works in the demo" is ~10% of a production product. The other 90% — auth edges, tenant isolation, idempotency, observability, rate-limiting, DR, scaling, compliance, CI, the five test layers — is below the waterline and is what this playbook makes explicit.
 
 ---
 
@@ -26,19 +26,29 @@ The iceberg metaphor: an MVP that "works in the demo" is ~10% of a production pr
 
 ## 2. Architecture decisions (lock these on day 1)
 
-| Decision | Default that has worked | Why |
+**Current stack** (verified 2026-11-05 against `ebda-store` `origin/main`: `apps/api/wrangler.jsonc`, `apps/accounts/wrangler.jsonc`, `apps/api/package.json`)
+
+| Layer | Current choice | Evidence in ebda-store |
 |---|---|---|
-| **Monorepo** | npm workspaces: `apps/{api,admin,web}` + `packages/{database,shared,ui,config}` | Shared types/Zod across API + both frontends; one source of truth for contracts. |
-| **API** | Express + TypeScript (or NestJS for bigger teams) | Explicit middleware chains for auth/tenancy. |
-| **Frontends** | Next.js App Router (admin + storefront separate apps) | Per-app auth, per-app deploy, independent scaling. |
-| **ORM + DB** | Cloudflare D1 (SQLite) + Durable Objects for per-tenant coordination; Postgres (via Hyperdrive) where relational scale demands it | Migrations as committed SQL; one source of truth per tenant; no cross-tenant query path. |
-| **Multi-tenancy** | Postgres **RLS** with a per-request GUC (`app.current_store_id`) set via AsyncLocalStorage middleware | Defense-in-depth: even a missing `WHERE storeId` can't leak across tenants. **See §3.2 — the single highest-leverage + highest-risk decision.** |
-| **Cache** | Redis (two-tier: Redis → in-memory bounded map → CDN s-maxage) | TTL floor ≥120s to protect DB compute on cache-miss. |
-| **Async / jobs** | Inngest (or BullMQ) for anything >300ms or 3rd-party | Retries, dedup, self-register-on-boot. |
-| **Real-time** | Socket.io **with `@socket.io/redis-adapter` from day 1 if you'll ever scale** | In-process adapter breaks the moment you run >1 replica. |
-| **Auth** | Custom JWT in HTTP-only cookies, `SameSite=None; Secure` cross-origin | API + frontends on different domains → all route protection is client-side; never put cookie auth in Next.js middleware (redirect loops). |
-| **Deploy** | Cloudflare Workers for API and frontends (wrangler config per app; check which Cloudflare account it targets before deploying) | Migrations apply in the deploy job; a merge is not a deploy, so verify the live commit. |
-| **Money** | integers in the smallest unit (fils/cents), never floats | No rounding drift. Centralize all money math in one tested helper module. |
+| **Monorepo** | npm workspaces: `apps/{api,admin,web,accounts,orders,marketing,docs,help,status}` + `packages/*` | `wrangler.jsonc` per app |
+| **Compute** | Cloudflare Workers; the API runs Express through `httpServerHandler` (`cloudflare:node`, `nodejs_compat`) | `apps/api/wrangler.jsonc` header |
+| **Platform data** | D1 `ebda-platform` (per-store backend switch, counts) | `d1_databases` |
+| **Per-tenant data and coordination** | Durable Objects with SQLite: `StoreDO` (one per store), `AuthState`, `StoreRealtime` (hibernating WebSockets), `JobGate`, `StoreSchedule` (alarms) | `durable_objects`, `migrations` |
+| **Cache** | Workers KV (`KV_CACHE`) for public store/product payloads | `kv_namespaces` |
+| **Async / jobs** | Cloudflare Queues (`ebda-jobs`, `ebda-email`, `ebda-sms`, `ebda-ci-events`, `ebda-wa-events`, each with a dead-letter queue) plus one Workflow class (`ebda-jobs`) | `queues`, `workflows` |
+| **Object storage** | R2 (`ebda-private` backups, `ebda-ci` outcomes) | `r2_buckets` |
+| **AI / search** | Workers AI embeddings (`@cf/baai/bge-m3`) with Vectorize (`ebda-product-vectors`); semantic search behind a flag | `ai`, `vectorize` |
+| **Analytics** | Workers Analytics Engine dataset for commerce outcomes | `analytics_engine_datasets` |
+| **Email** | Cloudflare Email Service (`send_email`), sender domain ebda.app | `send_email` |
+| **Identity** | A separate accounts Worker (`ebda-accounts`, its own D1 `ebda-identity`) reached by service binding (`ACCOUNTS`: JWKS over fetch, revocation and account state over RPC) | `services`, `apps/accounts/wrangler.jsonc` |
+| **Alerts** | Telegram alert channel fed by the API error path and an external-service alert bridge; Sentry for errors | `apps/api/src/app.ts` |
+| **Deploy** | `wrangler deploy` from CI per app; check which Cloudflare account a config targets before deploying; a merge is not a deploy, so verify the live commit | `cf-api-deploy.yml` |
+| **Money** | integers in the smallest unit, never floats; one tested helper module | standard `money.md` |
+
+There is no Postgres, Hyperdrive, Redis, Inngest, BullMQ, Socket.io or Vercel in the current stack. Tenant isolation is structural (one `StoreDO` per store, resolver throws on an unknown store), not row-level policy.
+
+**Legacy stack (retired 2026-11-05).** The earlier products ran Express + Prisma on Postgres (Neon) with row-level security via a per-request GUC, Redis rate limiting and two-tier cache, Inngest/BullMQ jobs, Socket.io with the Redis adapter, Railway for the API and Vercel for frontends. Sections of this playbook that still describe those mechanics (3.2 RLS, the Prisma/Postgres notes in 3.3, Redis in 3.5 and 4) are kept as principles with a legacy marker; the full legacy detail lives in `docs/history/`.
+
 
 ---
 
@@ -51,27 +61,25 @@ The iceberg metaphor: an MVP that "works in the demo" is ~10% of a production pr
 - Auth rate limit: 5 attempts / 15 min / IP+email.
 - JWT lifetime documented; stale-role-requires-relogin is acceptable but documented.
 
-### 3.2 Multi-tenant RLS (the load-bearing decision)
-- Enable RLS + `FORCE ROW LEVEL SECURITY` on every tenant-scoped table.
-- **Connect the app as a NON-owner role** (e.g. `force_app`) — the owner role (`neondb_owner`) has `rolbypassrls` and silently bypasses every policy, so if you develop as owner, RLS is never actually exercised until the cutover, and then everything breaks at once.
-- Policy shape matters: a policy with an `IS NULL`-escape (`current_store_id() IS NULL OR store_id = current_store_id()`) **allows all** when the GUC is unset; a policy without it (`store_id = current_setting(...) OR bypass_rls`) **blocks** when unset. Standardize on ONE shape per table class and know which.
-- **Two escape hatches, never confused:**
-  - `withRlsBypass(fn, {maxWait:10000,timeout:30000})` — sets `app.bypass_rls='true'`. ONLY for genuinely cross-tenant super-admin reads, on super-admin-guarded routes. Wrongly bypassing a tenant query = cross-tenant leak.
-  - `runInTenantContext(storeId, fn)` — sets `app.current_store_id`. For single-store work outside the request middleware.
-- **The cutover trap (learned the hard way):** flipping prod from owner→app-role silently breaks (a) EVERY super-admin cross-tenant read and (b) EVERY Inngest/cron job query (jobs have no request → no GUC). Both fail as *empty results or throw-on-empty*, not a permission error, so `/health` stays green. **Before the cutover, sweep every `authorize('super_admin')` handler + every job and classify each DB access** (cross-tenant→bypass / single-store→tenant-context / behind-middleware→leave). See `feedback-rls-owner-cutover-breaks-superadmin-reads.md`.
+### 3.2 Multi-tenant isolation (the load-bearing decision)
+- Isolation is structural: one `StoreDO` per store, reachable only through a resolver that THROWS on an unresolved store id (never defaults to the first store). No request header selects another tenant's backend.
+- Cross-tenant reads (super-admin, jobs) go through a named, audited path, never an unscoped query; background jobs carry their store id explicitly because they have no request.
+- Prove it with a test that tries to reach store B's data with store A's identity and fails.
+- *Legacy (Postgres era):* row-level security with `FORCE ROW LEVEL SECURITY`, a non-owner app role, a per-request GUC, and the owner-to-app-role cutover trap. Retired with the Postgres stack; detail in `docs/history/` and, while the repos still carry it, `os/standard/rls.md`.
 
 ### 3.3 Money + transactions
 - All money in integer minor units. One `discount.ts`/`money.ts` helper module with unit tests (round, clamp, apply).
-- Prisma `$transaction` defaults `maxWait` to **2s** — under burst load on a pooled Postgres this throws P2028 → 500. Always pass `{maxWait:10000, timeout:30000}` via a `withMoneyTx` wrapper. **When you add such a shared wrapper, add it to every test mock factory in the SAME commit** (mocks that don't export the new symbol → `undefined` → throws; typecheck won't catch it, only the test run will).
-- The `create + catch(P2002)` idempotency pattern BREAKS inside a transaction (Postgres aborts the outer tx on the unique violation). Use a Postgres `SAVEPOINT` instead.
+- *Legacy (Prisma/Postgres):* Prisma `$transaction` defaults `maxWait` to **2s** — under burst load on a pooled Postgres this throws P2028 → 500. Always pass `{maxWait:10000, timeout:30000}` via a `withMoneyTx` wrapper. **When you add such a shared wrapper, add it to every test mock factory in the SAME commit** (mocks that don't export the new symbol → `undefined` → throws; typecheck won't catch it, only the test run will).
+- *Legacy (Postgres):* the `create + catch(P2002)` idempotency pattern BREAKS inside a transaction (Postgres aborts the outer tx on the unique violation). Use a Postgres `SAVEPOINT` instead.
 - Any `findFirst` with an `OR` that can match multiple rows MUST have an explicit `orderBy` (heap order is non-deterministic and drifts with VACUUM).
 
 ### 3.4 Append-only event log for money/trust state
 - Every business-critical state machine (payment, order, subscription, payout, loyalty tier) writes to an append-only `<entity>_events` table at every mutation, preserving the raw 3rd-party webhook payload. `entity.status` = current state; the events table = how it got there. Non-negotiable for anything touching money.
 
 ### 3.5 Caching + rate-limiting (replica-safe from the start)
-- Redis-backed rate limiting (`rate-limit-redis`) so limits are shared across instances — an in-process limiter is meaningless with >1 replica.
-- Two-tier cache with tag invalidation; TTL floor ≥120s; sub-2-min needs go to in-memory bounded map, not Redis.
+- Rate limits live in a Durable Object (`AuthState`) so they are shared across isolates — an in-memory limiter is meaningless when the Worker runs in many isolates.
+- Public payloads are cached in KV with event invalidation on every write path (a TTL alone is not enough for price or inventory); declare each cached read's staleness class at the cache site.
+- *Legacy (Redis):* `rate-limit-redis` and a two-tier Redis cache with TTL floor ≥120s.
 
 ### 3.6 Feature flags — enforce at FOUR layers
 UI hide + API gate (`requireFeature → 503`) + async-job gate (check flag at handler start) + service-level dual-gate. UI-only hiding is a billing leak. Super-admin bypasses every gate consistently. Plan-baseline + per-store override resolution: `enabled = override ?? PLAN_BASELINE[plan].includes(key)`; plan changes never touch override rows.
@@ -84,12 +92,9 @@ Every table whose rows mean something to a human (merchant/admin/customer) MUST 
 ## 4. Scaling — vertical + horizontal
 
 - **Vertical** = host CPU+RAM (or Worker CPU-time and DO limits). Cheap first lever. Set sane production values (e.g. 1 vCPU / 1 GB) and validate against real `process.memoryUsage().rss` from `/health`.
-- **Horizontal** = replicas > 1. Code prerequisites BEFORE flipping the slider:
-  1. **Socket.io redis-adapter** (else cross-instance events break — a client on replica A misses an emit from replica B).
-  2. **Cron leader-election** — every module-level `setInterval`/recurring timer must be gated by a Redis lock (`SET key val NX PX ttl`) so only one replica runs each tick (else 2 replicas = double emails/double scans). Inngest crons are exempt (Inngest dedups centrally). Queue workers using atomic `RPOP` are exempt (each pops distinct items).
-  3. Redis rate-limit + shared cache + pooled DB (already from §3.5).
-  4. Provide a Redis-absent fallback (in-process adapter + "this instance is leader") so local single-instance dev still runs everything.
-- Document it all in `docs/SCALING.md`: prerequisites checklist, dashboard steps, and what to watch after scaling (DB connection count vs pool limit, Redis memory).
+- **Horizontal** on Workers is automatic (more isolates); the prerequisites move to state: anything that must be single-writer (a store's data, a lease, a debounce, a recurring job) lives in one Durable Object, and recurring work is an alarm or a cron trigger, never a module-level timer. Real-time uses hibernating WebSockets on `StoreRealtime`.
+- *Legacy (replicas on Railway):* Socket.io redis-adapter, Redis-lock cron leader election, a Redis-absent fallback. Retired with that stack.
+- Document it all in `docs/SCALING.md`: prerequisites checklist, dashboard steps, and what to watch after scaling (DO request rate and storage, D1 row reads, queue backlog).
 
 ---
 
@@ -105,7 +110,7 @@ Every table whose rows mean something to a human (merchant/admin/customer) MUST 
 
 Static marketing pages are exempt from integration+load+UAT (still need unit + E2E-smoke). **No feature ships to a paying customer without all 5 green for the touched paths.**
 
-Jest/vitest + Prisma teardown discipline (or CI hangs 30–45 min): every module-level `setInterval`/`setTimeout` exported + cleared in `afterAll`; every Prisma singleton `$disconnect()` in teardown; `testTimeout: 30000` for Neon cold starts; never `--forceExit` (it masks the leak).
+Test teardown discipline (or CI hangs 30–45 min): every module-level `setInterval`/`setTimeout` exported + cleared in `afterAll`; every database/client singleton closed in teardown; `testTimeout: 30000` for Neon cold starts; never `--forceExit` (it masks the leak).
 
 ---
 
@@ -114,7 +119,7 @@ Jest/vitest + Prisma teardown discipline (or CI hangs 30–45 min): every module
 `.github/workflows/ci.yml` with:
 - **Top-level concurrency group** (`cancel-in-progress: true`) so superseded pushes don't pile up.
 - **`timeout-minutes` on EVERY job** (anti-hang: lint=5, typecheck=10, build=15, unit=10, integration=15, E2E=20, audit=5).
-- **Prisma `db:generate` BEFORE typecheck** (else tsc reports hundreds of phantom errors from missing client types).
+- **Generate any codegen (client types, wrangler types) BEFORE typecheck** (else tsc reports hundreds of phantom errors from missing generated types).
 - **Audit split:** prod zero-tolerance (`npm audit --audit-level=low --omit=dev`), dev gated at high (unfixable transitive vulns in tooling).
 - **`notify-failure` job** firing Telegram (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALERT_CHAT_ID`) on `failure() && main && push` — sleep-proof, this job STAYS on cloud even if everything else is self-hosted (fail-open).
 - **gitleaks** workflow paired with `.gitleaks.toml` (allowlist) + `.gitleaksignore` (documented false positives), scanning ALL branches with `fetch-depth: 0`.
@@ -162,15 +167,15 @@ Script-injected plain JS must be `node -c <file>` checked (typecheck doesn't cat
 - **DR = scheduled export of every datastore to a location outside the one that can fail**: for D1/R2, `os/ops/backup-ebda-cloudflare.sh` (retention set in the script); for any Postgres, a daily local `pg_dump` (needs `pg_dump` at or above the server major: an older client silently produces empty dumps). Restore is rehearsed (`os/ops/dr-drill.sh`), not assumed.
 - Keep a `scripts/rollback.sh` (git revert + push, blocks on migrations), an on-demand backup script, and `docs/ROLLBACK.md` with the recovery paths (redeploy previous Worker version / git revert / restore export).
 - Migrations are committed SQL that auto-apply on next boot — by the time you notice a schema bug it's already live, so additive-only by default (nullable columns, new tables); destructive changes need a written plan + backup.
-- After any DB restore, re-verify RLS policy state (the runtime depends on policy shape).
+- After any restore, re-run the cross-tenant isolation test (§3.2) before reopening traffic.
 - Branch hygiene on any branching database: only `production` (+ `preview` when staging is active); no per-commit auto-snapshots; never create branches without explicit instruction.
 
 ---
 
 ## 11. Environments
 
-- Local dev points at a **scratch/preview DB branch**, NEVER prod. (Repeated trap: `.env` left pointing at prod as owner → RLS never exercised + risk of mutating prod.) Verify the host in `.env` before any `migrate`/`db push`.
-- Preview/staging env points at staging API + staging DB, never prod. CI-enforced isolation check (`vercel env ls --json`).
+- Local dev points at a **scratch/local database (miniflare D1/DO)**, NEVER prod. (Repeated trap: a `.env`/binding left pointing at prod → risk of mutating prod.) Verify the host in `.env` before any `migrate`/`db push`.
+- Preview/staging env points at staging API + staging DB, never prod. CI-enforced isolation check (preview bindings must name preview resources).
 - Shared queue broker between staging + prod needs a `QUEUE_PREFIX=<project>-staging` on every staging service, or staging jobs get processed by the prod worker against prod data.
 
 ---
@@ -211,7 +216,7 @@ A production audit is not one pass; it's a fleet of focused lenses. Run the rele
 | **Scaling-cliff** | Cursor pagination, take caps, edge cache, job offload | Survives traffic growth without a rewrite. |
 | **Race conditions** | Concurrent mutations on shared state | Double-send, stale-cart, lost updates. |
 | **Memory-leak** | Module-level timers, unbounded maps, undisconnected clients | CI hangs + prod OOM. Found the setInterval CI-hang. |
-| **Rate-limit** | Every public + auth + expensive endpoint is limited, Redis-backed | Abuse + cost control + replica-correctness. |
+| **Rate-limit** | Every public + auth + expensive endpoint is limited, with shared (DO-backed) counters | Abuse + cost control + replica-correctness. |
 | **Observability / SLO** | Sentry, alerting, log retention, queue-depth watch | You learn about failures before customers do. |
 | **DR-drill** | Snapshot + rollback + restore actually work | Recovery is rehearsed, not discovered during an incident. |
 | **Code-quality** | Patterns, complexity, consistency, no `any` leaks | Maintainability; lowers future bug rate. |
@@ -248,9 +253,9 @@ This is exactly the workflow that took a predecessor product through this sessio
 ## 16. Definition of "production-ready"
 
 A product is production-ready when ALL of these are true (not "the demo works"):
-- [ ] Auth chain correct on every route; RLS enforced as non-owner; super-admin + jobs swept for context.
+- [ ] Auth chain correct on every route; tenant isolation test green; super-admin + jobs swept for context.
 - [ ] Money in integers, centralized + tested; transactions have maxWait; idempotency via SAVEPOINT; event log for money/trust state.
-- [ ] Redis rate-limit + two-tier cache; feature flags enforced at 4 layers.
+- [ ] Shared (DO-backed) rate limit + KV cache with event invalidation; feature flags enforced at 4 layers.
 - [ ] Replica-safe (socket adapter + cron leader-election) OR explicitly single-instance-by-design.
 - [ ] Five test layers green for revenue/PII/ops paths; CI is the canonical shape, cloud-default, sleep-proof alerts.
 - [ ] Sentry + uptime + alerting + ≥30-day logs before first customer.

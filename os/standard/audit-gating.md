@@ -18,7 +18,7 @@ would burn Opus on a typo PR. So coverage is tiered by cost vs. blast radius:
 |------|---------|-----------|------|
 | **Per-PR** | every `pull_request → main` | blast-radius (always) + a **blast-radius-SCOPED audit** — only the dimensions the change actually touches | cheap, fast |
 | **Nightly** | schedule (03:00) | the **full 16-dimension unified audit** across the whole repo | heavy, off-peak |
-| **On-demand** | `workflow_dispatch` / `/force-audit` | the full fleet, any time | as needed |
+| **On-demand** | `workflow_dispatch` / an audit run | the full fleet, any time | as needed |
 
 **Per-PR scoping = blast-radius drives the audit.** The changed files + their
 transitive dependents (from the graphify graph) determine BOTH the file set AND the
@@ -46,7 +46,7 @@ dimension set:
 - **blast-radius itself is informational** — it annotates the step summary + a PR comment
   with the dependents to review; it never fails the build.
 
-## PC runs all CI (already mature on FWB — replicate everywhere)
+## PC runs all CI (already mature on a previous storefront product — replicate everywhere)
 
 `runs-on` routes via `${{ (inputs.force_cloud || vars.USE_SELF_HOSTED != 'true') &&
 'ubuntu-latest' || fromJSON('["self-hosted","linux","wsl2"]') }}`. With
@@ -71,7 +71,7 @@ Each audit bug-CLASS we discover gets a cheap deterministic CI gate so the secon
 layer catches the regression even without the Opus pass:
 
 - **RLS async-writer coverage (audit F4):** grep gate — any tenant-table write outside
-  `runInTenantContext` / `withRlsBypass` fails CI. (`ops/rls-writer-gate.sh` — **NOT YET BUILT**; FWB's RLS proof job covers part of this today)
+  `runInTenantContext` / `withRlsBypass` fails CI. (`ops/rls-writer-gate.sh` — **NOT YET BUILT**; a previous storefront product's RLS proof job covers part of this today)
 - **Contract drift:** the existing tsc + Zod-at-every-edge + integration tests.
 - **Sentry-noise class (audit F1):** `sentry.service.test.ts` pins the 4xx-not-captured gate.
 - New class → new gate, appended here + to memory (the self-improving loop, step 10).
@@ -80,11 +80,11 @@ layer catches the regression even without the Opus pass:
 
 - `ops/blast-radius.sh` — transitive-dependent surfacing (graphify graph). Per-PR.
 - `ops/scoped-audit.sh` — **NOT YET BUILT as a shared ops script** (never existed in git; the
-  working implementation is FWB's `.github/workflows/scoped-audit.yml` "Blast-radius scoped
+  working implementation is a previous storefront product's `.github/workflows/scoped-audit.yml` "Blast-radius scoped
   audit (Opus)" job). Intended shape: blast-radius-scoped Opus audit via `claude -p
   --output-format json`; findings JSON; exit 1 on confirmed P0/P1; P2/P3 for issue-filing.
 - `ops/unified-audit-full.sh` — **NOT YET BUILT** (never existed in git); the full 16-dim
-  fleet runs today via `/force-audit` interactively, not as a scheduled script.
+  fleet runs today interactively, not as a scheduled script.
 - `.github/workflows/blast-radius.yml` — per-PR, informational.
 - `.github/workflows/scoped-audit.yml` — per-PR, blocking on P0/P1 + files P2/P3 issues.
 - `.github/workflows/unified-audit-nightly.yml` — schedule + `workflow_dispatch`.

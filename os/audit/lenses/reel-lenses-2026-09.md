@@ -19,7 +19,7 @@ one candidate was discarded on inspection (see the fleet status), and a grep cou
 reported as a finding is how an audit manufactures false accusations —
 `feedback-audit-findings-are-claims-not-facts`.
 
-**Fleet status.** Applied to `force-website-builder` (2026-09-04): 11 code-auditable,
+**Fleet status.** Applied to a storefront product (2026-09-04): 11 code-auditable,
 **11 pass, 0 gaps**, 2 not applicable. L14-L15 applied (2026-09-10): **1 gap found and
 fixed** (L14 — one `jwt.verify` of eight did not pin `algorithms`), L15 clean. Both now
 ship as GATES in that repo (`tests/unit/jwt-verification-lens.test.ts`,
@@ -27,7 +27,7 @@ ship as GATES in that repo (`tests/unit/jwt-verification-lens.test.ts`,
 `standard/closed-loop-audit.md` for why a finding without a rerun is half an audit. **Not yet applied** to the predecessor repos (see `docs/history/`) — run them there and record the result.
 
 **Why this pack matters more than its pass rate.** L6 is the exact defect that produced a
-P0 in `force-website-builder` on 2026-09-03: a gateway refund on a cash-on-delivery order
+P0 in a storefront product on 2026-09-03: a gateway refund on a cash-on-delivery order
 refunded an arbitrary *other* order, because Prisma drops an `undefined` filter and the
 `where` collapsed to empty. The lens was not derived from that incident — it arrived
 independently from a reel — which is the argument for keeping packs: the same failure
@@ -267,7 +267,7 @@ owned CSP). One claim was extended onto an existing doc's criteria (Redis-as-a-d
 `cache-ratelimit.md`, which already owns Redis). Two claims (compliance documents,
 vendor-sovereignty) are process/architecture judgment calls, not per-repo pass/fail code
 checks, and are recorded here without a graded doc. A fifth item — five AEO findings measured
-live against a real FWB merchant store, not from a reel — is included in this batch because it
+live against a real a previous storefront product merchant store, not from a reel — is included in this batch because it
 surfaced the same day and shares the "answer engines read what you actually served, not what
 you intended" theme as nothing else in the standard.
 
@@ -431,8 +431,7 @@ speculative, not measured.
 
 ### AEO — locale/entity integrity (first-party measurement, not a reel claim)
 
-Five findings measured live 2026-09-19/22 against `pecannbee.com.kw`, a live Force AI Website
-Builder merchant store — recorded as first-party measurement, not a reel claim, because that is
+Five findings measured live 2026-09-19/22 against a live merchant storefront (see history), recorded as first-party measurement, not a reel claim, because that is
 what they are.
 
 **A1.** Arabic pages (served `lang="ar"`) carry ENGLISH meta descriptions — 8 of 8 product
@@ -444,10 +443,10 @@ phone+email.
 **A3.** No `hreflang` alternates anywhere; homepage has no `rel=canonical` (product pages do);
 `/en/products/<slug>` returned `lang="ar"` with the store-wide description instead of an
 English product page.
-**A4.** AI-crawler policy differs per domain: on `pecannbee.com.kw`, Cloudflare returns 403 to
+**A4.** AI-crawler policy differs per domain: on a live merchant domain, Cloudflare returns 403 to
 TRAINING crawlers (GPTBot, ClaudeBot, CCBot, Bytespider) while ANSWER/search crawlers
 (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, Claude-User, PerplexityBot,
-meta-externalagent, Googlebot) get 200; other FWB stores allow all. `robots.txt` allows all, so
+meta-externalagent, Googlebot) get 200; other a previous storefront product stores allow all. `robots.txt` allows all, so
 the block is an edge rule, not `robots.txt`.
 **A5.** Thin server-rendered text: homepage ~1,072 visible chars (mostly category names),
 product page ~722.

@@ -1,7 +1,7 @@
 # docs-parity — Documentation Parity Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §12 (documentation parity), §8 (log retention documented), §4 (SCALING.md), §10 (ROLLBACK.md), §16; CLAUDE.md (documentation-parity rule + docs/contract-parity audit); reference-iceberg-audit.md (term 38: Documentation); reference-force-ai-production-grade-standard.md (layer 15: Docs)
+sources: PLAYBOOK §12 (documentation parity), §8 (log retention documented), §4 (SCALING.md), §10 (ROLLBACK.md), §16; CLAUDE.md (documentation-parity rule + docs/contract-parity audit); reference-iceberg-audit.md (term 38: Documentation)
 
 ## What "solid" looks like
 Every feature ships with ALL relevant docs (README, DEPLOYMENT, runbooks, architecture, merchant/client-facing, plan docs) updated in the SAME session — local AND pushed — and the docs reflect reality. Pricing/plan/feature docs are generated FROM the runtime gating code (code is the source of truth), the four operational docs (DEPLOYMENT log-retention, SCALING, ROLLBACK) exist, and the live contract/quote templates are checked against the plan-feature matrix every release.
@@ -16,9 +16,9 @@ Every feature ships with ALL relevant docs (README, DEPLOYMENT, runbooks, archit
 | 5 | ROLLBACK runbook present | `docs/ROLLBACK.md` documents recovery paths | file-exists check for `docs/ROLLBACK.md` | High |
 | 6 | Plan docs for big changes | Multi-file/feature work has a written plan in `docs/plans/` (or `docs/superpowers/plans/`) | file-exists check that `docs/plans/` or `docs/superpowers/plans/` contains `*.md` | Medium |
 | 7 | UAT checklist per feature | Each revenue/PII/ops feature has `docs/uat/<feature>.md` with golden-path + edge-case steps | file-exists check that `docs/uat/` contains per-feature `*.md` | Medium |
-| 8 | Contract/quote parity gate | `docs/business/CONTRACT-CHECKLIST.md` exists and the live bilingual HTML templates (`~/Desktop/work/Force AI/assets/`) are verified against the plan-feature matrix | file-exists check for `docs/business/CONTRACT-CHECKLIST.md`; grep the asset HTML for self-serve/free-trial language (`free trial`/`30-day trial`/`signup`) that contradicts the managed-agency model | High |
+| 8 | Contract/quote parity gate | `docs/business/CONTRACT-CHECKLIST.md` exists and the live bilingual HTML templates (the business assets folder) are verified against the plan-feature matrix | file-exists check for `docs/business/CONTRACT-CHECKLIST.md`; grep the asset HTML for self-serve/free-trial language (`free trial`/`30-day trial`/`signup`) that contradicts the managed-agency model | High |
 | 9 | No stale-stack drift in README/ROADMAP | README/ROADMAP name the actual stack | grep `README.md` + `ROADMAP.md` for known-stale tokens (`Stripe`, `Claude`, `Next 14`/`Next.js 14`) that contradict the real stack (the project's real payment gateways / model provider / framework major) | Medium |
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …

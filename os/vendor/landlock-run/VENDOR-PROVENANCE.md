@@ -34,7 +34,7 @@ privileges. See `standard/agent-containment.md`.
 
 ## Scrub list — what must never cross the boundary
 
-Not applicable: nothing from Force AI goes *into* this directory. It is upstream
+Not applicable: nothing from our products goes *into* this directory. It is upstream
 code taken as-is. The table is retained so `ops/check-provenance.sh` has a
 contract to parse.
 

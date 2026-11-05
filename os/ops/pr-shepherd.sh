@@ -9,7 +9,7 @@
 #          2. rerun a head whose latest required run was CANCELLED and never
 #             re-ran (CRM#32 sat blocked for days on a cancelled run)
 #          3. update-branch when a green PR is merely BEHIND (strict up-to-date
-#             protection races busy main — FWB#621 needed 3 manual updates)
+#             protection races busy main — store#621 needed 3 manual updates)
 #          4. resolve unresolved AI-review threads ONLY when the Claude-review
 #             check on the CURRENT head is SUCCESS (advisory re-posts blocked
 #             CRM#32 via required conversation resolution — 12 threads, 1 real
@@ -63,7 +63,7 @@ for repo in $repos; do
     # The POSITIVE gate. `pending`/`failed_names` above are two NEGATIVE tests
     # and nothing asserts a check actually passed: a CANCELLED check is neither
     # pending (status IS COMPLETED) nor FAILURE, so it was invisible to both.
-    # That is how gcc-horse-market#99 was squash-merged on a cancelled CI run
+    # That is how client-repo#99 was squash-merged on a cancelled CI run
     # that had never once gone green. See lib/pr-merge-gate.sh.
     verdict=$(_ut "$OS_UT_FAST" gh pr view "$num" -R "$ORG/$repo" --json statusCheckRollup \
                 --jq '.statusCheckRollup[] | "\((.conclusion // ""))|\((.status // ""))"' 2>/dev/null \

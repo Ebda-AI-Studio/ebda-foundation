@@ -1,4 +1,4 @@
-# Force AI Ops (native command center) — runbook
+# Ebda OS Ops (native command center) — runbook
 
 Native SwiftUI macOS command center for the Whisky AI OS. Thin client over the `:7717` Node aggregator — it renders fleet state and issues actions, it holds no state of its own.
 
@@ -8,11 +8,11 @@ Native SwiftUI macOS command center for the Whisky AI OS. Thin client over the `
 ## Build / install
 ```bash
 cd ops/command-center-app
-make app      # builds bin/Force AI Ops.app
-make dmg      # builds bin/Force AI Ops.dmg
+make app      # builds bin/Ebda OS Ops.app
+make dmg      # builds bin/Ebda OS Ops.dmg
 make install  # builds + copies to /Applications, refreshes icon cache (LaunchServices + Dock)
 ```
-Ad-hoc signed, not notarized — first launch may need System Settings → Privacy & Security → Open Anyway, or `xattr -dr com.apple.quarantine "/Applications/Force AI Ops.app"`.
+Ad-hoc signed, not notarized — first launch may need System Settings → Privacy & Security → Open Anyway, or `xattr -dr com.apple.quarantine "/Applications/Ebda OS Ops.app"`.
 
 ## Backend requirement
 The app is read/act-only against the Node aggregator — it does nothing without it. The aggregator (`ops/dashboard/`, launchd `com.ebda.os.dashboard`) must be running on `:7717` before launching the app:

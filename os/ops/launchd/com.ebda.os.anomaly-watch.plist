@@ -20,9 +20,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-anomaly-watch.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-anomaly-watch.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-anomaly-watch.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-anomaly-watch.log</string>
 	<key>StartInterval</key>
 	<integer>900</integer>
 </dict>

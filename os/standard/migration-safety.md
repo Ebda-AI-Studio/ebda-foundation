@@ -2,7 +2,7 @@
 
 **Concern:** changing a schema that live customers are already using, without an outage and without losing the ability to undo it.
 
-`dr.md` covers "additive-only migrations" as one line inside disaster recovery. That is not enough. Migrations are their own failure surface, and on Force AI stacks they are the one class of change that can take production down *at boot*, before a single request is served.
+`dr.md` covers "additive-only migrations" as one line inside disaster recovery. That is not enough. Migrations are their own failure surface, and on our stacks they are the one class of change that can take production down *at boot*, before a single request is served.
 
 ## The core rule — expand / contract, never replace
 
@@ -32,9 +32,9 @@ Steps 1 and 4 are never in the same migration. If they are, it is a replacement,
 
 ## Traps, each learned from a real incident
 
-**A failing constraint at boot is an outage.** Where migrations apply on API start (FWB does), a `CREATE UNIQUE INDEX` that violates existing data does not fail a pipeline — it fails the deploy and the service does not come up.
+**A failing constraint at boot is an outage.** Where migrations apply on API start (a previous storefront product does), a `CREATE UNIQUE INDEX` that violates existing data does not fail a pipeline — it fails the deploy and the service does not come up.
 
-**Scope the violating-row check exactly like the index.** FWB 2026-08-08: `products` had a declared-but-never-created `@@unique([storeId, sku])`. The check `WHERE deleted_at IS NULL` returned 0 duplicates and looked safe. Prisma's plain unique index has **no WHERE clause**, so it also covers soft-deleted rows — and unfiltered there *was* a duplicate (a merchant soft-deleted a product and recreated it in another language reusing the SKU). The naive check would have shipped an outage. **Run the duplicate/violation query with the same predicate the index will have — which for a plain index means no predicate at all.**
+**Scope the violating-row check exactly like the index.** a previous storefront product 2026-08-08: `products` had a declared-but-never-created `@@unique([storeId, sku])`. The check `WHERE deleted_at IS NULL` returned 0 duplicates and looked safe. Prisma's plain unique index has **no WHERE clause**, so it also covers soft-deleted rows — and unfiltered there *was* a duplicate (a merchant soft-deleted a product and recreated it in another language reusing the SKU). The naive check would have shipped an outage. **Run the duplicate/violation query with the same predicate the index will have — which for a plain index means no predicate at all.**
 
 **Soft delete almost always means the constraint must be partial.** Uniqueness belongs among live rows; blocking reuse of a deleted row's natural key is a product regression, not integrity.
 
@@ -42,7 +42,7 @@ Steps 1 and 4 are never in the same migration. If they are, it is a replacement,
 
 **A declared index is not an existing index.** If a migration never created it, it is absent from production no matter what the schema file says — and the ORM will happily plan queries as if it were there.
 
-**`migrate diff --from-migrations` describes the migrations folder, not production.** FWB 2026-08-08: production reported all 110 migrations applied and the folder held exactly 110, yet its DDL did not match replaying them — out-of-band DDL had been applied. Two "findings" evaporated on contact with the live database (columns that did not exist; an index that already did).
+**`migrate diff --from-migrations` describes the migrations folder, not production.** a previous storefront product 2026-08-08: production reported all 110 migrations applied and the folder held exactly 110, yet its DDL did not match replaying them — out-of-band DDL had been applied. Two "findings" evaporated on contact with the live database (columns that did not exist; an index that already did).
 
 **Never resolve accumulated drift by committing `migrate dev` output.** It will generate destructive DDL — column drops, NOT NULL forcing, index renames — mixed in with what you wanted. Ship intended changes as individual reviewed migrations.
 

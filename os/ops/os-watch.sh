@@ -40,15 +40,9 @@ mkdir -p "$STATE_DIR" 2>/dev/null || true
 . "$HERE/lib/runner-fleet.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/runner-fleet.sh" 2>/dev/null || true
 command -v fleet_parked >/dev/null 2>&1 || { fleet_parked() { return 1; }; fleet_park_reason() { printf 'unknown'; }; }
 
-# Repos the OS oversees. Add new Force projects here (roadmap: ALL projects).
-REPOS=(
-  ebda-store
-  ebda-whatsapp
-  ebda-studio
-  digital-card
-  mypovonai
-  gcc-horse-market
-)
+# Repos the OS oversees: the "repos" list in ~/.ebda-os.local.json (see os/config/local.example.json).
+REPOS=()
+while IFS= read -r _r; do [ -n "$_r" ] && REPOS+=("$_r"); done < <(os_local_list repos ebda-store ebda-whatsapp ebda-studio)
 # Self-hosted runner repos (the rest use cloud runners only).
 SELFHOSTED_REPOS=(ebda-store ebda-whatsapp)
 
@@ -200,7 +194,7 @@ probe_runners() {
   note "$slug: self-hosted runner(s) offline ($offline)$trg. If it persists, run 'umbra start $OS_VM' and check 'umbra shell $OS_VM -- systemctl status actions.runner.*'."
 }
 
-for slug in "${REPOS[@]}"; do
+for slug in ${REPOS[@]+"${REPOS[@]}"}; do
   probe_repo_ci "$slug"
   while IFS= read -r line; do [ -n "$line" ] && note "$line"; done < <(probe_repo_prs "$slug")
 done

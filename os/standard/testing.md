@@ -1,7 +1,7 @@
 # testing — Testing Layers & CI Gating Rubric
 
 tags: [BOTH]
-sources: PLAYBOOK §5 (five testing layers) + §6 (CI/CD standard), CLAUDE.md (rule 14 — five testing layers; rule 15 — Jest/Prisma teardown discipline), reference-iceberg-audit.md (term 31: test coverage), reference-force-ai-production-grade-standard.md (layer 8: testing)
+sources: PLAYBOOK §5 (five testing layers) + §6 (CI/CD standard), CLAUDE.md (rule 14 — five testing layers; rule 15 — Jest/Prisma teardown discipline), reference-iceberg-audit.md (term 31: test coverage)
 
 ## What "solid" looks like
 All five testing layers present for every revenue/PII/operations path — unit + integration + E2E in CI as hard gates (integration NOT `continue-on-error`), load (k6) with a documented p95 ceiling, and a per-feature UAT checklist; Jest/vitest + Prisma teardown discipline so CI doesn't hang; every CI job has a timeout and Prisma generate runs before typecheck. No feature ships to a paying customer without all five green for the touched paths.
@@ -27,5 +27,5 @@ All five testing layers present for every revenue/PII/operations path — unit +
 | 16 | No gate's evidence is a SKIP | Every CI-gating test can actually execute on a CI runner; a test requiring an interactive login, a cloud credential or a GUI is either made runnable in-process or is explicitly NOT counted as a gate | grep CI logs for `skipped`/`pending` on any job named as a gate. A test that can only skip proves nothing, and reads as green forever | High |
 
 ## Evidence (filled during audit, per repo)
-- FWB: …
-- WBS: …
+- a previous storefront product: …
+- an earlier messaging product: …

@@ -105,9 +105,9 @@ while true; do
 
       /status)
         log "$FROM requested /status"
-        FWB_LATEST=$(gh run list --repo $OS_ORG/ebda-store --workflow=ci.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
+        STORE_LATEST=$(gh run list --repo $OS_ORG/ebda-store --workflow=ci.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
                       | jq -r '.[0] | "\(.status) \(.conclusion // "-") sha=\(.headSha[0:8])"' 2>/dev/null || echo "?")
-        WBS_LATEST=$(gh run list --repo $OS_ORG/ebda-whatsapp --workflow=pr-validation.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
+        WA_LATEST=$(gh run list --repo $OS_ORG/ebda-whatsapp --workflow=pr-validation.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
                       | jq -r '.[0] | "\(.status) \(.conclusion // "-") sha=\(.headSha[0:8])"' 2>/dev/null || echo "?")
         CRM_LATEST=$(gh run list --repo $OS_ORG/ebda-studio --workflow=ci.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
                       | jq -r '.[0] | "\(.status) \(.conclusion // "-") sha=\(.headSha[0:8])"' 2>/dev/null || echo "?")
@@ -115,8 +115,8 @@ while true; do
                      | jq -r '.[] | "  #\(.number) \(.title[0:60])"' 2>/dev/null || echo "  none")
         if [[ -z "$OPEN_PRS" ]]; then OPEN_PRS="  none"; fi
         reply "📊 *CI Status*
-*FWB:* \`$FWB_LATEST\`
-*WBS:* \`$WBS_LATEST\`
+*STORE:* \`$STORE_LATEST\`
+*WA:* \`$WA_LATEST\`
 *CRM:* \`$CRM_LATEST\`
 
 *Open auto-fix PRs:*
@@ -125,11 +125,11 @@ $OPEN_PRS"
 
       /help|/start)
         log "$FROM requested /help"
-        reply "🤖 *Force AI auto-fix bot commands*
+        reply "🤖 *Ebda OS auto-fix bot commands*
 
 \`/autofix\` — reset state + scan all 3 repos for failures right now (don't wait for the 2h cron). Telegrams a PR link per fix.
 
-\`/status\` — current CI state for FWB / WBS / CRM + open auto-fix PRs.
+\`/status\` — current CI state for store / whatsapp / studio + open auto-fix PRs.
 
 \`/kill\` freeze all autonomy · \`/resume\` re-enable it.
 

@@ -117,6 +117,9 @@ fi
 
 echo
 echo "== deploy-drift =="
+# deploy-drift reads its service list from the per-machine local config; give it one fixture service.
+printf '{"railway_services":["example-api|example-repo|env-0|svc-0|main"]}' > "$TMP/local.json"
+export EBDA_OS_LOCAL_JSON="$TMP/local.json"
 
 : > "$NOTIFY_LOG"
 D="$(mkrun deploy-drift.sh)"
@@ -151,7 +154,7 @@ grep -qi "host offline" "$OUT" \
   || fail "deploy-drift: paged $(notify_count) time(s) while the host was offline"
 
 # ---- Railway ANSWERED with a GraphQL error (HTTP 200 + errors, data=null) ----
-# 2026-10-22: a revoked token surfaced for weeks as "FWB api: deployment stuck in
+# 2026-10-22: a revoked token surfaced for weeks as "store api: deployment stuck in
 # status=-" plus a GitHub 404 pasted into an "OK" line. An auth error must be named
 # as the token; an empty deployment list must say "no deployments", not "stuck".
 RW_UNAUTH_PORT="$(start_fixture fake-railway.py unauthorized)"

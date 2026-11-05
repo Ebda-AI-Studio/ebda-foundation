@@ -3,7 +3,7 @@
 Fleet page-load health monitor. Catches the *200-but-broken* class — pages that
 return HTTP 200 but are actually broken for shoppers (blocked client-side API
 calls, error toasts, failed sections) — plus insecure (non-HTTPS-redirecting)
-origins, across every FWB store. Motivated by the pecannbee.com.kw incident where
+origins, across every storefront. Motivated by the shop.example.com incident where
 an HTTP (insecure) origin blocked the store's own API/websocket calls while every
 page still returned 200.
 
@@ -61,7 +61,7 @@ PLP/PDP URLs per store are resolved from `/sitemap.xml`.
 
 ```bash
 # Layer-1 smoke for one store (read-only; no browser)
-FLEET_LIVENESS_DOMAINS="$(printf 'pecannbee.com.kw\tcustom')" \
+FLEET_LIVENESS_DOMAINS="$(printf 'shop.example.com\tcustom')" \
   node ~/.claude/scripts/journeys/page-load/fleet-liveness.mjs
 
 # full runner, no writes / no send
@@ -81,7 +81,7 @@ npm i playwright@latest   # the importable package (node_modules here resolves f
 npx playwright install chromium   # the browser binary (~150MB)
 
 # smoke one store
-FLEET_DEEP_DOMAINS="$(printf 'pecannbee.com.kw\tcustom')" DEEP_SHARD_SIZE=1 \
+FLEET_DEEP_DOMAINS="$(printf 'shop.example.com\tcustom')" DEEP_SHARD_SIZE=1 \
   node ~/.claude/scripts/journeys/page-load/fleet-deep.mjs
 ```
 Until this is done the deep journey fails-open (`skipped: no-playwright`) and only

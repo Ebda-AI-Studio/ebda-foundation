@@ -113,7 +113,7 @@ removed=(); dirty=(); orphans=(); stashes=(); kept=()
 
 # --- 2+3. sweep the _worktrees forest ---
 # Worktrees are named <repo>__<slug> (new-task-worktree.sh) and, since the 2026-09-25 business-folder
-# layout, sit NESTED: _worktrees/Whisky-11/clients/work-wise/work-wise-app__feat-x. The old one-level
+# layout, sit NESTED: _worktrees/Whisky-11/clients/acme-client/acme-client-app__feat-x. The old one-level
 # `"$WT_ROOT"/*/` loop saw the CONTAINER _worktrees/Whisky-11 (no .git of its own), called it an orphan and
 # rm -rf'd it — with every live worktree inside, unpushed commits and all (2026-09-27 and 2026-09-28).
 # Now: only a dir named *__* is a worktree candidate (found at any depth, not descended into); a container
@@ -222,7 +222,7 @@ umbra_trim() {
   command -v "$ub" >/dev/null 2>&1 || return 0
   . "$HERE/lib/umbra-provisioning.sh" 2>/dev/null || true
   command -v umbra_provisioning >/dev/null 2>&1 || umbra_provisioning() { return 1; }
-  local state="${UMBRA_PRUNE_STATE:-$HOME/.cache/wt-deps/umbra-prune.tsv}" log="$HOME/Library/Logs/forceai-umbra-prune.log"
+  local state="${UMBRA_PRUNE_STATE:-$HOME/.cache/wt-deps/umbra-prune.tsv}" log="$HOME/Library/Logs/ebda-os-umbra-prune.log"
   local min_free="${UMBRA_PRUNE_FREE_GB:-40}" max_grow=$(( ${UMBRA_PRUNE_GROWTH_GB:-10} * 1024 * 1024 ))
   mkdir -p "$(dirname "$state")" "$(dirname "$log")" 2>/dev/null; touch "$state"
   local fk fg; fk=$(_df_avail_kb); [ -n "$fk" ] || [ -n "${HYGIENE_FREE_GB:-}" ] || return 0   # unreadable df = UNKNOWN: no prune decision from it
@@ -261,7 +261,7 @@ umbra_trim() {
       prune_notes+=("$vm: pruned ($why): disk.img $(( cur_kb / 1024 / 1024 )) -> $(( after / 1024 / 1024 )) GB")
       echo "$(date -u +%FT%TZ) $vm prune done: ${cur_kb} -> ${after} KB" >> "$log"
     else
-      prune_notes+=("$vm: prune FAILED or timed out ($why) - see ~/Library/Logs/forceai-umbra-prune.log")
+      prune_notes+=("$vm: prune FAILED or timed out ($why) - see ~/Library/Logs/ebda-os-umbra-prune.log")
       echo "$(date -u +%FT%TZ) $vm prune FAILED" >> "$log"
     fi
   done < <("$ub" list 2>/dev/null | awk 'NR>1 && $2=="running"{print $1}')

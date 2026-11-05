@@ -1,7 +1,7 @@
-# Whisky AI OS — migrate to the ForceAI Mac Studio
+# Whisky AI OS — migrate to the Ebda Mac Studio
 
 Move the whole OS (33 scheduled jobs + scripts + memory + dashboard + self-heal +
-DR + knowledge brain) from Ahmad's personal Mac onto the company **ForceAI Studio**,
+DR + knowledge brain) from Ahmad's personal Mac onto the company **the Ebda Studio Mac**,
 so the Studio *runs* everything and the personal Mac becomes a pure controller
 (SSH in). The Studio has a **different username** — the kit is built for that.
 
@@ -29,7 +29,7 @@ The installer is **dynamic**: it copies *every* `ops/*.sh` and schedules *every*
 + its plist in `ops/launchd/` (use `__HOME__`/`__PATH__` tokens) → re-run
 `ops/install.sh`.** No list to maintain — new scripts are opt-in by existing.
 
-## On the ForceAI Studio (bring-up)
+## On the the Ebda Studio Mac (bring-up)
 ```bash
 git clone <foundation-remote> && cd ebda-foundation
 ./ops/bootstrap.sh          # brew + npm + uv + Claude Code, then install.sh, then the checklist
@@ -39,7 +39,7 @@ Then complete the **manual re-auth** the checklist prints (claude/gh/neonctl/wra
 login + scp the 2 `.env` files). Verify: `bash ops/self-check.sh`, `os-recall.sh senses`,
 `open http://127.0.0.1:7717`.
 
-Also clone the working repos the OS monitors/deploys (FWB, WBS, CRM, …) under
+Also clone the working repos the OS monitors/deploys (store, whatsapp, CRM, …) under
 `~/Desktop/projects/` so the monitors + self-heal have their targets.
 
 ## On the personal Mac (decommission — do LAST, after the Studio is verified live)
@@ -60,7 +60,7 @@ already does that; iCloud Drive over `.git`/`node_modules`/`_backups` is a
 reliability hazard).
 
 1. Enroll the business at **business.apple.com** (needs a D-U-N-S number; free).
-   Verify the company (Force AI) — allow a few days.
+   Verify the company (Ebda OS) — allow a few days.
 2. Create a **Managed Apple Account** for the company (tie billing/identity to the
    company Gmail/domain, mirroring the GitHub-org + company-Gmail moves already done).
 3. Set the **Studio up under the Managed Apple Account**, not the personal Apple ID

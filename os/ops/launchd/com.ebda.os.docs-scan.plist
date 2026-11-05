@@ -18,9 +18,9 @@
 		<string>--notify</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-docs-scan.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-docs-scan.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-docs-scan.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-docs-scan.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>

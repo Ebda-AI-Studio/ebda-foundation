@@ -21,8 +21,8 @@
 	<key>StartInterval</key>
 	<integer>300</integer>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-guest-wedge-watch.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-guest-wedge-watch.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-guest-wedge-watch.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-guest-wedge-watch.log</string>
 </dict>
 </plist>

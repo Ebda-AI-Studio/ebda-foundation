@@ -18,9 +18,9 @@
 		<string>--quiet</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>__HOME__/Library/Logs/forceai-neon-backup.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-neon-backup.log</string>
 	<key>StandardOutPath</key>
-	<string>__HOME__/Library/Logs/forceai-neon-backup.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-neon-backup.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>

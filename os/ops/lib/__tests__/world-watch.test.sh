@@ -97,7 +97,7 @@ cat > "$REPO_B/package.json" << 'JSON'
 JSON
 
 # ============================================================
-# Fixture WBS-like file with old graph API version
+# Fixture whatsapp-like file with old graph API version
 # ============================================================
 WBS_DIR="$ROOT/wbs-fixture"
 mkdir -p "$WBS_DIR/src"

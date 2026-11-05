@@ -136,7 +136,7 @@ for w in data:
 
     # "Hasn't run lately" is only a PROBLEM if the gate could have run and didn't.
     # Blanket-flagging produced 4 alerts on 2026-08-16, and every one was noise:
-    #   FWB 'Runner health check'  — schedule deliberately commented out, only
+    #   store 'Runner health check'  — schedule deliberately commented out, only
     #                                workflow_dispatch left (documented in-file)
     #   umbra 'umbra-ci verify'    — workflow FILE DELETED; only the lingering
     #                                Actions record remains, still state=active
@@ -167,7 +167,7 @@ for w in data:
     if [ -n "$wpath" ]; then
       # `[[:space:]]` not `\s` — BSD grep -E has no \s. Comment lines are stripped
       # first so a commented-out `# schedule:` does not read as a live trigger
-      # (FWB's runner-health-check is exactly that case).
+      # (store's runner-health-check is exactly that case).
       trig="$(_ut "$OS_UT_FAST" gh api "repos/$repo/contents/$wpath" --jq '.content' 2>/dev/null \
         | base64 -d 2>/dev/null | sed -n '/^on:/,/^[a-zA-Z]/p' | sed 's/#.*$//' \
         | grep -cE '^[[:space:]]*(push|pull_request|schedule|release|issue_comment):' || true)"

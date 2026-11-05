@@ -2,9 +2,9 @@
 # Whisky AI OS — docs-scan (keep docs reflecting reality).
 # Read-only HEURISTIC pass over each prod repo: flags the common doc-drift the fleet
 # audit found — missing/misplaced runbooks and obviously-stale stack mentions — and
-# alerts the Force AI bot. This is the cheap, scheduled tier; the DEEP qualitative
+# alerts the Ebda OS bot. This is the cheap, scheduled tier; the DEEP qualitative
 # scan (every doc claim vs the live code) is the audit fleet's `docs-parity` lens,
-# run on a cadence via /force-audit (LLM, separate).
+# run on a cadence via an audit run (LLM, separate).
 # shellcheck source=lib/os-config.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
 command -v os_config_load >/dev/null 2>&1 && os_config_load
@@ -38,7 +38,7 @@ done
 
 for r in "${FULL_REPOS[@]}"; do
   d="$PROJECTS/$r"; [ -d "$d" ] || continue
-  # runbooks must exist AND live under docs/ (audit: FWB had DEPLOYMENT.md misplaced at root)
+  # runbooks must exist AND live under docs/ (audit: store had DEPLOYMENT.md misplaced at root)
   for doc in DEPLOYMENT ROLLBACK SCALING; do
     if ! find "$d/docs" -iname "${doc}.md" 2>/dev/null | grep -q .; then
       if find "$d" -maxdepth 1 -iname "${doc}.md" 2>/dev/null | grep -q .; then

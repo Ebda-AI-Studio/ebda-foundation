@@ -2,7 +2,7 @@
 # ops/lib/net-probe.sh — unit suite.
 #
 # The defect this guards (measured 2026-09-16): the Mac lost network access and
-# SEVEN monitors reported their targets as broken — "WBS auth: login FAILED
+# SEVEN monitors reported their targets as broken — "whatsapp auth: login FAILED
 # (HTTP 000) — auth is broken for all users", "check RAILWAY_API_TOKEN",
 # "PostHog API auth FAILED". Every service was healthy. curl exit 6/7/28 and
 # http_code 000 mean THIS HOST could not connect; they are not evidence about

@@ -20,7 +20,7 @@ Every table whose rows mean something to a human has a viewer (backend-only data
 | 8 | Tenant delete cascades to object storage | Every tenant/account hard-delete purges the tenant-namespaced storage prefix (paginated deleteByPrefix), best-effort AFTER the DB commit, prefix-guarded (trailing slash, never bucket-wide) — object storage has no FK cascade | grep each hard-delete service path for an object-storage purge; namespaced uploads + no purge = gap | High |
 | 9 | CSV import record-splitter is quote-aware | Any CSV import parses RECORDS quote-aware (handles `""` + embedded CRLF), never naive `split('\n')` (the record splitter and the field parser are two layers); validated by running a REAL customer file end-to-end, not synthetic fixtures | grep import paths for `split('\n')`/`split(/\r?\n/)` on raw CSV before a quote-aware splitter | Medium |
 
-## Save-integrity sub-lens (added 2026-06-09 — from the FWB admin deep audit)
+## Save-integrity sub-lens (added 2026-06-09 — from the a previous storefront product admin deep audit)
 Coverage isn't enough — a wired form that silently fails to persist is worse than a missing one. Add these to every audit:
 | # | Criterion | Solid (grade 2) | Gap detection | Severity |
 |---|---|---|---|---|
@@ -32,5 +32,5 @@ Coverage isn't enough — a wired form that silently fails to persist is worse t
 | S6 | No unbounded list / page fan-out | List reads have `take`/cursor; no client `Promise.all` over page count | grep `findMany` without `take`; grep client code building `Promise.all` from a `totalPages` loop | High |
 
 ## Evidence (filled during audit, per repo)
-- **FWB (2026-06-09 admin deep audit — score 1.45/2):** criterion 5 split-brain CONFIRMED (primaryColor branding↔page-builder Smart Palette; fonts; hero legacy↔page-builder; announcement bgColor JSONB↔column; whatsapp# ×4; enable-blog ×2). Save-integrity: **S1 FAIL** (cardAspect enum drift → whole layout save silently fails), **S2 FAIL** (expenses + purchase-orders date-422), **S5 FAIL** (category create drops SEO; social save wipes whatsapp; product create lacks lowStockThreshold), **S3 FAIL** (pixel/SMS tokens returned full + masked-resubmit overwrites), **S4 FAIL** (optimistic saves swallow PUT errors), **S6 FAIL** (customers Promise.all-over-pages + unbounded XLSX export; 100/200 caps). Criterion 4 orphans: `/hero` legacy no-op, `/navigation` `/pages` dead redirects. Full: `force-website-builder/docs/audits/2026-06-09-admin-deep-audit/`.
-- WBS: … (run same sub-lens next sweep)
+- Audit scores from the predecessor admin deep audit moved to [incidents](../../docs/history/standards/incidents.md).
+- an earlier messaging product: … (run same sub-lens next sweep)
