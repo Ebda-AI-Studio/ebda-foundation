@@ -42,8 +42,7 @@ fi
 
 # ── 🌿 GIT ───────────────────────────────────────────────────────────
 git_section=""
-if [ -n "$proj" ] && [ -d "$proj/.git" ]; then
-  cd "$proj" 2>/dev/null
+if [ -n "$proj" ] && [ -d "$proj/.git" ] && cd "$proj" 2>/dev/null; then
   branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null)
   if [ -n "$branch" ]; then
     dirty=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
@@ -61,8 +60,7 @@ fi
 
 # ── ✓ AUTHOR EMAIL (Vercel Hobby gate) ───────────────────────────────
 author_section=""
-if [ -n "$proj" ] && [ -d "$proj/.git" ]; then
-  cd "$proj" 2>/dev/null
+if [ -n "$proj" ] && [ -d "$proj/.git" ] && cd "$proj" 2>/dev/null; then
   email=$(git config user.email 2>/dev/null)
   if [ -z "$email" ]; then
     author_section="${RED}✗ no git email${R}"

@@ -16,12 +16,15 @@
 # pass — cost-guard's daily billing check stays silent in that case, this one
 # must not. Read-only: never enables, disables or detaches anything.
 # Exit 0 = all clear, 1 = violation or unverifiable.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 declare -F _ut >/dev/null 2>&1 || _ut() { shift; "$@"; }
 : "${OS_UT_FAST:=30}"
 
-read -r -a ORGS <<<"${GHAS_GUARD_ORGS:-Ebda-AI-Studio whisky-11}"
+read -r -a ORGS <<<"${GHAS_GUARD_ORGS:-$OS_BILLED_ORGS}"
 CONFIG_NAME="${GHAS_GUARD_CONFIG:-no-paid-security}"
 MONTH_START=$(date -u +%Y-%m-01)
 

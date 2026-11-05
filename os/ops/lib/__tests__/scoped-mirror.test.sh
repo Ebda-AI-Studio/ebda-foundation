@@ -21,6 +21,7 @@
 #      into _scoped/<its-own-slug>/. The guard compares inodes for that reason.
 #
 # Runs against a sandbox HOME, so it never touches real memory.
+USER="${USER:-$(id -un)}"; export USER   # unset in minimal containers
 set -uo pipefail
 OPS="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT="$OPS/update-memory-pipeline.sh"
@@ -38,11 +39,11 @@ ok "function is extractable from the pipeline script" "$([ -s "$FN" ]; echo $?)"
 
 build_sandbox() {
   SB=$(mktemp -d)
-  mkdir -p "$SB/.claude/projects/-Users-$USER-Desktop-projects-repoA/memory" \
-           "$SB/.claude/projects/-Users-$USER-Desktop-projects-repoB/memory" \
+  mkdir -p "$SB/.claude/projects/-Users-${USER:-$(id -un)}-Desktop-projects-repoA/memory" \
+           "$SB/.claude/projects/-Users-${USER:-$(id -un)}-Desktop-projects-repoB/memory" \
            "$SB/.claude/projects/-Users-$USER/memory/_scoped/repoA"
-  echo '# a'      > "$SB/.claude/projects/-Users-$USER-Desktop-projects-repoA/memory/new.md"
-  echo '# b'      > "$SB/.claude/projects/-Users-$USER-Desktop-projects-repoB/memory/only-local.md"
+  echo '# a'      > "$SB/.claude/projects/-Users-${USER:-$(id -un)}-Desktop-projects-repoA/memory/new.md"
+  echo '# b'      > "$SB/.claude/projects/-Users-${USER:-$(id -un)}-Desktop-projects-repoB/memory/only-local.md"
   echo '# global' > "$SB/.claude/projects/-Users-$USER/memory/GLOBAL-SHOULD-NOT-COPY.md"
   # Stands in for a file another machine contributed: present in the mirror, absent on disk.
   echo '# other'  > "$SB/.claude/projects/-Users-$USER/memory/_scoped/repoA/from-other-machine.md"

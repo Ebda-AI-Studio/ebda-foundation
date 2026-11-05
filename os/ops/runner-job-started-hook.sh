@@ -21,6 +21,9 @@
 #   • It exits non-zero in exactly ONE case: after cleaning, free space is still
 #     below HARD_MIN_GB. Failing fast with a clear message beats an ENOSPC ten
 #     minutes into a build, reported against an innocent step.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 trap 'exit 0' ERR   # fail-open: never let an unexpected error fail the job
 
@@ -66,7 +69,7 @@ if [ "$avail" -lt "$HARD_MIN_GB" ]; then
   echo "[disk-gate] FATAL: only ${avail}G free after cleanup (need ${HARD_MIN_GB}G)." >&2
   echo "[disk-gate] Refusing to start — a build that runs out of disk mid-way fails" >&2
   echo "[disk-gate] against an unrelated step and wastes the whole run." >&2
-  echo "[disk-gate] On the host: umbra shell fwb-ci6 -- 'df -h /; sudo du -sh /home/umbra/* | sort -rh | head'" >&2
+  echo "[disk-gate] On the host: umbra shell $OS_VM -- 'df -h /; sudo du -sh /home/umbra/* | sort -rh | head'" >&2
   exit 1
 fi
 exit 0

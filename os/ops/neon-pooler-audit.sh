@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scan every project under ~/Desktop/projects/ for the Neon pooler trap.
+# Scan every project under $OS_PROJECTS_DIR/ for the Neon pooler trap.
 #
 # Two traps:
 # 1. DATABASE_URL points at -pooler endpoint WITHOUT &pgbouncer=true
@@ -13,9 +13,12 @@
 #
 # Full policy: ~/.claude/projects/-Users-ahmadsharaf/memory/feedback-neon-pooled-needs-pgbouncer-and-direct-url.md
 
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
-PROJECTS_DIR="${PROJECTS_DIR:-$HOME/Desktop/projects}"
+PROJECTS_DIR="${PROJECTS_DIR:-$OS_PROJECTS_DIR}"
 PROJECTS_ROOT="$PROJECTS_DIR"
 # shellcheck source=/dev/null
 . "$(dirname "$0")/lib/projects-layout.sh"
@@ -49,7 +52,7 @@ while IFS= read -r project; do
             project_has_neon=1
         fi
 
-        rel=${env#"$HOME"/Desktop/projects/}
+        rel=${env#"$OS_PROJECTS_DIR"/}
         db_trap=""
         dir_trap=""
 

@@ -8,15 +8,18 @@
 # Usage: new-task-worktree.sh <repo-name> <branch>
 #   new-task-worktree.sh ebda-store feat/mfa
 #   new-task-worktree.sh ebda-whatsapp fix/native-cart
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -euo pipefail
 
-REPO="${1:?repo dir name under ~/Desktop/projects, e.g. ebda-store}"
+REPO="${1:?repo dir name under $OS_PROJECTS_DIR, e.g. ebda-store}"
 BRANCH="${2:?branch name, e.g. feat/mfa or fix/foo}"
 # Resolve the repo through the ONE layout definition (lib/projects-layout.sh):
 # business-folder slots first (2026-09-25), legacy compat paths last.
 # shellcheck source=/dev/null
 . "$(dirname "$0")/lib/projects-layout.sh"
-ROOT="$(resolve_repo_dir "$REPO" || echo "$HOME/Desktop/projects/$REPO")"
+ROOT="$(resolve_repo_dir "$REPO" || echo "$OS_PROJECTS_DIR/$REPO")"
 
 # Session awareness (2026-07-12): warn when OTHER live Claude sessions are
 # already working in this repo's tree — the collision class behind stray
@@ -38,10 +41,10 @@ if [ "${WT_FORCE:-0}" != "1" ] && [ "${free_kb:-0}" -lt $((MIN_FREE_GB*1024*1024
   # The per-directory breakdown is opt-in: WT_REPORT=1, or run ops/worktree-report.sh.
   if [ "${WT_REPORT:-0}" = "1" ]; then
     echo "Top space users:" >&2
-    du -sk "$HOME/Desktop/projects/_worktrees" "$HOME/Desktop/projects/_backups" "$HOME/.cache" "$HOME/Library/Caches" 2>/dev/null \
+    du -sk "$OS_PROJECTS_DIR/_worktrees" "$OS_PROJECTS_DIR/_backups" "$HOME/.cache" "$HOME/Library/Caches" 2>/dev/null \
       | sort -rn | awk '{printf "  %6.1f GB  %s\n",$1/1048576,$2}' >&2
     echo "  largest worktrees:" >&2
-    find "$HOME/Desktop/projects/_worktrees" -mindepth 1 -maxdepth 6 -type d -name '*__*' -prune -exec du -sk {} + 2>/dev/null \
+    find "$OS_PROJECTS_DIR/_worktrees" -mindepth 1 -maxdepth 6 -type d -name '*__*' -prune -exec du -sk {} + 2>/dev/null \
       | sort -rn | head -8 | awk '{printf "  %6.1f GB  %s\n",$1/1048576,$2}' >&2
   else
     echo "  (space breakdown skipped: it is slow on a busy host. WT_REPORT=1 $0 $* , or bash ~/.claude/scripts/worktree-report.sh)" >&2
@@ -52,7 +55,7 @@ if [ "${WT_FORCE:-0}" != "1" ] && [ "${free_kb:-0}" -lt $((MIN_FREE_GB*1024*1024
 fi
 
 SLUG="$(printf '%s' "$BRANCH" | tr '/' '-')"
-WT="$HOME/Desktop/projects/_worktrees/${REPO}__${SLUG}"
+WT="$OS_PROJECTS_DIR/_worktrees/${REPO}__${SLUG}"
 
 git -C "$ROOT" fetch origin -q
 # Detect the repo's actual default branch — foundation is 'master', most are 'main';

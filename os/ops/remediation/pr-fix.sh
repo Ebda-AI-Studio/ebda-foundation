@@ -4,6 +4,9 @@
 
 # EXCLUDED-path regex: a touched path matching this is rejected regardless of the
 # finding's declared class (second net behind the classifier).
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 _GR_EXCLUDED_RE='(^|[/._-])(auth|session|login|oauth|payment|payments|billing|invoice|checkout|myfatoorah|money|rls|polic(y|ies)|secret|secrets|credentials|deploy|wrangler|railway)($|[^a-z])|\.env|(^|[/._-])migrations?/|schema\.prisma|\.github/workflows/'
 
 HERE_PF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -122,7 +125,7 @@ pr_fix() { # <finding-json> <repo-path> -> one result token
   local reponame slug
   reponame="$(printf '%s' "$finding" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("repo",""))')"
   [ -n "$reponame" ] || reponame="$(basename "$repo")"
-  slug="Ebda-AI-Studio/$reponame"
+  slug="$OS_ORG/$reponame"
   git -C "$repo" fetch -q origin 2>/dev/null || true
   br="remediate/${cls}-$(date +%s)"
   local baseref="origin/$base"

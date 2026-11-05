@@ -11,9 +11,12 @@
 #
 # Creds come from the services env file ($OS_SERVICES_ENV, default ~/.whisky-services.env; local, chmod 600, never
 # committed): TELEGRAM_BOT_TOKEN (the Ebda bot) and TELEGRAM_ALERT_CHAT_ID. No chat id is hardcoded anywhere.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
-SVC_ENV="${OS_SERVICES_ENV:-$HOME/.whisky-services.env}"
+SVC_ENV="$OS_SERVICES_ENV"
 if [ ! -f "$SVC_ENV" ]; then
   echo "notify: missing services env at $SVC_ENV (needs TELEGRAM_BOT_TOKEN + TELEGRAM_ALERT_CHAT_ID)" >&2
   exit 1

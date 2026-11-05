@@ -18,7 +18,7 @@ set -uo pipefail
 # untestable offline, which is why none of the OS's 17 model-calling scripts
 # had a single behavioural test. Defaults to the real CLI.
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 CAND_DIR="detectors/_candidates"
 mkdir -p "$CAND_DIR"

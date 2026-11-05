@@ -25,12 +25,15 @@
 #
 #   hung-job-guard.sh            kill anything over its ceiling
 #   HUNG_GUARD_DRY=1 …           report only, kill nothing
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 NOTIFY="$HERE/notify.sh"
 DRY="${HUNG_GUARD_DRY:-0}"
-SELF_LABEL="com.ebda.os.hung-job-guard"
+SELF_LABEL="${OS_LAUNCHD_PREFIX}.hung-job-guard"
 
 # Ceiling = SLACK × StartInterval, never below FLOOR. A job that legitimately
 # runs longer than twice its own interval is already overlapping itself, which
@@ -65,7 +68,7 @@ etime_secs() {
 
 plist_val() { /usr/libexec/PlistBuddy -c "Print :$2" "$1" 2>/dev/null | tr -d '\n '; }
 
-for p in "$HOME"/Library/LaunchAgents/com.ebda.os.*.plist; do
+for p in "$HOME"/Library/LaunchAgents/${OS_LAUNCHD_PREFIX}.*.plist; do
   [ -f "$p" ] || continue
   lbl="$(basename "$p" .plist)"
   [ "$lbl" = "$SELF_LABEL" ] && continue
@@ -76,7 +79,7 @@ for p in "$HOME"/Library/LaunchAgents/com.ebda.os.*.plist; do
   # forever is its correct behaviour — there is no "too long" to compare
   # against, so this guard has no business forming an opinion.
   #
-  # The first dry run proposed killing com.ebda.os.umbrad (up 15h) because
+  # The first dry run proposed killing ${OS_LAUNCHD_PREFIX}.umbrad (up 15h) because
   # KeepAlive can be a DICT (`{ SuccessfulExit = false; }`), which does not
   # equal the string "true" — the daemon test silently failed open and the
   # fallback 3h ceiling applied. That would have killed the Umbra daemon that

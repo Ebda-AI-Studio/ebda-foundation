@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # ops/lib/projects-layout.sh — the ONE definition of where a repo lives under
-# ~/Desktop/projects. Sourced by lib/os-state.sh (resolve_repo_dir),
+# $OS_PROJECTS_DIR. Sourced by lib/os-state.sh (resolve_repo_dir),
 # new-task-worktree.sh and projects-layout-check.sh.
 #
 # Layout — every business is a folder with everything about it:
@@ -11,7 +11,10 @@
 # new business needs no code change here.
 # The pre-2026-09-25 paths (top level, _clients, _personal, _landing-pages) exist
 # only as compat symlinks and are searched LAST.
-PROJECTS_ROOT="${PROJECTS_ROOT:-$HOME/Desktop/projects}"
+# shellcheck source=os-config.sh
+command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
+[ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
+PROJECTS_ROOT="${PROJECTS_ROOT:-$OS_PROJECTS_DIR}"
 
 # resolve_repo_dir <name> — echo the checkout dir for a repo name; 1 if none.
 resolve_repo_dir() {

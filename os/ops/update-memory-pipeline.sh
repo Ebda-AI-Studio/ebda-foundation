@@ -3,7 +3,7 @@
 #
 # Refreshes the 3-layer memory stack:
 #   Layer 1: scoped Claude memory (~/.claude/projects/.../memory/)
-#   Layer 2: Obsidian vault (~/Desktop/projects/calude code meomry/)
+#   Layer 2: Obsidian vault ($OS_PROJECTS_DIR/calude code meomry/)
 #            with `_claude-memory/` mirroring layer 1 for portability
 #   Layer 3: graphify graphs (graphify-out/) per scope + global graph
 #
@@ -46,6 +46,9 @@
 #     missing scanner, an absent/empty/unparseable report, or any finding; a clean
 #     verdict is believed only after a planted canary proves the gate can still go red.
 
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
 # TCC canary (2026-07-12): the vault + graphs live under ~/Desktop — a blind
@@ -65,7 +68,7 @@ exec > >(tee -a "$LOG") 2>&1
 #   ast            — graphify update . (AST-only, zero LLM, for codebase graphs)
 EXTRACT="${EXTRACT:-${GRAPHIFY_FALLBACK:-skip}}"
 
-VAULT="$HOME/Desktop/projects/calude code meomry"
+VAULT="$OS_PROJECTS_DIR/calude code meomry"
 GLOBAL_MEM="$HOME/.claude/projects/-Users-ahmadsharaf/memory"
 GRAPHIFY=$HOME/.local/bin/graphify
 PY=$HOME/.local/share/uv/tools/graphifyy/bin/python
@@ -91,7 +94,7 @@ preflight() {
   $PY -c "import graphify, networkx" 2>/dev/null || { echo "FAIL[preflight]: graphify/networkx not importable"; errs=$((errs + 1)); }
 
   if [ -d "$VAULT/.git" ]; then
-    cd "$VAULT"
+    cd "$VAULT" || return 1
     local head_email
     head_email=$(git log -1 --pretty='%ae' 2>/dev/null)
     if [ "$head_email" != "ahmed0montaser@gmail.com" ]; then
@@ -126,7 +129,7 @@ refresh_graph() {
     return 0
   fi
 
-  cd "$dir"
+  cd "$dir" || return 1
 
   # Preserve labels file across the extract (extract doesn't touch it but be defensive)
   local label_backup=""
@@ -423,7 +426,7 @@ This folder is **auto-mirrored** from \`~/.claude/projects/-Users-ahmadsharaf/me
 
 ## Why this folder exists
 
-Vault + graphify = the **two true memory layers** (per global \`~/.claude/CLAUDE.md\` § Update memory verb). Scoped Claude memory at \`~/.claude/\` is local-only and lost if the machine is wiped. This mirror plus the vault's GitHub remote (\`Ebda-AI-Studio/claude-memory-vault\`) makes scoped memory portable across machines.
+Vault + graphify = the **two true memory layers** (per global \`~/.claude/CLAUDE.md\` § Update memory verb). Scoped Claude memory at \`~/.claude/\` is local-only and lost if the machine is wiped. This mirror plus the vault's GitHub remote (\`$OS_ORG/claude-memory-vault\`) makes scoped memory portable across machines.
 
 Last refreshed: $(date "+%Y-%m-%d %H:%M:%S %Z") (pipeline v$VERSION)
 EOF
@@ -505,7 +508,7 @@ PYEOF
 
 # --- helper: vault-specific obsidian export
 vault_obsidian_export() {
-  cd "$VAULT"
+  cd "$VAULT" || return 1
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "  [vault] DRY: would graphify export obsidian"
     return 0
@@ -690,7 +693,7 @@ PY
 
 # --- helper: vault commit + push with atomic rollback on failure
 vault_commit_push() {
-  cd "$VAULT"
+  cd "$VAULT" || return 1
   if [ -z "$(git status --short)" ]; then
     echo "  [vault] no changes to commit"
     return 0
@@ -747,7 +750,7 @@ MSG
 # graph+self-map allowlist — content edits stay human PRs). Non-fatal: a failure
 # here must never break the memory pipeline.
 sync_foundation() {
-  local fnd="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-foundation"
+  local fnd="$OS_HOME"
   local sync="$fnd/ops/sync-foundation.sh"
   if [ ! -x "$sync" ]; then
     echo "  [foundation] skip — $sync not found"; return 0
@@ -795,7 +798,7 @@ main() {
   # with non-fast-forward and force a manual recovery. Either way bad.
   # Rebase keeps the history linear (no merge commits in the vault).
   if [ -d "$VAULT/.git" ] && [ "$DRY_RUN" -eq 0 ]; then
-    cd "$VAULT"
+    cd "$VAULT" || exit 1
     echo "  [vault] git pull --rebase origin main (pre-sync)"
     if git pull --rebase origin main 2>&1 | tail -3; then
       :
@@ -863,7 +866,7 @@ nudge_runtime() {
   # os-state.sh provides write_status + emit_event (installed by the foundation).
   # shellcheck disable=SC1090
   . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null \
-    || . "$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-foundation/ops/lib/os-state.sh" 2>/dev/null \
+    || . "$OS_HOME/ops/lib/os-state.sh" 2>/dev/null \
     || return 0
   local ts; ts="$(date -u +%FT%TZ)"
   if command -v write_status >/dev/null 2>&1; then
@@ -890,7 +893,7 @@ refresh_global_graph() {
   # old -maxdepth 3 found ONE graph after the move, merge-graphs needs two, and
   # the global graph silently stopped refreshing. Worktrees are excluded: they
   # are copies of a repo already counted.
-  find "$HOME/Desktop/projects" -maxdepth 6 -name graph.json -path '*graphify-out*' \
+  find "$OS_PROJECTS_DIR" -maxdepth 6 -name graph.json -path '*graphify-out*' \
       -not -path '*/node_modules/*' -not -path '*/_worktrees/*' 2>/dev/null > "$list"
   if [ "$(wc -l < "$list" | tr -d ' ')" -lt 2 ]; then
     echo "  [global-graph] only $(wc -l < "$list" | tr -d ' ') scope graph(s) found — NOT merged (expected many; check the projects layout)"

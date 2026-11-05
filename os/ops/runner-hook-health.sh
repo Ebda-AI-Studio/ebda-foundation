@@ -19,11 +19,14 @@
 # Runs on the Mac (reads the GH API). Schedule via launchd or call on demand:
 #   bash ops/runner-hook-health.sh            # report
 #   bash ops/runner-hook-health.sh --notify   # report + Telegram on detection
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OWNER="Ebda-AI-Studio"
+OWNER="$OS_ORG"
 REPOS=(ebda-store ebda-whatsapp ebda-studio)
 RUNS_PER_REPO="${RUNS_PER_REPO:-8}"
 NOTIFY=0; [ "${1:-}" = "--notify" ] && NOTIFY=1
@@ -95,7 +98,7 @@ echo "== runner-hook-health =="
 if [ "${#disk_hits[@]}" -gt 0 ]; then
   echo "DETECTED runner OUT-OF-DISK failures:"
   for h in ${disk_hits[@]+"${disk_hits[@]}"}; do echo "  • $h"; done
-  DISK_FIX="ON THE RUNNER HOST (umbra shell fwb-ci6 --): prune the runner _work dir + docker (docker system prune -af; rm -rf ~/actions-runner/_work/*/*) and check 'df -h'. Weekly maintenance cadence was not enough — consider a job-started df gate in the runner hook."
+  DISK_FIX="ON THE RUNNER HOST (umbra shell $OS_VM --): prune the runner _work dir + docker (docker system prune -af; rm -rf ~/actions-runner/_work/*/*) and check 'df -h'. Weekly maintenance cadence was not enough — consider a job-started df gate in the runner hook."
   echo "FIX: $DISK_FIX"
   if [ "$NOTIFY" = "1" ] && [ -x "$HERE/notify.sh" ]; then
     "$HERE/notify.sh" "Self-hosted runner is OUT OF DISK — CI failing" \
@@ -105,7 +108,7 @@ fi
 if [ "${#browser_hits[@]}" -gt 0 ]; then
   echo "DETECTED runner BROWSER/TOOLCHAIN-cache corruption failures:"
   for h in ${browser_hits[@]+"${browser_hits[@]}"}; do echo "  • $h"; done
-  BROWSER_FIX="ON THE RUNNER HOST (umbra shell fwb-ci6 --): the runner is re-using a corrupt cached browser download that no code change can clear. Wipe it: rm -rf ~/.cache/puppeteer/chrome* ~/.cache/ms-playwright 2>/dev/null; then the next install re-fetches cleanly. Durable fix: skip the download in CI (puppeteer .puppeteerrc.cjs skipDownload / PUPPETEER_SKIP_DOWNLOAD) when the browser isn't needed."
+  BROWSER_FIX="ON THE RUNNER HOST (umbra shell $OS_VM --): the runner is re-using a corrupt cached browser download that no code change can clear. Wipe it: rm -rf ~/.cache/puppeteer/chrome* ~/.cache/ms-playwright 2>/dev/null; then the next install re-fetches cleanly. Durable fix: skip the download in CI (puppeteer .puppeteerrc.cjs skipDownload / PUPPETEER_SKIP_DOWNLOAD) when the browser isn't needed."
   echo "FIX: $BROWSER_FIX"
   if [ "$NOTIFY" = "1" ] && [ -x "$HERE/notify.sh" ]; then
     "$HERE/notify.sh" "Self-hosted runner BROWSER CACHE corrupt — CI failing" \
@@ -131,7 +134,7 @@ fi
 
 echo "DETECTED post-job-hook job failures (real steps passed, only cleanup failed):"
 for h in ${hits[@]+"${hits[@]}"}; do echo "  • $h"; done
-FIX="ON THE RUNNER HOST (umbra shell fwb-ci6 --): bash ebda-foundation/ops/setup-runner-hooks.sh — wraps the hook so it always exits 0 (cleanup stays best-effort). No runner restart needed."
+FIX="ON THE RUNNER HOST (umbra shell $OS_VM --): bash ebda-foundation/ops/setup-runner-hooks.sh — wraps the hook so it always exits 0 (cleanup stays best-effort). No runner restart needed."
 echo
 echo "FIX: $FIX"
 

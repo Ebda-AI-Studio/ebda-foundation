@@ -6,6 +6,9 @@
 #   summary: one-line human string
 #   detail : OPTIONAL compact JSON object string (default {})
 # Atomic (temp file + mv). Never throws — a status write must never fail a run.
+# shellcheck source=os-config.sh
+command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
+[ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
 write_status() {
   local name="$1" ok="$2" summary="$3" detail="${4:-}"
   # NOTE: do NOT default with `${4:-{}}` — bash parses the `}` inside the default
@@ -163,15 +166,15 @@ repo_commits_behind() {
 # require_projects_access — TCC canary (2026-07-12). launchd-context bash can be
 # DENIED ~/Desktop by macOS TCC: every repo then looks missing and scanners
 # report garbage drift (docs-scan telegrammed 15 phantom items). Call this
-# before any scan that reads ~/Desktop/projects; returns 1 (and logs + status)
+# before any scan that reads $OS_PROJECTS_DIR; returns 1 (and logs + status)
 # when the environment is blind — callers must ABORT, never report findings.
 require_projects_access() {
-  local canary="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-store/.git"
-  if [ -r "$canary" ] && [ -n "$(ls "$HOME/Desktop/projects" 2>/dev/null)" ]; then
+  local canary="$OS_PROJECTS_DIR/$OS_ORG/internal-projects/ebda-store/.git"
+  if [ -r "$canary" ] && [ -n "$(ls "$OS_PROJECTS_DIR" 2>/dev/null)" ]; then
     return 0
   fi
-  echo "[os-state] BLIND: cannot read ~/Desktop/projects (macOS TCC denies this launchd context — grant Full Disk Access to bash, see feedback memory). Aborting scan, NOT reporting drift." >&2
-  command -v write_status >/dev/null 2>&1 && write_status "${OS_JOB_NAME:-scan}" "warn" "TCC-blind: cannot read ~/Desktop/projects — scan aborted (no findings reported)" '{"tcc":true}'
+  echo "[os-state] BLIND: cannot read $OS_PROJECTS_DIR (macOS TCC denies this launchd context — grant Full Disk Access to bash, see feedback memory). Aborting scan, NOT reporting drift." >&2
+  command -v write_status >/dev/null 2>&1 && write_status "${OS_JOB_NAME:-scan}" "warn" "TCC-blind: cannot read $OS_PROJECTS_DIR — scan aborted (no findings reported)" '{"tcc":true}'
   return 1
 }
 

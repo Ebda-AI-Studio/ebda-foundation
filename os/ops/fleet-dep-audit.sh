@@ -7,6 +7,9 @@
 # advisories + fix, so a fleet-wide advisory is seen and fixed before it blocks
 # delivery. Detect+alert by default; set FLEET_AUDIT_AUTOPR=1 to also open fix
 # PRs (off by default — a cron must not silently spam PRs across the fleet).
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:$PATH"
 HERE="${FLEET_AUDIT_HERE:-$HOME/.claude/scripts}"
@@ -15,7 +18,7 @@ NOTIFY="${FLEET_AUDIT_NOTIFY:-$HERE/notify.sh}"
 ts(){ date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo now; }
 . "$HERE/lib/os-state.sh" 2>/dev/null || true
 
-PROJ_ROOT="${FLEET_AUDIT_ROOT:-$HOME/Desktop/projects}"
+PROJ_ROOT="${FLEET_AUDIT_ROOT:-$OS_PROJECTS_DIR}"
 NPM_BIN="${FLEET_AUDIT_NPM:-npm}"; PNPM_BIN="${FLEET_AUDIT_PNPM:-pnpm}"
 # audit level mirrors the fleet CI gate (prod-deps zero-tolerance). Override via env.
 LEVEL="${FLEET_AUDIT_LEVEL:-high}"

@@ -29,8 +29,11 @@
 #   DRIFT_HOURS=6          — hours behind threshold to alert (default 6)
 #   RAILWAY_API_TOKEN      — Railway API token (falls back to ~/.railway/config.json)
 #   VERCEL_TOKEN           — Vercel REST API token (probe skipped if unset)
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 # drift means prod runs DIFFERENT CODE, not that its sha differs from HEAD
 . "$(dirname "$0")/lib/deployable-change.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/deployable-change.sh" 2>/dev/null || true
@@ -50,7 +53,7 @@ DRIFT_COMMITS="${DRIFT_COMMITS:-5}"
 DRIFT_HOURS="${DRIFT_HOURS:-6}"
 
 # ── load env from whisky-services.env ─────────────────────────────────────────
-SERVICES_ENV="${SERVICES_ENV:-$HOME/.whisky-services.env}"
+SERVICES_ENV="${SERVICES_ENV:-$OS_SERVICES_ENV}"
 if [ -f "$SERVICES_ENV" ]; then
   # shellcheck disable=SC1090
   . "$SERVICES_ENV"
@@ -73,7 +76,7 @@ except Exception:
 fi
 
 # ── helper: GitHub commit lookup ──────────────────────────────────────────────
-# Returns the sha of HEAD on the default branch for a repo slug (Ebda-AI-Studio/<repo>).
+# Returns the sha of HEAD on the default branch for a repo slug ($OS_ORG/<repo>).
 github_main_sha() {
   local slug="$1"
   local branch="${2:-master}"
@@ -280,9 +283,9 @@ check_railway_service() {
   fi
 
   # Get main HEAD from GitHub
-  local head_sha; head_sha=$(github_main_sha "Ebda-AI-Studio/$gh_slug" "$branch")
+  local head_sha; head_sha=$(github_main_sha "$OS_ORG/$gh_slug" "$branch")
   if [ -z "$head_sha" ]; then
-    ALERTS+=("$label: could not fetch HEAD sha for Ebda-AI-Studio/$gh_slug ($branch)")
+    ALERTS+=("$label: could not fetch HEAD sha for $OS_ORG/$gh_slug ($branch)")
     return
   fi
 
@@ -294,8 +297,8 @@ check_railway_service() {
   fi
 
   # How far behind?
-  local behind; behind=$(commits_behind "Ebda-AI-Studio/$gh_slug" "$running_sha" "$head_sha")
-  local age; age=$(commit_age_hours "$running_sha" "Ebda-AI-Studio/$gh_slug")
+  local behind; behind=$(commits_behind "$OS_ORG/$gh_slug" "$running_sha" "$head_sha")
+  local age; age=$(commit_age_hours "$running_sha" "$OS_ORG/$gh_slug")
 
   # Check thresholds
   local over_commits=0 over_hours=0
@@ -314,7 +317,7 @@ check_railway_service() {
     # ignored later. "unknown" is treated exactly like deployable, so a failed
     # lookup or a missing lib still alerts.
     local _verdict
-    _verdict=$(changed_files "Ebda-AI-Studio/$gh_slug" "$running_sha" "$head_sha" | deployable_verdict)
+    _verdict=$(changed_files "$OS_ORG/$gh_slug" "$running_sha" "$head_sha" | deployable_verdict)
     if [ "$_verdict" = "none" ]; then
       echo "  OK  $label — prod $short_run is ${behind:-?} commits / ~${age}h behind HEAD $short_head, but the delta is NON-DEPLOYABLE (CI/docs only) status=$deploy_status"
       return
@@ -365,9 +368,9 @@ except Exception:
     return
   fi
 
-  local head_sha; head_sha=$(github_main_sha "Ebda-AI-Studio/$gh_slug" "$branch")
+  local head_sha; head_sha=$(github_main_sha "$OS_ORG/$gh_slug" "$branch")
   if [ -z "$head_sha" ]; then
-    ALERTS+=("$label (Vercel): could not fetch HEAD sha for Ebda-AI-Studio/$gh_slug")
+    ALERTS+=("$label (Vercel): could not fetch HEAD sha for $OS_ORG/$gh_slug")
     return
   fi
 
@@ -377,8 +380,8 @@ except Exception:
     return
   fi
 
-  local behind; behind=$(commits_behind "Ebda-AI-Studio/$gh_slug" "$running_sha" "$head_sha")
-  local age; age=$(commit_age_hours "$running_sha" "Ebda-AI-Studio/$gh_slug")
+  local behind; behind=$(commits_behind "$OS_ORG/$gh_slug" "$running_sha" "$head_sha")
+  local age; age=$(commit_age_hours "$running_sha" "$OS_ORG/$gh_slug")
 
   local over_commits=0 over_hours=0
   if [ "${behind:-0}" -gt 0 ] 2>/dev/null && [ "${behind:-0}" -ge "$DRIFT_COMMITS" ] 2>/dev/null; then

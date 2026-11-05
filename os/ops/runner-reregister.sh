@@ -28,13 +28,16 @@
 #
 # Requires: umbra on PATH, gh authenticated with repo admin scope.
 
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 
-GUEST="${RUNNER_UMBRA_MACHINE:-fwb-ci6}"
+GUEST="${RUNNER_UMBRA_MACHINE:-$OS_VM}"
 LABELS="${RUNNER_LABELS:-wsl2,umbra-ci}"
-KNOWN_OWNERS="${RUNNER_OWNERS:-Ebda-AI-Studio Whisky-11 voidengineer-911}"  # keep in sync with runner-focus.sh
+KNOWN_OWNERS="${RUNNER_OWNERS:-$OS_ORGS}"  # keep in sync with runner-focus.sh
 UT="${OS_UT_SLOW:-120}"
 DRY=0; ALL=0
 for a in "$@"; do
@@ -75,8 +78,8 @@ while IFS= read -r unit <&3; do
     echo "  SKIP $unit — deactivated by runner-focus"; skipped=$((skipped+1)); continue
   fi
   middle="${unit#actions.runner.}"; middle="${middle%.service}"
-  ownerrepo="${middle%%.*}"          # e.g. Ebda-AI-Studio-ebda-studio
-  runner="${middle#*.}"              # e.g. fwb-ci6-crm-1
+  ownerrepo="${middle%%.*}"          # e.g. <owner>-<repo>
+  runner="${middle#*.}"              # e.g. <vm>-crm-1
   # Owner and repo are joined by a dash in the unit name, and BOTH sides contain
   # dashes — splitting on the first one yields owner "ForceAI" / repo "KW-...".
   # Match the known owners by prefix instead of guessing where the boundary is.

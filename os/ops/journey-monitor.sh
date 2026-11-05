@@ -26,8 +26,11 @@
 #
 # Deps: bash 3.2+, node 18+ (optional — fail-open if absent). python3 stdlib.
 #
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 . ./lib/os-state.sh 2>/dev/null || true
 . ./lib/net-probe.sh 2>/dev/null || true   # host pre-flight (2026-09-16)
@@ -36,7 +39,7 @@ cd "$(dirname "$0")"
 # set -a: journeys run as child `node` processes. Sourced WITHOUT allexport,
 # JOURNEY_FWB_STORE_URL stayed shell-local and node never saw it, so even a
 # configured env file produced all-skip (#197). WHISKY_SERVICES_ENV: test seam.
-SVC_ENV="${WHISKY_SERVICES_ENV:-${OS_SERVICES_ENV:-$HOME/.whisky-services.env}}"
+SVC_ENV="${WHISKY_SERVICES_ENV:-$OS_SERVICES_ENV}"
 [ -f "$SVC_ENV" ] && { set -a; . "$SVC_ENV"; set +a; } 2>/dev/null || true
 
 DRY_RUN="${DRY_RUN:-0}"

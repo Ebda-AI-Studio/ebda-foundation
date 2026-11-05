@@ -33,10 +33,13 @@
 #   Weekday/Month/Day -> weekly-or-rarer, Hour -> daily, Minute only -> hourly.
 # An ARRAY of calendar entries fires once per entry, so the period is divided
 # by the number of entries — 4 daily entries is a 6-hourly job, not a daily one.
+# shellcheck source=os-config.sh
+command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
+[ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
 job_period_seconds() {
   local job="${1-}" dir="${2:-$HOME/Library/LaunchAgents}"
   [ -n "$job" ] || { echo ""; return 0; }
-  local plist="$dir/com.ebda.os.$job.plist"
+  local plist="$dir/${OS_LAUNCHD_PREFIX}.$job.plist"
   [ -f "$plist" ] || { echo ""; return 0; }
   python3 - "$plist" <<'PY' 2>/dev/null || echo ""
 import plistlib, sys

@@ -18,8 +18,9 @@ out="$(run EBDA_OS_LOCAL_ENV="$TMP/local.env")"; case "$out" in *"|com.example.l
 CMD='echo "$OS_ORGS"'
 out="$(run)"; [ "$out" = "Ebda-AI-Studio Whisky-11 voidengineer-911" ] && pass "OS_ORGS exported with all three owners" || fail "orgs: $out"
 
-out="$(env -i HOME="$TMP/home" PATH="$PATH" OS_CONFIG_FILE="$TMP/nope.env" bash -c ". '$ROOT/lib/os-config.sh'; cp -r '$ROOT/lib' '$TMP/lib2'; . '$TMP/lib2/os-config.sh'; os_config_load" 2>&1)"; rc=$?
-echo "(missing-os.env case rc=$rc)" >/dev/null
-if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'no os.env found'; then pass "no os.env anywhere: fails loudly"; else fail "missing os.env: rc=$rc out=$out"; fi
+# no os.env reachable (library copied elsewhere): built-in defaults, never an empty identity
+mkdir -p "$TMP/lonely"; cp "$ROOT/lib/os-config.sh" "$TMP/lonely/"
+out="$(env -i HOME="$TMP/home" PATH="$PATH" bash -c ". '$TMP/lonely/os-config.sh' && os_config_load && echo \"\$OS_REPO_SLUG|\$OS_VM|\$OS_ORG\"")"
+[ "$out" = "Ebda-AI-Studio/ebda-foundation|fwb-ci6|Ebda-AI-Studio" ] && pass "no os.env anywhere: built-in defaults apply" || fail "built-in defaults: $out"
 
 echo "os-config: $_pass passed, $_fail failed"; [ "$_fail" -eq 0 ]

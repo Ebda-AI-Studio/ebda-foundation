@@ -16,4 +16,8 @@ tok="$(hex 'plaintoken')"; [ "$(keychain_decode "$tok")" = "$tok" ] && pass "a g
 [ "$(keychain_decode 'sk_live_XYZ')" = "sk_live_XYZ" ] && pass "non-hex secret passes through" || fail "non-hex"
 [ "$(printf '%s\n' "$(hex $'a\nb')" | keychain_decode)" = $'a\nb' ] && pass "stdin form works" || fail "stdin"
 [ "$(keychain_decode '  spaced out  ')" = "spaced out" ] && pass "ends trimmed, inner spaces kept" || fail "trim"
+[ "$(keychain_decode 746f6b0a)" = "tok" ] && pass "hex whose only newline is trailing (tok\\n) is decoded and trimmed" || fail "trailing-newline hex: got '$(keychain_decode 746f6b0a)'"
+[ "$(keychain_decode 746f6b)" = "746f6b" ] && pass "hex of single-line text without a known prefix is unchanged" || fail "single-line hex"
+[ "$(keychain_decode 746f6b0)" = "746f6b0" ] && pass "odd-length hex is unchanged" || fail "odd hex"
+[ "$(keychain_decode 4147452d5345435245542d4b45592d31414243)" = "AGE-SECRET-KEY-1ABC" ] && pass "AGE-SECRET-KEY-1 prefix hex is decoded" || fail "age"
 echo "keychain: $_pass passed, $_fail failed"; [ "$_fail" -eq 0 ]

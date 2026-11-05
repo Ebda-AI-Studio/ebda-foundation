@@ -29,7 +29,7 @@
 #   DRY_RUN=1                  no issues filed, no state written
 #   AUDIT_PACK_MAX_PROPOSALS   issues per run (default 2)
 #   AUDIT_PACK_STATE           state dir (default ~/.whisky-os-state)
-#   AUDIT_PACK_FLEET           fleet dir (default ~/Desktop/projects/Personal/projects/mypovonai-learn/fleet)
+#   AUDIT_PACK_FLEET           fleet dir (default $OS_PROJECTS_DIR/Personal/projects/mypovonai-learn/fleet)
 #   AUDIT_PACK_LENS_IDS        comma list, overrides reading the fleet (tests)
 #   AUDIT_PACK_FAKE_REPO/_NPM/_SITE   seeded counts (tests)
 #
@@ -37,17 +37,20 @@
 # `skipped: <what> (<why>)` and the run continues. A phase that could not measure
 # NEVER prints `aligned` — silence is not evidence.
 # ============================================================
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -u
 
 STATE_DIR="${AUDIT_PACK_STATE:-$HOME/.whisky-os-state}"
-FLEET="${AUDIT_PACK_FLEET:-$HOME/Desktop/projects/Personal/projects/mypovonai-learn/fleet}"
+FLEET="${AUDIT_PACK_FLEET:-$OS_PROJECTS_DIR/Personal/projects/mypovonai-learn/fleet}"
 LIBDIR="$(cd "$(dirname "$0")" && pwd)/lib"
 # Overridable so a test can mine a SEEDED source list offline. Without this
 # seam the only way to exercise a miner is to edit the real config or hit the
 # network, and a miner nobody can test is one that fails quietly.
 SOURCES="${AUDIT_PACK_SOURCES:-$(cd "$(dirname "$0")" && pwd)/lib/audit-sources.json}"
 STATUS="$STATE_DIR/audit-pack-status.json"
-REPO_SLUG="voidengineer-911/mypovonai-learn"
+REPO_SLUG="$OS_PERSONAL_OWNER/mypovonai-learn"
 SITE_URL="https://mypovonai.com/en/audit"
 MAX_PROPOSALS="${AUDIT_PACK_MAX_PROPOSALS:-2}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -328,7 +331,7 @@ ADVURLS
         # the pack should catch by itself next time, and unlike a reel or a feed
         # it is already specific to work Ahmad is paid for.
         local roots maxc reports proposed=0
-        roots="$(python3 -c "import json,os;print('\n'.join(os.path.expanduser(p) for p in json.load(open('$SOURCES'))['sources'][$i].get('roots',[])))")"
+        roots="$(python3 -c "import glob,json,os;print('\n'.join(g for p in json.load(open('$SOURCES'))['sources'][$i].get('roots',[]) for g in sorted(glob.glob(os.path.expanduser(os.path.expandvars(p))))))")"
         maxc="$(python3 -c "import json;print(json.load(open('$SOURCES'))['sources'][$i].get('max_per_run',5))")"
         if [ "$enabled" != "True" ]; then _say "  skipped: $id (disabled)"
         elif [ -z "$roots" ]; then _say "  skipped: $id (no roots configured)"

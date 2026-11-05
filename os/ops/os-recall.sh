@@ -12,11 +12,14 @@
 #   os-recall.sh graphs           Show graph coverage (nodes + files) per knowledge base.
 #
 # Read-only. Safe to call from anywhere, any agent, any cron.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
 MEMDIR="$HOME/.claude/projects/-Users-ahmadsharaf/memory"
 MEM_GRAPH="$MEMDIR/graphify-out/graph.json"
-VAULT="$HOME/Desktop/projects/calude code meomry"
+VAULT="$OS_PROJECTS_DIR/calude code meomry"
 VAULT_GRAPH="$VAULT/graphify-out/graph.json"
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -71,7 +74,7 @@ DO (CLIs the OS can act with):
 
 KNOW (persistent memory across conversations):
   • Scoped memory  $MEMDIR
-  • Obsidian vault $VAULT/wiki (GitHub-mirrored: Ebda-AI-Studio/claude-memory-vault)
+  • Obsidian vault $VAULT/wiki (GitHub-mirrored: $OS_ORG/claude-memory-vault)
   • Both are graphified; ask the brain: os-recall.sh "<question>"
 
 SELF-HEAL (autonomous remediation, tiered by reversibility):

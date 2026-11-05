@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # ops/lib/wt-safety.sh — the two questions every worktree reaper must answer the SAME way before it deletes anything.
 #
-# WHY (2026-10-25). The post-merge sweep after a merge in Whisky-11/ebda-whatsapp deleted a brand-new worktree whose
+# WHY (2026-10-25). The post-merge sweep after a merge in $OS_ORG/ebda-whatsapp deleted a brand-new worktree whose
 # branch sat exactly at origin/main with zero commits, and with it an UNCOMMITTED plan draft. Three defects met:
 #   1. "merged" was `git merge-base --is-ancestor HEAD origin/main`. A branch with 0 commits ahead of main IS an
 #      ancestor of main, so every freshly created worktree counted as merged. 0-ahead means NEW, not merged.
@@ -20,6 +20,9 @@
 #     unknown  GitHub could not be asked (offline, no gh): KEEP
 # Only `merged` may ever lead to removal.
 
+# shellcheck source=os-config.sh
+command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
+[ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
 WT_JUNK_RE='(^|/)(node_modules|dist|build|out|coverage|\.next|\.open-next|\.turbo|\.wrangler|\.vite|\.cache|\.parcel-cache|__pycache__|\.pytest_cache|\.vercel|target|\.tmp|tmp|graphify-out|\.husky/_)(/|$)|(^|/)\.DS_Store$|\.(log|tsbuildinfo|pyc)$|(^|/)\.env(\.[A-Za-z0-9_-]+)?$'
 
 wt_dirty_count() {

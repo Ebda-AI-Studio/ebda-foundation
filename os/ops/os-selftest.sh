@@ -9,7 +9,7 @@
 #   (b) SYNTHETIC ROUND-TRIP — writes a fake 9-field findings array to a temp
 #       file, runs findings-normalize.py --json, asserts the path is alive.
 #   (c) DREAM-FIX ORPHAN GUARD — detects auto-fix/* and dream-fix/* git
-#       branches / worktrees across ~/Desktop/projects with NO open PR.
+#       branches / worktrees across $OS_PROJECTS_DIR with NO open PR.
 #       Known unfixed watchdog bug; each orphan surfaces as a finding.
 #
 # Bus writes:
@@ -24,8 +24,11 @@
 #
 # Deps: bash 3.2+, python3 (stdlib). gh / launchctl optional (fail-open).
 # ============================================================
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 . ./lib/os-state.sh 2>/dev/null || true
 # Per-job freshness verdicts (which in turn source lib/job-cadence.sh for the
@@ -48,9 +51,9 @@ STATE_DIR="$HOME/.whisky-os-state"; mkdir -p "$STATE_DIR"
 # to the foundation checkout, then to the ACTUALLY-LOADED LaunchAgents (2026-07-12:
 # the freshness check silently skipped when run from ~/.claude/scripts).
 LAUNCHD_DIR="$(pwd)/launchd"
-[ -d "$LAUNCHD_DIR" ] || LAUNCHD_DIR="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-foundation/ops/launchd"
+[ -d "$LAUNCHD_DIR" ] || LAUNCHD_DIR="$OS_HOME/ops/launchd"
 [ -d "$LAUNCHD_DIR" ] || LAUNCHD_DIR="$HOME/Library/LaunchAgents"
-PROJECTS="$HOME/Desktop/projects"
+PROJECTS="$OS_PROJECTS_DIR"
 NORMALIZE_LIB="./lib/findings-normalize.py"
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -91,8 +94,8 @@ _fail() { FAIL=$(( FAIL + 1 )); FAILED_CHECKS+=("$1"); }
 DESKTOP_VISIBLE=1
 if command -v require_projects_access >/dev/null 2>&1 && ! require_projects_access 2>/dev/null; then
   DESKTOP_VISIBLE=0
-  add_critical "TCC-BLIND: this context cannot read ~/Desktop/projects — repo/artifact checks skipped; scheduled jobs guarded by the canary are aborting safely. Fix: Full Disk Access for /bin/bash."
-  _fail "TCC-BLIND: cannot read ~/Desktop/projects"
+  add_critical "TCC-BLIND: this context cannot read $OS_PROJECTS_DIR — repo/artifact checks skipped; scheduled jobs guarded by the canary are aborting safely. Fix: Full Disk Access for /bin/bash."
+  _fail "TCC-BLIND: cannot read $OS_PROJECTS_DIR"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -152,7 +155,7 @@ check_plist_freshness() {
 
     # A daemon has no cadence, so its log mtime is evidence of NOTHING — a
     # healthy resident process can sit silent for weeks. Liveness is the only
-    # honest test. com.ebda.os.dashboard used to be `continue`d out of this loop
+    # honest test. ${OS_LAUNCHD_PREFIX}.dashboard used to be `continue`d out of this loop
     # entirely, i.e. checked by nothing, which reads as a pass.
     daemon-running)
       add_info "$label: daemon alive (KeepAlive/RunAtLoad, no cadence — judged by process liveness)"
@@ -179,7 +182,7 @@ check_plist_freshness() {
     # never produced output, which is the incident itself.
     never-ran)
       case "$label" in
-        com.ebda.os.neon-backup|com.ebda.os.ebda-cf-backup)
+        "${OS_LAUNCHD_PREFIX}.neon-backup"|"${OS_LAUNCHD_PREFIX}.ebda-cf-backup")
           add_high "$label: loaded, but its declared log does not exist ($log_path) — this backup has never produced output. Treat as NOT running."
           _fail "$label: declared log absent — backup has never run" ;;
         *)
@@ -197,7 +200,7 @@ check_plist_freshness() {
       # A job unloaded BY the pause is not an unregistered job — ops/wbs-power.sh
       # unloads wbs-monitor deliberately, and resume reloads it.
       case "$label" in
-        com.ebda.os.wbs-monitor)
+        "${OS_LAUNCHD_PREFIX}.wbs-monitor")
           service_paused wbs 2>/dev/null && { _info "$label: SKIPPED — unloaded by the WBS pause"; return 0; } ;;
       esac
       add_medium "$label: not loaded in launchctl and no log found — job may be unregistered"
@@ -212,12 +215,12 @@ check_plist_freshness() {
 if [ "$FRESHNESS_LIB_OK" = "0" ]; then
   _info "plist freshness: SKIPPED — lib/job-freshness.sh unavailable (reported as CRITICAL above)"
 elif [ -d "$LAUNCHD_DIR" ]; then
-  for plist in "$LAUNCHD_DIR"/com.ebda.os.*.plist; do
+  for plist in "$LAUNCHD_DIR"/${OS_LAUNCHD_PREFIX}.*.plist; do
     [ -f "$plist" ] || continue
     # Skip this self-test's own plist (expected not to have run yet after first install)
     label=$(basename "$plist" .plist)
-    [ "$label" = "com.ebda.os.os-selftest" ] && continue
-    # NOTE: com.ebda.os.dashboard used to be skipped here as an "on-demand job
+    [ "$label" = "${OS_LAUNCHD_PREFIX}.os-selftest" ] && continue
+    # NOTE: ${OS_LAUNCHD_PREFIX}.dashboard used to be skipped here as an "on-demand job
     # with no cadence". It is a KeepAlive daemon, and it is now checked for
     # process liveness like every other daemon. A job excluded from the only
     # loop that inspects it is not passing; it is unobserved.
@@ -344,7 +347,7 @@ _info "--- (c) DREAM-FIX ORPHAN GUARD ---"
 ORPHAN_COUNT=0
 
 if command -v git >/dev/null 2>&1 && command -v gh >/dev/null 2>&1; then
-  # Collect all git repos under ~/Desktop/projects (top-level only, not worktrees)
+  # Collect all git repos under $OS_PROJECTS_DIR (top-level only, not worktrees)
   while IFS= read -r repo_dir; do
     [ -d "$repo_dir/.git" ] || continue
     repo_name=$(basename "$repo_dir")
@@ -364,7 +367,7 @@ if command -v git >/dev/null 2>&1 && command -v gh >/dev/null 2>&1; then
       # slug from the remote URL — dir name ≠ repo slug (ebda-whatsapp
       # → ebda-whatsapp, ebda-studio → ebda-studio; 2026-07-12)
       repo_slug=$(git -C "$repo_dir" remote get-url origin 2>/dev/null | sed -E 's#.*github.com[:/]##; s#\.git$##')
-      [ -n "$repo_slug" ] || repo_slug="Ebda-AI-Studio/$repo_name"
+      [ -n "$repo_slug" ] || repo_slug="$OS_ORG/$repo_name"
       pr_state=$(_ut "$OS_UT_FAST" gh pr list --head "$branch" --repo "$repo_slug" \
         --state open --json number --jq 'length' 2>/dev/null || echo "skip")
       if [ "$pr_state" = "skip" ]; then
@@ -396,7 +399,7 @@ EOF_BRANCHES
     if [ -z "$wt_list" ]; then continue; fi
     while IFS= read -r wt_branch; do
       [ -z "$wt_branch" ] && continue
-      pr_state=$(_ut "$OS_UT_FAST" gh pr list --head "$wt_branch" --repo "Ebda-AI-Studio/$repo_name" \
+      pr_state=$(_ut "$OS_UT_FAST" gh pr list --head "$wt_branch" --repo "$OS_ORG/$repo_name" \
         --state open --json number --jq 'length' 2>/dev/null || echo "skip")
       if [ "$pr_state" = "skip" ]; then
         add_low "orphan-guard: worktree $repo_name/$wt_branch — gh unavailable (skipping)"
@@ -506,7 +509,7 @@ _info "checking artifact freshness (backups / dream / graphify) ..."
 # projects, so other projects could have stopped being backed
 # up indefinitely with every gate green. A project dumped by a different
 # job, in a different Neon account) was watched by nothing at all.
-BK="$HOME/Desktop/projects/_backups"
+BK="$OS_PROJECTS_DIR/_backups"
 if ! command -v backup_watch_names >/dev/null 2>&1; then
   add_high "artifact: lib/backup-projects.sh is missing, so the dump freshness of EVERY project went unchecked (run ops/install.sh)"
   _fail "artifact: backup project list unavailable — dump freshness unchecked"
@@ -552,7 +555,7 @@ print("" if best is None else "%.1f" % best)
   if [ -n "$newest_age_h" ] && [ "${newest_age_h%%.*}" -lt 36 ] 2>/dev/null; then
     PASS=$(( PASS + 1 ))
   else
-    add_high "artifact: no fresh Neon dump for $proj in 36h (com.ebda.os.neon-backup output check)"
+    add_high "artifact: no fresh Neon dump for $proj in 36h (${OS_LAUNCHD_PREFIX}.neon-backup output check)"
     _fail "artifact: no fresh Neon dump for $proj in 36h"
   fi
 done

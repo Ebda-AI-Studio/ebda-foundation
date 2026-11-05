@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
@@ -48,7 +51,7 @@ for (( i=0; i<count; i++ )); do   # naturally a no-op when count=0 (e.g. --appro
   if [ "$kind" = "EXCLUDED" ]; then emit "EXCLUDED $cls"; excluded=$((excluded+1)); continue; fi
   if is_operational "$cls"; then
     emit "OPERATIONAL $cls"; ops=$((ops+1))
-    [ "$DRY" = "1" ] || { case "$cls" in graph-pending) op_graphify "$HOME/Desktop/projects/$repo";; dr-dump-missing) op_dr_backup "$repo";; esac; }
+    [ "$DRY" = "1" ] || { case "$cls" in graph-pending) op_graphify "$OS_PROJECTS_DIR/$repo";; dr-dump-missing) op_dr_backup "$repo";; esac; }
     continue
   fi
   if [ "$kind" = "CLASS_B" ]; then
@@ -59,7 +62,7 @@ for (( i=0; i<count; i++ )); do   # naturally a no-op when count=0 (e.g. --appro
     [ "$DRY" = "1" ] && { wr_release "finding:$fid" "remediate"; queued=$((queued+1)); continue; }
     cb_allow class-b || { emit "SKIP $cls (circuit breaker)"; wr_release "finding:$fid" "remediate"; continue; }
     finding="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));a=d.get("findings",[]) if isinstance(d,dict) else d;print(json.dumps(a[int(sys.argv[2])],separators=(",",":")))' "$FINDINGS" "$i")"
-    res="$(pr_fix "$finding" "$HOME/Desktop/projects/$repo")"
+    res="$(pr_fix "$finding" "$OS_PROJECTS_DIR/$repo")"
     cb_record class-b
     case "$res" in QUEUED*) queued=$((queued+1));; PENDING*) humaned=$((humaned+1));; esac
     emit "$res"
@@ -71,13 +74,13 @@ for (( i=0; i<count; i++ )); do   # naturally a no-op when count=0 (e.g. --appro
   [ "$DRY" = "1" ] && { queued=$((queued+1)); continue; }
   cb_allow class-a || { emit "SKIP $cls (circuit breaker)"; continue; }
   # branch + fix + PR (real mode)
-  repo_path="$HOME/Desktop/projects/$repo"; br="remediate/${cls}-$(date +%s)"
+  repo_path="$OS_PROJECTS_DIR/$repo"; br="remediate/${cls}-$(date +%s)"
   ( cd "$repo_path" && git checkout -q -b "$br" ) || continue
   case "$cls" in lockfile-drift|dep-bump) fix_lockfile_drift "$repo_path" || { emit "FIX FAILED $cls"; continue; };; esac
   ( cd "$repo_path" && git commit -q -m "fix(remediation): $cls" && git push -q -u origin "$br" ) || continue
-  pr="$(gh pr create --repo "Ebda-AI-Studio/$repo" --head "$br" --title "remediation: $cls" --body "Automated $cls fix. Gated by CI + blast-radius + AI review score." 2>/dev/null | grep -oE '[0-9]+$')"
+  pr="$(gh pr create --repo "$OS_ORG/$repo" --head "$br" --title "remediation: $cls" --body "Automated $cls fix. Gated by CI + blast-radius + AI review score." 2>/dev/null | grep -oE '[0-9]+$')"
   cb_record class-a
-  qitem="$(python3 -c 'import json,sys;print(json.dumps({"pr":sys.argv[1],"slug":sys.argv[2],"branch":sys.argv[3],"repo":sys.argv[4]}))' "$pr" "Ebda-AI-Studio/$repo" "$br" "$HOME/Desktop/projects/$repo")"
+  qitem="$(python3 -c 'import json,sys;print(json.dumps({"pr":sys.argv[1],"slug":sys.argv[2],"branch":sys.argv[3],"repo":sys.argv[4]}))' "$pr" "$OS_ORG/$repo" "$br" "$OS_PROJECTS_DIR/$repo")"
   queue_add "$qitem"; queued=$((queued+1))
 done
 

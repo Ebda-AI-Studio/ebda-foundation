@@ -31,7 +31,7 @@ step "4/4  MANUAL — re-auth + Apple Business (nothing above logs you in)"
 cat <<'EOF'
 Re-authenticate on THIS machine (credentials never sync — re-login each):
   • claude /login                         (Max plan — powers claude -p, the OS's autonomous worker)
-  • gh auth login                         (GitHub org Ebda-AI-Studio)
+  • gh auth login                         (GitHub: the owner orgs in os.env)
   • neonctl auth                          (Neon — DB backups/PITR/recovery)
   • wrangler login                        (Cloudflare Workers deploy/rollback)
   • railway login                         (Railway API deploy/rollback)

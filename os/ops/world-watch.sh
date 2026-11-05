@@ -35,13 +35,16 @@
 #
 # Deps: bash 3.2+, python3 (stdlib). curl, npm optional (fail-open).
 # ============================================================
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # S0 (2026-10-26): --help runs nothing; one run at a time (lib/single-instance.sh)
 . "$(dirname "${BASH_SOURCE[0]}")/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
 . "$(dirname "${BASH_SOURCE[0]}")/lib/single-instance.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/single-instance.sh" || exit 2
 args_help "${BASH_SOURCE[0]}" "$@"
 single_instance world-watch
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 . ./lib/os-state.sh 2>/dev/null || true
 
@@ -51,7 +54,7 @@ if command -v require_projects_access >/dev/null 2>&1; then require_projects_acc
 
 
 # ---------- config ----------
-SVC_ENV="${WHISKY_SERVICES_ENV:-${OS_SERVICES_ENV:-$HOME/.whisky-services.env}}"
+SVC_ENV="${WHISKY_SERVICES_ENV:-$OS_SERVICES_ENV}"
 [ -f "$SVC_ENV" ] && { set -a; . "$SVC_ENV"; set +a; } || true
 
 DRY_RUN="${DRY_RUN:-0}"
@@ -63,7 +66,7 @@ done
 STATE_DIR="$HOME/.whisky-os-state"; mkdir -p "$STATE_DIR"
 EXTRAS_FILE="$STATE_DIR/world-extras.json"
 NORMALIZE_LIB="./lib"
-PROJECTS="$HOME/Desktop/projects"
+PROJECTS="$OS_PROJECTS_DIR"
 
 # Lens control (can be overridden by tests)
 WW_SKIP_EOL="${WW_SKIP_EOL:-0}"
@@ -296,7 +299,7 @@ print(json.dumps(a+b))
 # Compare against WW_GRAPH_API_CURRENT.
 
 _check_api_version_drift() {
-  local wbs_dir="$PROJECTS/Ebda-AI-Studio/internal-projects/ebda-whatsapp"
+  local wbs_dir="$PROJECTS/$OS_ORG/internal-projects/ebda-whatsapp"
   [ -d "$wbs_dir" ] || { echo "[]"; return; }
 
   python3 - "$wbs_dir" "$WW_GRAPH_API_CURRENT" << 'PYEOF'

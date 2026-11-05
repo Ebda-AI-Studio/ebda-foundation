@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Whisky AI OS — runner-focus: run ONLY the CI runners that are needed right now.
 #
-# WHY (Ahmad 2026-10-08): the Umbra guest fwb-ci6 (6 CPU / 6 GiB) ran 22 GitHub
+# WHY (Ahmad 2026-10-08): the Umbra guest $OS_VM (6 CPU / 6 GiB) ran 22 GitHub
 # runner services for ~19 repos, all the time. Idle runners cost RAM, and the guest
 # hung twice in one day under load. "Only activate what is using CI, the rest
 # deactivated, so the full RAM goes to the repo that needs CI."
@@ -17,20 +17,23 @@
 #                                   guard and runner-reregister.sh use it so a
 #                                   deactivated runner is EXPECTED to be down
 #
-# A <slug> is the repo part of the runner name (fwb-ci6-<slug>-<n> / umbra-<slug>-<n>).
+# A <slug> is the repo part of the runner name ($OS_VM-<slug>-<n> / umbra-<slug>-<n>).
 # State: $RUNNER_FOCUS_FILE (default ~/.umbra/runner-focus.json) = {"focus":[slugs]}.
 # No file = no focus = every runner is expected (the pre-2026-10-08 behaviour).
 # The VM disk stays on the external SSD (~/.umbra/machines -> /Volumes/umbra); this
 # script never touches it.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
 . "$HERE/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 
-GUEST="${RUNNER_UMBRA_MACHINE:-fwb-ci6}"
+GUEST="${RUNNER_UMBRA_MACHINE:-$OS_VM}"
 FOCUS_FILE="${RUNNER_FOCUS_FILE:-$HOME/.umbra/runner-focus.json}"
-KNOWN_OWNERS="${RUNNER_OWNERS:-Ebda-AI-Studio Whisky-11 voidengineer-911}"
+KNOWN_OWNERS="${RUNNER_OWNERS:-$OS_ORGS}"
 UT="${RUNNER_FOCUS_TIMEOUT:-60}"
 QUEUE_MIN="${RUNNER_FOCUS_QUEUE_MIN:-3}"   # a job queued longer than this is "waiting"
 

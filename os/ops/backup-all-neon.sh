@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# FREE local backups of every Force Neon DB to ~/Desktop/projects/_backups/<name>/.
+# FREE local backups of every Force Neon DB to $OS_PROJECTS_DIR/_backups/<name>/.
 # Self-contained: pulls the REAL direct connection string from Neon (neonctl,
 # already authed) — no dependence on repo .env files (which can be placeholders
 # or pooled URLs pg_dump rejects). Keeps the 30 most recent per project, prunes
 # older, so storage never blows up. Requires pg_dump >= server (Neon = PG17).
 #
-# Daily via launchd: ~/Library/LaunchAgents/com.ebda.os.neon-backup.plist
+# Daily via launchd: ~/Library/LaunchAgents/${OS_LAUNCHD_PREFIX}.neon-backup.plist
 # Manual:  bash ~/.claude/scripts/backup-all-neon.sh [--quiet]
 
 # ── stay awake for the whole run ─────────────────────────────────────────────
@@ -24,6 +24,9 @@
 # Re-exec under caffeinate so an idle-sleep assertion is held for the entire run.
 # -i is idle sleep only: a lid close or a deliberate sleep still wins, so this
 # cannot keep the machine awake against the user's wishes.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 if [ -z "${BACKUP_CAFFEINATED:-}" ] && command -v caffeinate >/dev/null 2>&1; then
   export BACKUP_CAFFEINATED=1
   exec caffeinate -i -- "$0" "$@"
@@ -62,7 +65,7 @@ if ! command -v backup_neon_entries >/dev/null 2>&1; then
   exit 2
 fi
 # NEON_API_KEY → neonctl runs headless (no browser OAuth fallback from launchd)
-[ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] && { set -a; . "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}"; set +a; } 2>/dev/null || true   # set -a: children (neonctl, node, curl wrappers) must see the keys
+[ -f "$OS_SERVICES_ENV" ] && { set -a; . "$OS_SERVICES_ENV"; set +a; } 2>/dev/null || true   # set -a: children (neonctl, node, curl wrappers) must see the keys
 export NEON_API_KEY="${NEON_API_KEY:-}"
 
 # TCC canary (2026-07-12): abort when the launchd context cannot see ~/Desktop
@@ -82,8 +85,8 @@ export PATH="${NEON_BACKUP_BIN_PATH:-/opt/homebrew/opt/postgresql@18/bin:/opt/ho
 
 # Default Neon org. A "name:project-id:org-id" entry in lib/backup-projects.sh
 # overrides this per-project (ebda lives under a separate Neon org).
-ORG="org-lingering-river-25973882"
-ROOT="${HOME}/Desktop/projects/_backups"
+ORG="$OS_NEON_ORG"
+ROOT="$OS_PROJECTS_DIR/_backups"
 KEEP="${NEON_BACKUP_KEEP:-30}"  # cap local dumps per project (~1 month at daily; Ahmad 2026-07-01)
 
 # ── Off-machine layer: encrypt + push each fresh dump to a PRIVATE R2 bucket ──
@@ -165,7 +168,7 @@ for entry in ${PROJECTS[@]+"${PROJECTS[@]}"}; do
   fi
 
   # A Neon ORG API key is scoped to ONE org (confirmed 2026-10-10: the
-  # default $NEON_API_KEY, scoped to org-lingering-river-25973882, answers
+  # default $NEON_API_KEY, scoped to $OS_NEON_ORG, answers
   # ebda's org-proud-silence-64969971 with "not allowed to perform this
   # action on the organization" — --org-id alone cannot override a key's own
   # scope). A project whose org differs from $ORG needs ITS OWN key: name it

@@ -27,8 +27,8 @@
 #   ops/post-merge-cleanup.sh --sweep-all               # sweep every Force repo
 #
 # Examples:
-#   ops/post-merge-cleanup.sh Ebda-AI-Studio/ebda-studio 23
-#   ops/post-merge-cleanup.sh --sweep Ebda-AI-Studio/ebda-whatsapp
+#   ops/post-merge-cleanup.sh $OS_ORG/ebda-studio 23
+#   ops/post-merge-cleanup.sh --sweep $OS_ORG/ebda-whatsapp
 #
 # Exit codes:
 #   0 — teardown done (or nothing to do)
@@ -36,6 +36,9 @@
 #   2 — REFUSED a teardown (gate failed) — reported, nothing changed
 #
 # Requirements: bash >=3.2 (macOS default), gh, git
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # S0 (2026-10-26): --help runs nothing; one run at a time (lib/single-instance.sh)
 . "$(dirname "${BASH_SOURCE[0]}")/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
@@ -50,8 +53,8 @@ OS_JOB_NAME=post-merge-cleanup
 if command -v require_projects_access >/dev/null 2>&1; then require_projects_access || exit 0; fi
 
 
-GH_USER="Ebda-AI-Studio"
-PROJECTS_ROOT="$HOME/Desktop/projects"
+GH_USER="$OS_ORG"
+PROJECTS_ROOT="$OS_PROJECTS_DIR"
 WORKTREES_ROOT="$PROJECTS_ROOT/_worktrees"
 
 # Common test-infra files that MUST exist in every Force repo (see

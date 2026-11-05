@@ -15,8 +15,8 @@
 #   * fwb-ci5 was DELETED 2026-07-30, so `umbra list | grep "^fwb-ci5 "` matched
 #     nothing and the script early-exited on every tick — inert for weeks while
 #     still showing up in `launchctl list` as a working safety net.
-#   * The one guest that exists, fwb-ci6, already runs NINE correctly-named
-#     runner services as systemd units. Renaming fwb-ci5 -> fwb-ci6 would have
+#   * The one guest that exists, $OS_VM, already runs NINE correctly-named
+#     runner services as systemd units. Renaming fwb-ci5 -> $OS_VM would have
 #     re-armed the registration path and stacked duplicate, wrongly-named runners
 #     on top of them. The rename was the destructive option, not the fix.
 #
@@ -24,9 +24,12 @@
 # needed or wanted here. Registration stays a deliberate manual act
 # (`umbra runner add`) — see feedback-umbra-ci-runner-recovery-and-gotchas.
 #
-# The com.ebda.os.runner-restore LaunchAgent (every 15 min) was removed
+# The ${OS_LAUNCHD_PREFIX}.runner-restore LaunchAgent (every 15 min) was removed
 # 2026-08-03; it only duplicated ci-runner-guard's own 30-min timer. This script
 # is event-driven now.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
 

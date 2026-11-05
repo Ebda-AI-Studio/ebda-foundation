@@ -2,7 +2,7 @@
 # ops/lib/umbra-provisioning.sh — is `umbra rebuild` provisioning a machine?
 #
 # WHY THIS EXISTS (2026-10-16). At 02:53 ci-runner-guard rebooted a brand-new
-# fwb-ci6 in the middle of `umbra rebuild` ("SSH dead + no runner → reboot").
+# $OS_VM in the middle of `umbra rebuild` ("SSH dead + no runner → reboot").
 # From outside, a guest being provisioned looks exactly like a hung one: ssh
 # drops across the HWE-kernel restart and no runner exists yet. The guard had to
 # be unloaded by hand for the window (Ruling R-2026-10-16-1).
@@ -30,9 +30,12 @@
 # guard's normal behaviour. A broken marker must never silence the guard.
 #
 # Usage:
-#   if reason="$(umbra_provisioning fwb-ci6)"; then … stand down …; fi
+#   if reason="$(umbra_provisioning $OS_VM)"; then … stand down …; fi
 #   umbra_provisioning <machine> [now-epoch]   # now is injectable for tests
 
+# shellcheck source=os-config.sh
+command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
+[ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
 UMBRA_PROVISIONING_MAX_S="${UMBRA_PROVISIONING_MAX_S:-14400}"
 # Command-name match for the rebuild process recorded in pid= (see below).
 UMBRA_PROVISIONING_PROC_RE="${UMBRA_PROVISIONING_PROC_RE:-umbra}"

@@ -6,8 +6,11 @@
 #
 # Auth: reuses the wrangler OAuth token (already authed). Account fixed below.
 # State: ~/.claude/state/cf-deploys.json (last-seen deployment id per target).
-# Daily/interval via launchd: ~/Library/LaunchAgents/com.ebda.os.cf-workers-watch.plist
+# Daily/interval via launchd: ~/Library/LaunchAgents/${OS_LAUNCHD_PREFIX}.cf-workers-watch.plist
 # Manual: bash ~/.claude/scripts/cf-workers-watch.sh
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # S0 (2026-10-26): --help runs nothing; one run at a time (lib/single-instance.sh)
 . "$(dirname "${BASH_SOURCE[0]}")/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
@@ -28,7 +31,7 @@ CF_API_BASE="${CF_API_BASE:-https://api.cloudflare.com/client/v4}"
 # expires every few hours and made this monitor false-alarm 6x). Order: env var,
 # then ~/.whisky-services.env (CF_API_TOKEN=...), then the wrangler oauth fallback.
 TKN="${CF_API_TOKEN:-}"
-[ -z "$TKN" ] && [ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] && TKN="$(grep -E '^CF_API_TOKEN=' "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"')"
+[ -z "$TKN" ] && [ -f "$OS_SERVICES_ENV" ] && TKN="$(grep -E '^CF_API_TOKEN=' "$OS_SERVICES_ENV" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"')"
 [ -z "$TKN" ] && TKN="$(grep -E '^oauth_token' "$HOME/Library/Preferences/.wrangler/config/default.toml" 2>/dev/null | sed -E 's/.*= *"?([^"]+)"?/\1/')"
 STATE_DIR="$HOME/.claude/state"; STATE="$STATE_DIR/cf-deploys.json"
 mkdir -p "$STATE_DIR"; [ -f "$STATE" ] || echo '{}' >"$STATE"

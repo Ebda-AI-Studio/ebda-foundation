@@ -26,6 +26,9 @@
 #
 # Usage:  agent-dispatch.sh "<free text request>" [<from-user>]
 
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
 STATE_DIR="${WHISKY_STATE_DIR:-$HOME/.whisky-os-state}"
@@ -36,7 +39,7 @@ JOBS_LOG="$STATE_DIR/agent-jobs.jsonl"
 
 # Telegram creds live in a local env file (chmod 600, never committed). They were hard-coded
 # defaults here until 2026-10-08; that token sits in git history and must be rotated.
-TG_ENV="${TG_ENV:-${OS_SERVICES_ENV:-$HOME/.whisky-services.env}}"
+TG_ENV="${TG_ENV:-$OS_SERVICES_ENV}"
 # shellcheck source=/dev/null
 [ -f "$TG_ENV" ] && { set -a; . "$TG_ENV"; set +a; }
 : "${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN unset — put it in $TG_ENV}"
@@ -124,7 +127,7 @@ trap 'rm -rf "$LOCK_DIR"' EXIT
 # Inference exists because typing `/cd` before every request is exactly the
 # manual overhead this whole thing is meant to remove. It only fires on a
 # confident whole-word match; anything ambiguous falls through to sticky.
-PROJECTS="$HOME/Desktop/projects"
+PROJECTS="$OS_PROJECTS_DIR"
 INFERRED=""
 LOWER=$(echo "$TEXT" | tr '[:upper:]' '[:lower:]')
 
@@ -133,19 +136,19 @@ LOWER=$(echo "$TEXT" | tr '[:upper:]' '[:lower:]')
 while IFS='|' read -r alias rel; do
   [[ -z "$alias" ]] && continue
   if echo "$LOWER" | grep -qE "(^|[^a-z0-9])${alias}([^a-z0-9]|$)"; then
-    [[ -d "$PROJECTS/$rel" ]] && { INFERRED="$PROJECTS/$rel"; break; }
+    for _d in "$PROJECTS"/$rel; do [[ -d "$_d" ]] && { INFERRED="$_d"; break 2; }; done
   fi
-done <<'ALIASES'
-ebda-store|Ebda-AI-Studio/internal-projects/ebda-store
-ebda-whatsapp|Ebda-AI-Studio/internal-projects/ebda-whatsapp
-whatsapp|Ebda-AI-Studio/internal-projects/ebda-whatsapp
-ebda-studio|Ebda-AI-Studio/internal-projects/ebda-studio
-ebda-foundation|Ebda-AI-Studio/internal-projects/ebda-foundation
-foundation|Ebda-AI-Studio/internal-projects/ebda-foundation
+done <<ALIASES
+ebda-store|$OS_ORG/internal-projects/ebda-store
+ebda-whatsapp|$OS_ORG/internal-projects/ebda-whatsapp
+whatsapp|$OS_ORG/internal-projects/ebda-whatsapp
+ebda-studio|$OS_ORG/internal-projects/ebda-studio
+ebda-foundation|$OS_ORG/internal-projects/ebda-foundation
+foundation|$OS_ORG/internal-projects/ebda-foundation
 digital-card|Personal/projects/digital-card
 mypovonai|Personal/projects/mypovonai
-zero|Whisky-11/internal-projects/zero
-ebda|Ebda-AI-Studio/internal-projects/ebda-store
+zero|*/internal-projects/zero
+ebda|$OS_ORG/internal-projects/ebda-store
 ALIASES
 
 if [[ -n "$INFERRED" ]]; then

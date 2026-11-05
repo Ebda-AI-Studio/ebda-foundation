@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Whisky AI OS — pr-shepherd.sh (launchd com.ebda.os.pr-shepherd, every 20 min)
+# Whisky AI OS — pr-shepherd.sh (launchd ${OS_LAUNCHD_PREFIX}.pr-shepherd, every 20 min)
 #
 # The CI/CD closed loop for OPEN PRs. Born 2026-07-12 after one session spent
 # hours doing these six moves by hand — each is a real incident from that day:
@@ -21,6 +21,9 @@
 #             the failing job names — never blind-rerun a content failure
 #
 # Pure gh API — zero LLM tokens. DRY_RUN=1 previews every action.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,7 +32,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/pr-merge-gate.sh" 2>/dev/null || true
 
 DRY="${DRY_RUN:-0}"
-ORG="Ebda-AI-Studio"
+ORG="$OS_ORG"
 LEDGER="$HOME/.whisky-os-state/pr-shepherd-ledger.json"
 mkdir -p "$(dirname "$LEDGER")"; [ -s "$LEDGER" ] || echo '{}' > "$LEDGER"
 INFRA_RE='exit code 137|Killed +npm|No space left on device|lost communication with the server|shutdown signal|The operation was canceled and the runner'

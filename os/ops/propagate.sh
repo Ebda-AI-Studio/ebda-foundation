@@ -23,7 +23,7 @@
 #   ops/propagate.sh ebda-store ".github/workflows/gitleaks.yml" \
 #       --apply --branch propagate/gitleaks-2026 --title "chore: propagate gitleaks config"
 #
-# Repos (GitHub org: Ebda-AI-Studio/ plus personal): ebda-store, ebda-whatsapp, ebda-studio, mypovonai, digital-card
+# Repos (GitHub org: $OS_ORG/ plus personal): ebda-store, ebda-whatsapp, ebda-studio, mypovonai, digital-card
 # Local checkout dir aliases: see local_dir() (identity unless a dir name differs from the GitHub slug).
 #
 # Requirements: bash >=3.2 (macOS default), python3, gh, git
@@ -32,6 +32,9 @@
 #   0 — completed (even if some repos were skipped)
 #   1 — fatal: bad args, no source files found, missing tools
 
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 
@@ -41,10 +44,10 @@ if command -v require_projects_access >/dev/null 2>&1; then require_projects_acc
 
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-cd "$HERE"
+cd "$HERE" || exit 1
 STATE_DIR="$HOME/.whisky-os-state"; mkdir -p "$STATE_DIR"
-GH_USER="Ebda-AI-Studio"
-PROJECTS_ROOT="$HOME/Desktop/projects"
+GH_USER="$OS_ORG"
+PROJECTS_ROOT="$OS_PROJECTS_DIR"
 NEW_WORKTREE_HELPER="$HOME/.claude/scripts/new-task-worktree.sh"
 
 # ---------------------------------------------------------------------------
@@ -445,7 +448,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 This PR propagates a cross-cutting improvement from \`${SOURCE_SLUG}\`:
 
 - **Source file(s):** \`${PATH_GLOB}\`
-- **Source repo:** \`Ebda-AI-Studio/${SOURCE_SLUG}\`
+- **Source repo:** \`$OS_ORG/${SOURCE_SLUG}\`
 - **Propagation date:** ${DATESTAMP}
 - **Branch:** \`${PROP_BRANCH}\`
 
@@ -473,7 +476,7 @@ print('\n'.join(out))
 - [ ] CI passes
 - [ ] Merge when ready (Whisky OS does NOT auto-merge)
 
-🤖 Opened by [Whisky AI OS propagate.sh](https://github.com/Ebda-AI-Studio/ebda-foundation/blob/main/ops/propagate.sh)"
+🤖 Opened by [Whisky AI OS propagate.sh](https://github.com/$OS_REPO_SLUG/blob/main/ops/propagate.sh)"
 
   PR_URL="$(gh pr create \
     --repo "${GH_USER}/${target_slug}" \

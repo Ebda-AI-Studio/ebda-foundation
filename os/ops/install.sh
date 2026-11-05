@@ -10,6 +10,9 @@
 #     This installer substitutes the CURRENT machine's home + a computed PATH, so
 #     the OS moves to a Mac with a different username (e.g. the ForceAI Studio)
 #     unchanged. Service tokens live in ~/.whisky-services.env (local, never git).
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"; DEST="$HOME/.claude/scripts"
 mkdir -p "$DEST/lib" "$DEST/detectors" "$DEST/journeys" "$DEST/dashboard/public" "$DEST/remediation" "$DEST/watchers" "$DEST/hooks" "$HOME/Library/LaunchAgents"
@@ -62,14 +65,14 @@ _cur="$(git config --global --get core.hooksPath 2>/dev/null || true)"
 if [ -z "$_cur" ] || [ "$_cur" = "$GH" ]; then
   git config --global core.hooksPath "$GH"; echo "global git hooks: core.hooksPath = $GH (dispatcher + $(ls "$GH" | wc -l | tr -d ' ') entries)"
   # husky chaining is OPT-IN per repo (tracked content must never run for an untrusted clone): enable it for Ahmad's own
-  # repos only - origin in his orgs AND under ~/Desktop/projects.
+  # repos only - origin in his orgs AND under $OS_PROJECTS_DIR.
   # shellcheck source=lib/trusted-origin.sh
   _n=0; . "$SRC/lib/trusted-origin.sh"
   while IFS= read -r hd; do
     top="$(dirname "$hd")"; [ -e "$top/.git" ] || continue
     wt_trusted_repo "$top" || continue
     git -C "$top" config --local "${OS_GIT_CHAIN_KEY:-ebda.chainHusky}" true && _n=$((_n+1))
-  done < <(find "$HOME/Desktop/projects" -maxdepth 6 -type d -name .husky -not -path '*/node_modules/*' -not -path '*/_worktrees/*' 2>/dev/null)
+  done < <(find "$OS_PROJECTS_DIR" -maxdepth 6 -type d -name .husky -not -path '*/node_modules/*' -not -path '*/_worktrees/*' 2>/dev/null)
   echo "  ${OS_GIT_CHAIN_KEY:-ebda.chainHusky}=true set on $_n of Ahmad's husky repos (opt-in; all other repos never run tracked hooks globally)"
 else
   echo "  WARN: global core.hooksPath is already $_cur - NOT overwritten; worktree-deps git hook is INACTIVE. Point it at $GH (or chain to $GH/dispatch.sh) to enable."
@@ -123,7 +126,7 @@ else
   echo "note: page-load-monitor Layer 2 (Playwright) not installed — re-run with INSTALL_PLAYWRIGHT=1 to enable (see docs/runbooks/page-load-monitor.md); Layer 1 runs regardless"
 fi
 
-[ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] || { install -m 600 /dev/null "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}"; echo "created empty ~/.whisky-services.env (add tokens to activate probes)"; }
+[ -f "$OS_SERVICES_ENV" ] || { install -m 600 /dev/null "$OS_SERVICES_ENV"; echo "created empty ~/.whisky-services.env (add tokens to activate probes)"; }
 
 # --- 2. compute a machine-appropriate PATH for the plist __PATH__ token ---
 BREW="$(command -v brew >/dev/null 2>&1 && brew --prefix 2>/dev/null || echo /opt/homebrew)"
@@ -139,7 +142,7 @@ echo "computed launchd PATH: $RUN_PATH"
 # launchctl bootout returns BEFORE teardown completes, so wait for the service to
 # disappear then retry bootstrap (without this a random job is left unloaded).
 U=$(id -u); warned=0; n_jobs=0
-for tmpl in "$SRC/launchd/"com.ebda.os.*.plist; do
+for tmpl in "$SRC/launchd/"${OS_LAUNCHD_PREFIX}.*.plist; do
   [ -f "$tmpl" ] || continue
   label=$(basename "$tmpl" .plist)
   target="$HOME/Library/LaunchAgents/$label.plist"
@@ -159,7 +162,7 @@ done
 if [ "$warned" = 1 ]; then
   echo "installed $n_jobs jobs; SOME failed to bootstrap (see WARN) — re-run ops/install.sh or the printed command."
 else
-  echo "installed + scheduled all $n_jobs com.ebda.os.* jobs (runtime in ~/.claude/scripts)."
+  echo "installed + scheduled all $n_jobs ${OS_LAUNCHD_PREFIX}.* jobs (runtime in ~/.claude/scripts)."
 fi
 echo "Verify: ops/self-check.sh (Check 2.5 = TCC guard). Report via the Whisky Whoop bot."
 

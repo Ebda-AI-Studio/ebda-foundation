@@ -17,9 +17,12 @@
 # an R2 API token, Object READ ONLY, scoped to bucket ebda-private. (The Force AI backup creds belong to a
 # DIFFERENT Cloudflare account and cannot read this bucket, checked 2026-10-24.)
 #
-# Daily via launchd: ops/launchd/com.ebda.os.ebda-cf-backup.plist (07:15 local = after the Worker 03:00 UTC sweep).  Manual: bash ops/backup-ebda-cloudflare.sh
+# Daily via launchd: ops/launchd/${OS_LAUNCHD_PREFIX}.ebda-cf-backup.plist (07:15 local = after the Worker 03:00 UTC sweep).  Manual: bash ops/backup-ebda-cloudflare.sh
 # Test seam: EBDA_CF_BACKUP_SRC=<local dir laid out like the bucket> replaces R2 (ops/tests/backup-ebda-cloudflare.test.sh).
 
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 if [ -z "${BACKUP_CAFFEINATED:-}" ] && command -v caffeinate >/dev/null 2>&1; then
   export BACKUP_CAFFEINATED=1
   exec caffeinate -i -- "$0" "$@"
@@ -32,7 +35,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 _ts()   { date +%Y-%m-%dT%H:%M:%S%z; }
 stamp() { printf '%s backup-ebda-cloudflare: %s\n' "$(_ts)" "$*"; }
 
-ROOT="${EBDA_CF_BACKUP_ROOT:-$HOME/Desktop/projects/_backups/ebda-cloudflare}"
+ROOT="${EBDA_CF_BACKUP_ROOT:-$OS_PROJECTS_DIR/_backups/ebda-cloudflare}"
 MIRROR="$ROOT/mirror"
 KEEP="${EBDA_CF_BACKUP_KEEP:-30}"
 CREDS="${EBDA_R2_PULL_CREDS:-$HOME/.claude/.ebda-r2-pull-creds}"

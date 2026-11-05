@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # ops/lib/guest-wedge.sh — decision logic for ops/guest-wedge-watch.sh (pure: state dir + numbers in, verdict out).
 #
-# WHY (2026-10-25 04:36Z, fwb-ci6 restarted by hand). A zombie `git` ran at 96% CPU for 68 min, jbd2 and
+# WHY (2026-10-25 04:36Z, $OS_VM restarted by hand). A zombie `git` ran at 96% CPU for 68 min, jbd2 and
 # kcompactd sat in D state, load 19, ~50% iowait, `umbra exec true` took ~9 min, and GitHub still showed both
 # runners online and busy. Nothing detected it: ci-runner-guard only reacts to a DEAD guest (ssh down / no runner),
 # and a wedged guest answers, slowly. The signature is LATENCY, not death.
@@ -18,6 +18,9 @@
 # State (key=value files, no associative arrays: macOS bash 3.2): $dir/<vm>.state
 #   slow_count, last_probe_s, last_progress, last_alert, last_restart ; $dir/<vm>.overrun-alerted (one key per line)
 
+# shellcheck source=os-config.sh
+command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
+[ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
 GW_SLOW_S="${GW_SLOW_S:-120}"
 GW_JOB_MAX_MIN="${GW_JOB_MAX_MIN:-45}"          # longest timeout-minutes in the fleet is 25-30, plus margin
 GW_NOPROGRESS_MIN="${GW_NOPROGRESS_MIN:-30}"

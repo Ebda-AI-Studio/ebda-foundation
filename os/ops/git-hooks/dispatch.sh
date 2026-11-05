@@ -10,7 +10,7 @@
 # Two jobs, in this order:
 #   1. foundation logic. Only post-checkout does anything: a NEW linked worktree (previous HEAD all zeros AND
 #      git-dir != git-common-dir; a clone never qualifies) gets `wt-deps.sh` in HOOK MODE (WT_DEPS_HOOK=1): only for
-#      TRUSTED repos (origin in Whisky-11/Ebda-AI-Studio/voidengineer-911 AND under ~/Desktop/projects), and a cache-miss
+#      TRUSTED repos (origin in one of $OS_ORGS AND under $OS_PROJECTS_DIR), and a cache-miss
 #      install runs with --ignore-scripts. Never fails the git command; WT_SKIP_DEPS=1 opts out; below the
 #      WT_MIN_FREE_GB (30) floor it only CLONES from a cache hit - it never starts a fresh multi-GB install.
 #   2. CHAIN to the repo's own LOCAL hook, because a global core.hooksPath REPLACES <repo>/.git/hooks:
@@ -21,6 +21,9 @@
 # KNOWN LIMIT (measured): a repo that sets its OWN core.hooksPath (husky v9 sets it to .husky/_) overrides the global
 # one, so git never calls this file there. Those worktrees are covered by hooks/post-worktree-deps.sh (Claude
 # Code) and wt-deps.sh re-arming husky itself.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 name="$(basename "$0")"
 
 if [ "$name" = "post-checkout" ]; then

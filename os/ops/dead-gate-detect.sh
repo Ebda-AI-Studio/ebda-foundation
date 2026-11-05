@@ -23,6 +23,9 @@
 # registrations in ~/.claude/settings.json. A declaration with no registration is
 # a finding. (A comment-text heuristic was tried first and produced false
 # positives on runner-hook-health.sh and migrate-claude-home.sh — hence a marker.)
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:$PATH"
 HERE="$HOME/.claude/scripts"
@@ -33,10 +36,10 @@ ts(){ date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo now; }
 
 # Scan roots: the deployed runtime + (if present) the foundation ops source.
 ROOTS=("$HERE")
-[ -d "$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-foundation/ops" ] && ROOTS+=("$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-foundation/ops")
+[ -d "$OS_HOME/ops" ] && ROOTS+=("$OS_HOME/ops")
 
 IGNORE="${DEAD_GATE_IGNORE:-}"
-[ -z "$IGNORE" ] && [ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] && IGNORE="$(grep -E '^DEAD_GATE_IGNORE=' "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" 2>/dev/null | cut -d= -f2- | tr -d '"')"
+[ -z "$IGNORE" ] && [ -f "$OS_SERVICES_ENV" ] && IGNORE="$(grep -E '^DEAD_GATE_IGNORE=' "$OS_SERVICES_ENV" 2>/dev/null | cut -d= -f2- | tr -d '"')"
 
 # One python pass: for every *.sh under the roots, find `command -v <bin>` in the
 # CODE portion of each line (text before an unquoted '#'), collect (bin,file,line).

@@ -5,10 +5,13 @@
 # alerts the Force AI bot. This is the cheap, scheduled tier; the DEEP qualitative
 # scan (every doc claim vs the live code) is the audit fleet's `docs-parity` lens,
 # run on a cadence via /force-audit (LLM, separate).
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 HERE="$(cd "$(dirname "$0")" && pwd)"
-PROJECTS="$HOME/Desktop/projects"
+PROJECTS="$OS_PROJECTS_DIR"
 # TCC canary: a blind launchd context must abort, not telegram phantom drift
 OS_JOB_NAME=docs-scan
 if command -v require_projects_access >/dev/null 2>&1; then

@@ -4,9 +4,12 @@
 # `docker -a`/`--volumes`). Reports outdated brew formulae instead of upgrading.
 # Telegram-alerts (studio bot) if free disk drops below the threshold.
 #
-# Weekly via launchd: ~/Library/LaunchAgents/com.ebda.os.mac-maintenance.plist
+# Weekly via launchd: ~/Library/LaunchAgents/${OS_LAUNCHD_PREFIX}.mac-maintenance.plist
 # Manual:  bash ~/.claude/scripts/mac-maintenance.sh
 
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # S0 (2026-10-26): --help runs nothing; one run at a time (lib/single-instance.sh)
 . "$(dirname "${BASH_SOURCE[0]}")/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
@@ -24,13 +27,13 @@ export PATH="/opt/homebrew/opt/postgresql@17/bin:/opt/homebrew/bin:/usr/bin:/bin
 TS=$(date '+%Y-%m-%d %H:%M')
 # 20GB free is the weekly-hygiene threshold. It is NOT the fleet's protection:
 # this job runs WEEKLY (Sunday 04:00) and on 2026-09-04 the host fell from
-# healthy to 9GB free inside that window, wedging fwb-ci6 — the guest booted and
+# healthy to 9GB free inside that window, wedging $OS_VM — the guest booted and
 # never reached sshd, console.log 0 bytes. The 30-minute host-disk check now
 # lives in ci-runner-guard.sh (HOST_DISK_WARN_PCT / HOST_DISK_CRIT_PCT), which
 # is the cadence a resource CI writes gigabytes to actually needs. This check
 # stays as the slow backstop and the Telegram digest.
 THRESHOLD_GB=20
-BK="$HOME/Desktop/projects/_backups"
+BK="$OS_PROJECTS_DIR/_backups"
 echo "==== Mac maintenance $TS ===="
 
 # 1. Backup retention safety-net (per-project script keeps 30; drop strays >60d)
@@ -46,7 +49,7 @@ else
   echo "docker: daemon off — skipped"
 fi
 
-# 2b. Self-hosted CI runner VM (Umbra `fwb-ci6`; OrbStack retired 2026-07-12).
+# 2b. Self-hosted CI runner VM (Umbra `$OS_VM`; OrbStack retired 2026-07-12).
 #     Its docker VOLUMES are ephemeral CI service containers (postgres/redis for
 #     tests) that pile up unpruned — 58GB had accumulated by 2026-07-09,
 #     ENOSPC-ing the runners AND silently failing cf-deploy (prod not updated).
@@ -56,7 +59,7 @@ fi
 #     active volume. NOTE: this was DEAD from 2026-07-12→2026-07-22 (gated on the
 #     retired `orb` binary → always skipped); re-pointed at Umbra so the
 #     ENOSPC-prevention actually runs again.
-UM_CI="${RUNNER_UMBRA_MACHINE:-fwb-ci6}"
+UM_CI="${RUNNER_UMBRA_MACHINE:-$OS_VM}"
 if command -v umbra >/dev/null 2>&1 && _ut "$OS_UT_SLOW" umbra list 2>/dev/null | grep -qE "^${UM_CI}[[:space:]]+running"; then
   # NOTE (2026-08-03): this block used to wrap everything in
   #   umbra shell "$UM_CI" -- bash -lc '...'

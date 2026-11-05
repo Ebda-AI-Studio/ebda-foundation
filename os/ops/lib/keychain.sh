@@ -19,7 +19,8 @@ keychain_decode() {
   if [ $# -gt 0 ]; then raw="$1"; else raw="$(cat)"; fi
   raw="${raw#"${raw%%[![:space:]]*}"}"; raw="${raw%"${raw##*[![:space:]]}"}"   # trim only the ends
   if [ -n "$raw" ] && [ $(( ${#raw} % 2 )) -eq 0 ] && printf '%s' "$raw" | grep -Eq '^[0-9a-fA-F]+$'; then
-    decoded="$(_keychain_hex_to_text "$raw")"
+    # sentinel: command substitution strips trailing newlines, which would hide a secret whose only newline is the last byte
+    decoded="$(_keychain_hex_to_text "$raw"; printf x)"; decoded="${decoded%x}"
     case "$decoded" in
       *$'\n'*|AGE-SECRET-KEY-1*|-----BEGIN*)
         printf '%s\n' "$decoded" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'

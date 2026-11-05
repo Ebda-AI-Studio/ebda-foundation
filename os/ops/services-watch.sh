@@ -8,6 +8,9 @@
 # Infra probes use the already-authed CLIs (gh, vercel, railway, neonctl).
 # Observability probes are token-gated: they read API keys from ~/.whisky-services.env
 # and SKIP cleanly if a key is absent — so this runs today and grows as keys are added.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # S0 (2026-10-26): --help runs nothing; one run at a time (lib/single-instance.sh)
 . "$(dirname "${BASH_SOURCE[0]}")/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
@@ -24,8 +27,8 @@ single_instance services-watch
 command -v net_probe >/dev/null 2>&1 || { echo "services-watch: FATAL — lib/net-probe.sh not found; refusing to run with unclassified probes (run ops/install.sh)" >&2; exit 2; }
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ORG="org-lingering-river-25973882"
-GH_USER="Ebda-AI-Studio"
+ORG="$OS_NEON_ORG"
+GH_USER="$OS_ORG"
 findings=()   # human-readable problem lines
 skipped=()    # probes skipped for missing creds
 hard=0        # count of HARD failures (a service actually unreachable / OS blind)
@@ -36,7 +39,7 @@ down() { findings+=("$1"); hard=$((hard+1)); } # hard: real outage/blindness -> 
 skip() { skipped+=("$1"); }
 
 # load optional observability tokens
-SVC_ENV="${WHISKY_SERVICES_ENV:-${OS_SERVICES_ENV:-$HOME/.whisky-services.env}}"
+SVC_ENV="${WHISKY_SERVICES_ENV:-$OS_SERVICES_ENV}"
 # set -a: the env file is plain KEY=value lines. Sourced WITHOUT allexport the
 # vars stay shell-local, so child processes (neonctl reads NEON_API_KEY from its
 # environment) never saw them: 8/8 Neon probes "query failed" (2026-10-03).

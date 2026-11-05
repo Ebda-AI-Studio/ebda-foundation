@@ -5,21 +5,24 @@
 #   2) any Neon project with prod-* snapshot branches or > BRANCH_MAX branches
 # Alerts (Telegram if configured); never deletes. Human-gated remediation.
 # Schedule via launchd/cron; or run on demand. Exit 1 if any violation found.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 # NEON_API_KEY → neonctl runs headless (no browser OAuth fallback from launchd)
-[ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] && { set -a; . "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}"; set +a; } 2>/dev/null || true   # set -a: children (neonctl, node, curl wrappers) must see the keys
+[ -f "$OS_SERVICES_ENV" ] && { set -a; . "$OS_SERVICES_ENV"; set +a; } 2>/dev/null || true   # set -a: children (neonctl, node, curl wrappers) must see the keys
 export NEON_API_KEY="${NEON_API_KEY:-}"
 
-ORG="org-lingering-river-25973882"        # Neon org (neonctl --org-id)
+ORG="$OS_NEON_ORG"        # Neon org (neonctl --org-id)
 # GitHub orgs that bill Ahmad — NOT the Neon org above. Whisky-11 added 2026-10-15:
 # its Actions billing failed and nothing watched it (see check 4).
-GH_ORGS="${GH_ORGS:-Ebda-AI-Studio Whisky-11}"
+GH_ORGS="${GH_ORGS:-$OS_BILLED_ORGS}"
 BRANCH_MAX=8
 REPOS=(
-  Ebda-AI-Studio/ebda-store
-  Ebda-AI-Studio/ebda-whatsapp
-  Ebda-AI-Studio/ebda-studio
+  "$OS_ORG/ebda-store"
+  "$OS_ORG/ebda-whatsapp"
+  "$OS_ORG/ebda-studio"
  
 )
 # Dynamic — pull live project IDs from Neon so this never drifts on a migration.

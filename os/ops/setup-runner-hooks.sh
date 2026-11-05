@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Force AI — install/repair the self-hosted runner's post-job cleanup hook so it
-# NEVER fails a job. Run this ON THE RUNNER HOST (the Umbra fwb-ci6 Ubuntu VM: umbra shell fwb-ci6 --), not macOS directly.
+# NEVER fails a job. Run this ON THE RUNNER HOST (the Umbra $OS_VM Ubuntu VM: umbra shell $OS_VM --), not macOS directly.
 #
 # Why: a post-job hook that exits non-zero fails the job at "Complete runner" after
 # every real check passed → green code becomes un-mergeable. See
@@ -11,6 +11,9 @@
 #   HOOK=/home/ahmad/runner-hooks/post-job-cleanup.sh bash setup-runner-hooks.sh
 #
 # It is idempotent: re-running when already-wrapped is a no-op.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -u
 
 HOOK="${HOOK:-/home/$(whoami)/runner-hooks/post-job-cleanup.sh}"

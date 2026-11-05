@@ -6,7 +6,7 @@
 # secrets, with no diff on our side and no review. That is the class that hit
 # tj-actions/changed-files. A 40-hex SHA cannot be repointed.
 #
-# Measured 2026-09-04 across ~/Desktop/projects: 223 of 229 action references in
+# Measured 2026-09-04 across $OS_PROJECTS_DIR: 223 of 229 action references in
 # 20 repos were mutable tags. Only 13 distinct refs existed, so the whole estate
 # is 11 SHA lookups — the sweep is cheap; not doing it was the expensive part.
 #
@@ -21,6 +21,9 @@
 #   ops/pin-actions.sh --repo .            # rewrite in place
 #   ops/pin-actions.sh --check --repo .    # gate: exit 1 if any ref is mutable
 # Exit: 0 ok · 1 --check found mutable refs · 2 a ref could not be resolved
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
 CHECK=0

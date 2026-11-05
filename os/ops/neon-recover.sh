@@ -18,15 +18,18 @@
 #   cleanup <project_id>                   Delete stale recover-* branches.
 #
 # Env: DR_ORG (default the Force org) · DRY_RUN=1
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
-ORG="${DR_ORG:-org-lingering-river-25973882}"
+ORG="${DR_ORG:-$OS_NEON_ORG}"
 NOTIFY="$HERE/notify.sh"
 DRY="${DRY_RUN:-0}"
 [ -f "$HERE/lib/os-state.sh" ] && source "$HERE/lib/os-state.sh" 2>/dev/null || true
 # NEON_API_KEY → neonctl runs headless (no browser OAuth fallback)
-[ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] && { set -a; . "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}"; set +a; } 2>/dev/null || true   # set -a: children (neonctl, node, curl wrappers) must see the keys
+[ -f "$OS_SERVICES_ENV" ] && { set -a; . "$OS_SERVICES_ENV"; set +a; } 2>/dev/null || true   # set -a: children (neonctl, node, curl wrappers) must see the keys
 export NEON_API_KEY="${NEON_API_KEY:-}"
 
 nctl() { neonctl "$@" --org-id "$ORG" --output json 2>/dev/null; }

@@ -17,11 +17,14 @@
 #   ~/.claude/auto-fix-telegram-update-id — last processed update_id
 #   (prevents re-handling the same /autofix on every poll)
 
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
 # Telegram creds live in a local env file (chmod 600, never committed). They were hard-coded
 # defaults here until 2026-10-08; that token sits in git history and must be rotated.
-TG_ENV="${TG_ENV:-${OS_SERVICES_ENV:-$HOME/.whisky-services.env}}"
+TG_ENV="${TG_ENV:-$OS_SERVICES_ENV}"
 # shellcheck source=/dev/null
 [ -f "$TG_ENV" ] && { set -a; . "$TG_ENV"; set +a; }
 : "${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN unset — put it in $TG_ENV}"
@@ -92,9 +95,9 @@ echo "$RESP" | jq -c '.result[]' 2>/dev/null | while IFS= read -r upd; do
       # Reset state file so latest failures are re-evaluated
       if [[ -f ~/.claude/auto-fix-state.json ]]; then
         jq '
-          .["Ebda-AI-Studio/ebda-store"] = "0"
-          | .["Ebda-AI-Studio/ebda-whatsapp"] = "0"
-          | .["Ebda-AI-Studio/ebda-studio"] = "0"
+          .["$OS_ORG/ebda-store"] = "0"
+          | .["$OS_ORG/ebda-whatsapp"] = "0"
+          | .["$OS_ORG/ebda-studio"] = "0"
         ' ~/.claude/auto-fix-state.json > /tmp/auto-fix-state.json.tmp
         mv /tmp/auto-fix-state.json.tmp ~/.claude/auto-fix-state.json
       fi
@@ -107,13 +110,13 @@ echo "$RESP" | jq -c '.result[]' 2>/dev/null | while IFS= read -r upd; do
       log "$FROM requested /status"
       STATE=$(cat ~/.claude/auto-fix-state.json 2>/dev/null || echo "{}")
       # Get latest CI run state for each repo
-      FWB_LATEST=$(gh run list --repo Ebda-AI-Studio/ebda-store --workflow=ci.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
+      FWB_LATEST=$(gh run list --repo $OS_ORG/ebda-store --workflow=ci.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
                     | jq -r '.[0] | "\(.status) \(.conclusion // "-") sha=\(.headSha[0:8])"' 2>/dev/null || echo "?")
-      WBS_LATEST=$(gh run list --repo Ebda-AI-Studio/ebda-whatsapp --workflow=pr-validation.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
+      WBS_LATEST=$(gh run list --repo $OS_ORG/ebda-whatsapp --workflow=pr-validation.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
                     | jq -r '.[0] | "\(.status) \(.conclusion // "-") sha=\(.headSha[0:8])"' 2>/dev/null || echo "?")
-      CRM_LATEST=$(gh run list --repo Ebda-AI-Studio/ebda-studio --workflow=ci.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
+      CRM_LATEST=$(gh run list --repo $OS_ORG/ebda-studio --workflow=ci.yml --limit 1 --json status,conclusion,headSha 2>/dev/null \
                     | jq -r '.[0] | "\(.status) \(.conclusion // "-") sha=\(.headSha[0:8])"' 2>/dev/null || echo "?")
-      OPEN_PRS=$(gh pr list --repo Ebda-AI-Studio/ebda-store --state=open --head "auto-fix/" --json number,title 2>/dev/null \
+      OPEN_PRS=$(gh pr list --repo $OS_ORG/ebda-store --state=open --head "auto-fix/" --json number,title 2>/dev/null \
                    | jq -r '.[] | "  #\(.number) \(.title[0:60])"' 2>/dev/null || echo "  none")
       reply "📊 *CI Status*
 *FWB:* \`$FWB_LATEST\`

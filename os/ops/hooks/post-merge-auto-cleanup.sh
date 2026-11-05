@@ -17,6 +17,9 @@
 #
 # stdin: Claude Code PostToolUse payload. ALWAYS exits 0 — a cleanup hook must never fail a tool.
 # Env: POST_MERGE_HYGIENE_BIN overrides the hygiene script path (tests).
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 payload="$(cat 2>/dev/null || true)"
 
@@ -93,12 +96,12 @@ mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 nohup bash "$HYGIENE" --repo "$repo" --skip "$skip" >> "$LOG" 2>&1 &
 disown 2>/dev/null || true
 
-REPO="$repo" SKIP="$skip" python3 -I -c '
+REPO="$repo" SKIP="$skip" PROJ="$OS_PROJECTS_DIR" python3 -I -c '
 import json, os
 repo, skip = os.environ["REPO"], os.environ["SKIP"]
 msg = ("post-merge cleanup started for " + repo +
        " (log: ~/Library/Logs/forceai-post-merge-cleanup.log).")
-if skip and os.path.realpath(skip).startswith(os.path.realpath(os.path.expanduser("~/Desktop/projects/_worktrees")) + "/"):
+if skip and os.path.realpath(skip).startswith(os.path.realpath(os.path.join(os.environ["PROJ"], "_worktrees")) + "/"):
     msg += (" The worktree this session is in (" + skip + ") is kept; "
             "it is removed by the hourly sweep once you leave it.")
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": msg}}))

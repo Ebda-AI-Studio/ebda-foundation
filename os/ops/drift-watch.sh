@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Whisky AI OS — drift-watch.sh (weekly launchd com.ebda.os.drift-watch)
+# Whisky AI OS — drift-watch.sh (weekly launchd ${OS_LAUNCHD_PREFIX}.drift-watch)
 #
 # Sources of truth drift silently — that's the failure class behind three
 # 2026-07-11 finds: installed ~/.claude/scripts edits never synced to ops/,
@@ -10,6 +10,9 @@
 #   1. installed ~/.claude/scripts/*.sh|lib/* vs foundation ops/ (byte diff)
 #   2. foundation repo: unpushed commits + uncommitted tracked changes
 #   3. installed LaunchAgents vs ops/launchd templates (token-substituted)
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # S0 (2026-10-26): --help runs nothing; one run at a time (lib/single-instance.sh)
 . "$(dirname "${BASH_SOURCE[0]}")/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
@@ -27,7 +30,7 @@ if command -v require_projects_access >/dev/null 2>&1; then require_projects_acc
 
 # Resolve the foundation checkout (source of truth) — this script may run from
 # the INSTALLED copy in ~/.claude/scripts, so never assume $HERE is the repo.
-F="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-foundation"
+F="$OS_HOME"
 OPS="$F/ops"; INST="$HOME/.claude/scripts"
 issues=()
 
@@ -55,7 +58,7 @@ dirty=$(git -C "$F" status --porcelain --untracked-files=no 2>/dev/null | wc -l 
 
 # --- 3. plists vs templates ---
 BREW="$(command -v brew >/dev/null 2>&1 && brew --prefix 2>/dev/null || echo /opt/homebrew)"
-for tmpl in "$OPS/launchd/"com.ebda.os.*.plist; do
+for tmpl in "$OPS/launchd/"${OS_LAUNCHD_PREFIX}.*.plist; do
   [ -f "$tmpl" ] || continue
   label=$(basename "$tmpl" .plist)
   inst_plist="$HOME/Library/LaunchAgents/$label.plist"

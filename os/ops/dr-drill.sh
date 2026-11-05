@@ -14,6 +14,9 @@
 #
 # Env: DRY_RUN=1 (skip mutations, report intent) · DR_MODE=pitr|full (default full)
 #      DR_RESTORE_TIMEOUT (seconds for the dump restore, default 420)
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -23,10 +26,10 @@ export PATH="/opt/homebrew/opt/postgresql@17/bin:/opt/homebrew/bin:$PATH"
 # Load NEON_API_KEY so neonctl runs headless — long-lived key takes precedence over
 # OAuth and NEVER opens a browser (the daily interactive-auth-tab bug). Fall back to
 # the OAuth token only if no key is set.
-[ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] && { set -a; . "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}"; set +a; } 2>/dev/null || true   # set -a: children (neonctl, node, curl wrappers) must see the keys
+[ -f "$OS_SERVICES_ENV" ] && { set -a; . "$OS_SERVICES_ENV"; set +a; } 2>/dev/null || true   # set -a: children (neonctl, node, curl wrappers) must see the keys
 export NEON_API_KEY="${NEON_API_KEY:-}"
 
-ORG="${DR_ORG:-org-lingering-river-25973882}"
+ORG="${DR_ORG:-$OS_NEON_ORG}"
 DR_MODE="${DR_MODE:-full}"
 DR_RESTORE_TIMEOUT="${DR_RESTORE_TIMEOUT:-420}"
 # Bounded-restore needs a `timeout` binary. macOS ships NEITHER GNU timeout nor
@@ -39,13 +42,13 @@ command -v timeout  >/dev/null 2>&1 && TO_BIN="timeout"
 [ -z "$TO_BIN" ] && command -v gtimeout >/dev/null 2>&1 && TO_BIN="gtimeout"
 DRY_RUN="${DRY_RUN:-0}"
 
-# project_id : friendly : backup_dir_name  (backups at ~/Desktop/projects/_backups/<dir>/)
+# project_id : friendly : backup_dir_name  (backups at $OS_PROJECTS_DIR/_backups/<dir>/)
 PROJECTS=(
   "crimson-king-40424588:fwb:ebda-store"
   "spring-dew-80973306:wbs:ebda-whatsapp"
 )
 
-BACKUPS="$HOME/Desktop/projects/_backups"
+BACKUPS="$OS_PROJECTS_DIR/_backups"
 fails=(); warns=(); oks=(); details_json="["
 
 nctl() { neonctl "$@" --org-id "$ORG" --output json 2>/dev/null; }

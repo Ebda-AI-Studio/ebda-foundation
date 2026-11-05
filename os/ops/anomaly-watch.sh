@@ -20,6 +20,9 @@
 #
 # Usage:  ops/anomaly-watch.sh            # snapshot + print
 #         ops/anomaly-watch.sh --notify   # also Telegram new/spiking-since-deploy
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # S0 (2026-10-26): --help runs nothing; one run at a time (lib/single-instance.sh)
 . "$(dirname "${BASH_SOURCE[0]}")/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
@@ -32,17 +35,17 @@ single_instance anomaly-watch
 # would fail silently instead of bounding anything.
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
-SVC_ENV="${WHISKY_SERVICES_ENV:-${OS_SERVICES_ENV:-$HOME/.whisky-services.env}}"
+SVC_ENV="${WHISKY_SERVICES_ENV:-$OS_SERVICES_ENV}"
 [ -f "$SVC_ENV" ] && { set -a; . "$SVC_ENV"; set +a; }
-ORG="${SENTRY_ORG:-org-lingering-river-25973882}"
+ORG="${SENTRY_ORG:-$OS_SENTRY_ORG}"
 # sentry project -> github repo (for the "likely cause" commit lookup).
 # bash 3.2-safe (macOS /bin/bash has no associative arrays).
 repo_of() {
   case "$1" in
-    ebda-api|ebda-web|ebda-admin) echo "Ebda-AI-Studio/ebda-store" ;;
-    wbs) echo "Ebda-AI-Studio/ebda-whatsapp" ;;
+    ebda-api|ebda-web|ebda-admin) echo "$OS_ORG/ebda-store" ;;
+    wbs) echo "$OS_ORG/ebda-whatsapp" ;;
     *) echo "" ;;
   esac
 }

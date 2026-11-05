@@ -13,6 +13,9 @@
 # Guardrails: per-class cooldown, count-in-window threshold, full audit log,
 # DRY_RUN=1 simulates. Read-only against Sentry; the only mutation is an OPT-IN
 # compute redeploy that self-heal.sh itself guards (confirm/cooldown/max-attempts).
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:$PATH"
 HERE="$HOME/.claude/scripts"
@@ -26,9 +29,9 @@ log(){ printf '%s [app-error-heal] %s\n' "$(ts)" "$*" >>"$LOG"; }
 [ -f "$REG" ] || { log "no registry at $REG"; exit 1; }
 # creds
 STOK="${SENTRY_AUTH_TOKEN:-}"
-[ -z "$STOK" ] && [ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] && STOK="$(grep -E '^SENTRY_AUTH_TOKEN=' "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" 2>/dev/null | cut -d= -f2- | tr -d '"')"
+[ -z "$STOK" ] && [ -f "$OS_SERVICES_ENV" ] && STOK="$(grep -E '^SENTRY_AUTH_TOKEN=' "$OS_SERVICES_ENV" 2>/dev/null | cut -d= -f2- | tr -d '"')"
 SORG="${SENTRY_ORG:-}"
-[ -z "$SORG" ] && [ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] && SORG="$(grep -E '^SENTRY_ORG=' "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" 2>/dev/null | cut -d= -f2- | tr -d '"')"
+[ -z "$SORG" ] && [ -f "$OS_SERVICES_ENV" ] && SORG="$(grep -E '^SENTRY_ORG=' "$OS_SERVICES_ENV" 2>/dev/null | cut -d= -f2- | tr -d '"')"
 [ -n "$STOK" ] && [ -n "$SORG" ] || { log "SENTRY_AUTH_TOKEN/SENTRY_ORG not set — skip"; echo "app-error-heal: sentry not configured — skip"; exit 0; }
 
 COOLDOWN=$(python3 -c "import json;print(json.load(open('$REG')).get('cooldown_sec',3600))" 2>/dev/null || echo 3600)

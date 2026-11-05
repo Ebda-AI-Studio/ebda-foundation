@@ -26,6 +26,9 @@
 #
 # Usage: gate-guard.sh            (act + alert)
 #        DRY_RUN=1 gate-guard.sh  (detect + log only, no mutation, no alert)
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
 # _ut (hard wall clock on external calls) lives in the shared lib — without this
@@ -47,7 +50,7 @@ STALE_DAYS="${GATE_STALE_DAYS:-21}"
 # Ahmad's personal account, so new repos are covered the moment they exist (no
 # hardcoded list to drift). Repos without any CI gate workflow simply match
 # nothing below and are skipped. Override with GATE_REPOS="owner/a owner/b".
-GATE_OWNERS="${GATE_OWNERS:-Ebda-AI-Studio Whisky-11 voidengineer-911}"  # keep in sync with runner-focus.sh + runner-reregister.sh
+GATE_OWNERS="${GATE_OWNERS:-$OS_ORGS}"  # keep in sync with runner-focus.sh + runner-reregister.sh
 _discover_repos(){
   local o
   for o in $GATE_OWNERS; do

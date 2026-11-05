@@ -14,8 +14,11 @@
 # fix tier (anomaly-diff, dreaming, auto-PR) layers on top of this signal later —
 # this is the deterministic substrate that makes "the OS runs independently" true.
 #
-# Schedule: launchd com.ebda.os.os-watch (every 2h). Runs on the Mac independent of
+# Schedule: launchd ${OS_LAUNCHD_PREFIX}.os-watch (every 2h). Runs on the Mac independent of
 # any Claude session. State for the green→red anomaly lives in ~/.whisky-os-state/.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # S0 (2026-10-26): --help runs nothing; one run at a time (lib/single-instance.sh)
 . "$(dirname "${BASH_SOURCE[0]}")/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
@@ -24,7 +27,7 @@ args_help "${BASH_SOURCE[0]}" "$@"
 single_instance os-watch
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-GH_USER="Ebda-AI-Studio"
+GH_USER="$OS_ORG"
 NOTIFY="$HERE/notify.sh"
 STATE_DIR="${WHISKY_OS_STATE:-$HOME/.whisky-os-state}"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
@@ -168,7 +171,7 @@ probe_runners() {
   # Don't hardcode runner names (the old windows-wsl-fwb* list went stale when the
   # runners moved hosts and this probe silently checked nothing for weeks) —
   # enumerate whatever is registered and flag any not-online. (Runner host is now
-  # the Umbra VM fwb-ci6; OrbStack was retired 2026-07.)
+  # the Umbra VM $OS_VM; OrbStack was retired 2026-07.)
   local slug="$1"
   # Fleet parked (2026-08-09) => a runner being offline is the INTENDED state, not
   # a fault. Without this, os-watch both notes the "outage" AND fires
@@ -194,7 +197,7 @@ probe_runners() {
     nohup "$HOME/.claude/scripts/ci-runner-guard.sh" >/dev/null 2>&1 &
     trg=" — auto-heal TRIGGERED (ci-runner-guard boots the stopped Umbra VM)"
   fi
-  note "$slug: self-hosted runner(s) offline ($offline)$trg. If it persists, run 'umbra start fwb-ci6' and check 'umbra shell fwb-ci6 -- systemctl status actions.runner.*'."
+  note "$slug: self-hosted runner(s) offline ($offline)$trg. If it persists, run 'umbra start $OS_VM' and check 'umbra shell $OS_VM -- systemctl status actions.runner.*'."
 }
 
 for slug in "${REPOS[@]}"; do

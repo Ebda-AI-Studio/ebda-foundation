@@ -10,7 +10,7 @@
 #     umbra -> /usr/local/bin/umbra
 #     gdate -> /opt/local/bin/gdate      (MacPorts)
 #
-# But every com.ebda.os.* plist hardcodes:
+# But every ${OS_LAUNCHD_PREFIX}.* plist hardcodes:
 #     PATH=~/.local/bin:/opt/homebrew/bin:/opt/homebrew/opt/postgresql@17/bin:
 #          /opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 #
@@ -20,7 +20,7 @@
 #
 # This is not a cosmetic warning. `mac-maintenance.sh:48` gates the Umbra CI
 # docker prune on `command -v umbra`, so the prune has been silently skipping —
-# the exact failure that filled the fwb-ci6 guest to 58G/58G and surfaced as
+# the exact failure that filled the $OS_VM guest to 58G/58G and surfaced as
 # "flaky npm install" in unrelated CI jobs. A gate whose binary is missing fails
 # OPEN and silent; that is the whole point of the dead-gate detector.
 #

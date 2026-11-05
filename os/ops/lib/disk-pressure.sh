@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Guest disk-pressure classification for the CI fleet.
 #
-# Extracted so the rule below is testable. 2026-08-23: fwb-ci6 reached 0 bytes
+# Extracted so the rule below is testable. 2026-08-23: $OS_VM reached 0 bytes
 # free of 58G (18 runners, ~40G of _work). Every runner lost its GitHub session,
 # all 18 registrations went offline, and four repos sat with runs that could
 # never start. Nothing watched the disk.
@@ -12,6 +12,9 @@
 # An unreadable or non-numeric reading is UNKNOWN, never "ok" and never 0%.
 # Treating a guest we could not reach as 0% used is precisely how a dead host
 # reports healthy — the failure mode this guard exists to catch.
+# shellcheck source=os-config.sh
+command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
+[ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
 disk_pressure_level() {
   local used="${1-}" warn="${2:-80}" crit="${3:-90}"
   case "$used" in
@@ -31,7 +34,7 @@ disk_pressure_level() {
 # 12 GB of 460 GB while the Data volume beside it is at 98%. Container FREE space
 # is shared so the available figure agrees, but used% does not. Callers pass
 # /System/Volumes/Data on macOS. Added 2026-09-04 after a 98%-full host wedged
-# fwb-ci6: the guest booted and never reached sshd, console.log stayed 0 bytes.
+# $OS_VM: the guest booted and never reached sshd, console.log stayed 0 bytes.
 host_disk_used_pct() {
   local vol="${1:-/}"
   [ -d "$vol" ] || return 0            # no path -> empty -> unknown

@@ -17,12 +17,15 @@
 #
 # Deps: bash 3.2+, python3 (stdlib). claude + gh optional (fail-open).
 # ============================================================
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # CLAUDE_BIN lets a test point this at a stub. Without it the model call is
 # untestable offline, which is why none of the OS's 17 model-calling scripts
 # had a single behavioural test. Defaults to the real CLI.
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 . ./lib/os-state.sh 2>/dev/null || true
 
@@ -63,7 +66,7 @@ _today()   { python3 -c "import datetime;print(datetime.date.today().isoformat()
 STATE_DIR="$HOME/.whisky-os-state"
 mkdir -p "$STATE_DIR"
 
-PROJECTS="$HOME/Desktop/projects"
+PROJECTS="$OS_PROJECTS_DIR"
 REPO_DIR="$PROJECTS/$REPO"
 
 TODAY="$(_today)"
@@ -260,10 +263,10 @@ echo ""
 # ---- (b) recent deploys via gh (skip gracefully if absent) ----
 DEPLOYS_CONTEXT=""
 if command -v gh >/dev/null 2>&1; then
-  RUN_LINES="$(gh run list --repo "Ebda-AI-Studio/$REPO" --branch main --limit 8 \
+  RUN_LINES="$(gh run list --repo "$OS_ORG/$REPO" --branch main --limit 8 \
     --json displayTitle,conclusion,status,headSha,createdAt \
     2>/dev/null | python3 "$WORK_DIR/parse_runs.py" 2>/dev/null || true)"
-  PR_LINES="$(gh pr list --repo "Ebda-AI-Studio/$REPO" --state merged --limit 5 \
+  PR_LINES="$(gh pr list --repo "$OS_ORG/$REPO" --state merged --limit 5 \
     --json number,title,mergedAt 2>/dev/null | python3 "$WORK_DIR/parse_prs.py" 2>/dev/null || true)"
 
   if [ -n "$RUN_LINES" ] || [ -n "$PR_LINES" ]; then

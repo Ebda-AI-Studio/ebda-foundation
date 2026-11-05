@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Whisky AI OS — workspace-hygiene.sh (hourly launchd com.ebda.os.workspace-hygiene)
+# Whisky AI OS — workspace-hygiene.sh (hourly launchd ${OS_LAUNCHD_PREFIX}.workspace-hygiene)
 #
 # Keeps the working forest clean WITHOUT ever destroying work (2026-07-11, on
 # Ahmad's ask: "prevent dirty worktrees and things left behind I don't know about").
@@ -28,6 +28,9 @@
 #   --skip <path>          never remove the worktree at/containing <path> (the calling session's cwd —
 #                          removing it would break that session). Reported as "kept (active session)";
 #                          the hourly sweep removes it once the session has left.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 [ -n "${OS_SHIM_DIR:-}" ] && PATH="$OS_SHIM_DIR:$PATH"   # test seam: fake du/df/rm/umbra shims
@@ -90,8 +93,8 @@ SKIP_P=""
 fetched=0
 # every process's working dir (shells, Claude sessions, dev servers); a tree in use is never removed
 live_cwds="${HYGIENE_LIVE_CWDS-$(lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')}"
-WT_ROOT="$HOME/Desktop/projects/_worktrees"
-PROJECTS="$HOME/Desktop/projects"
+WT_ROOT="$OS_PROJECTS_DIR/_worktrees"
+PROJECTS="$OS_PROJECTS_DIR"
 PROJECTS_ROOT="$PROJECTS"
 stripped=()
 # node_modules is gitignored + reproducible (wt-deps.sh); drop it from MERGED trees we keep for uncommitted junk

@@ -6,15 +6,18 @@
 #
 # OFF BY DEFAULT. It does nothing unless ~/.claude/ebda-foundation-bump.enabled exists AND a consumer has a foundation.lock.json
 # (the consumers adopt the foundation at plan steps F2/F3). Without --apply it only reports what it would do.
-# usage: ebda-foundation-bump.sh [--apply]      log: ~/Library/Logs/ebda-foundation-bump.log (launchd com.ebda.os.ebda-foundation-bump, 09:17)
+# usage: ebda-foundation-bump.sh [--apply]      log: ~/Library/Logs/ebda-foundation-bump.log (launchd ${OS_LAUNCHD_PREFIX}.ebda-foundation-bump, 09:17)
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 APPLY=0; [ "${1:-}" = "--apply" ] && APPLY=1
-ROOT="${EBDA_ROOT:-$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects}"
+ROOT="${EBDA_ROOT:-$OS_PROJECTS_DIR/$OS_ORG/internal-projects}"
 FOUNDATION="${EBDA_FOUNDATION_DIR:-$ROOT/ebda-foundation}"
 ENABLED="${EBDA_BUMP_ENABLED_FILE:-$HOME/.claude/ebda-foundation-bump.enabled}"
 TRAIN_FILE="${EBDA_TRAIN_FILE:-}"            # optional: a file containing the word RUNNING while a merge wave is in flight
 SCRIPTS="${EBDA_SCRIPTS_DIR:-$HOME/.claude/scripts}"
-CONSUMERS="${EBDA_CONSUMERS:-ebda-store:Whisky-11/ebda-store ebda-whatsapp:Whisky-11/ebda-whatsapp}"
+CONSUMERS="${EBDA_CONSUMERS:-ebda-store:$OS_ORG/ebda-store ebda-whatsapp:$OS_ORG/ebda-whatsapp}"
 log() { echo "$(date '+%F %T') ebda-foundation-bump: $*"; }
 
 [ -f "$ENABLED" ] || { log "disabled (no $ENABLED); nothing to do"; exit 0; }

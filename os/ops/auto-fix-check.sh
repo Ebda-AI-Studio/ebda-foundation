@@ -18,7 +18,7 @@
 #     (branch SHA superseded, latest run green/in-flight, PR merged/closed,
 #     or an auto-fix/* branch — loop guard). Prevents redundant/harmful PRs.
 #   - WORKTREE ISOLATION: each fix runs in a throwaway git worktree based on
-#     the failing commit (~/Desktop/projects/_worktrees/<repo>__autofix-<sha>),
+#     the failing commit ($OS_PROJECTS_DIR/_worktrees/<repo>__autofix-<sha>),
 #     never the shared root checkout — so it can't switch a root's branch under
 #     a concurrent interactive session (parallel-session-worktree rule).
 #   - SECURITY GUARDRAILS: the claude -p prompt forbids weakening auth/MFA,
@@ -28,6 +28,9 @@
 # State: ~/.claude/auto-fix-state.json
 #   { "ebda-store": "12345", "ebda-whatsapp": "67890", ... }
 
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # CLAUDE_BIN lets a test point this at a stub. Without it the model call is
 # untestable offline, which is why none of the OS's 17 model-calling scripts
@@ -45,9 +48,9 @@ if command -v require_projects_access >/dev/null 2>&1; then require_projects_acc
 # ---------------------- Config ----------------------
 # repo:workflow_filename — per-repo because WBS uses pr-validation.yml, others use ci.yml
 REPOS=(
-  "Ebda-AI-Studio/ebda-store:ci.yml"
-  "Ebda-AI-Studio/ebda-whatsapp:pr-validation.yml"
-  "Ebda-AI-Studio/ebda-studio:ci.yml"
+  "$OS_ORG/ebda-store:ci.yml"
+  "$OS_ORG/ebda-whatsapp:pr-validation.yml"
+  "$OS_ORG/ebda-studio:ci.yml"
 )
 STATE_FILE="$HOME/.claude/auto-fix-state.json"
 LOCK_DIR="/tmp/auto-fix-check.lock.d"
@@ -82,7 +85,7 @@ PAUSE_SENTINEL="$HOME/.claude/auto-fix-paused"
 LOOKBACK_MIN=720
 # Telegram creds live in a local env file (chmod 600, never committed). They were hard-coded
 # defaults here until 2026-10-08; that token sits in git history and must be rotated.
-TG_ENV="${TG_ENV:-${OS_SERVICES_ENV:-$HOME/.whisky-services.env}}"
+TG_ENV="${TG_ENV:-$OS_SERVICES_ENV}"
 # shellcheck source=/dev/null
 [ -f "$TG_ENV" ] && { set -a; . "$TG_ENV"; set +a; }
 : "${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN unset — put it in $TG_ENV}"
@@ -184,7 +187,7 @@ increment_daily_count() {
 # ---------------------- Per-repo check ----------------------
 for REPO_ENTRY in "${REPOS[@]}"; do
   [ -n "${AUTOFIX_ONLY_REPO:-}" ] && [ "${REPO_ENTRY%:*}" != "$AUTOFIX_ONLY_REPO" ] && continue
-  REPO="${REPO_ENTRY%:*}"           # "Ebda-AI-Studio/foo"
+  REPO="${REPO_ENTRY%:*}"           # "$OS_ORG/foo"
   WORKFLOW="${REPO_ENTRY#*:}"        # "ci.yml" or "pr-validation.yml"
   log "checking $REPO (workflow=$WORKFLOW)"
   LAST_ID=$(get_last_processed "$REPO")
@@ -332,10 +335,10 @@ for REPO_ENTRY in "${REPOS[@]}"; do
   # ---------- Dispatch claude -p for investigation + PR ----------
   REPO_SHORT=$(basename "$REPO")
   case "$REPO_SHORT" in
-    ebda-store) LOCAL_PATH="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-store" ;;
-    ebda-whatsapp)  LOCAL_PATH="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-whatsapp" ;;
-    ebda-studio)       LOCAL_PATH="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-studio" ;;
-    *) LOCAL_PATH="$HOME/Desktop/projects/$REPO_SHORT" ;;
+    ebda-store) LOCAL_PATH="$OS_PROJECTS_DIR/$OS_ORG/internal-projects/ebda-store" ;;
+    ebda-whatsapp)  LOCAL_PATH="$OS_PROJECTS_DIR/$OS_ORG/internal-projects/ebda-whatsapp" ;;
+    ebda-studio)       LOCAL_PATH="$OS_PROJECTS_DIR/$OS_ORG/internal-projects/ebda-studio" ;;
+    *) LOCAL_PATH="$OS_PROJECTS_DIR/$REPO_SHORT" ;;
   esac
 
   if [[ ! -d "$LOCAL_PATH/.git" ]]; then
@@ -362,7 +365,7 @@ for REPO_ENTRY in "${REPOS[@]}"; do
   # commit that failed, so concurrent interactive sessions + this watchdog can't
   # collide on one checkout (the parallel-session-worktree-orchestration rule).
   AUTOFIX_BRANCH="auto-fix/${HEAD_SHA:0:8}"
-  WT="$HOME/Desktop/projects/_worktrees/${REPO_SHORT}__autofix-${HEAD_SHA:0:8}"
+  WT="$OS_PROJECTS_DIR/_worktrees/${REPO_SHORT}__autofix-${HEAD_SHA:0:8}"
   BASE_REF="${HEAD_BRANCH:-main}"
 
   # Scrub any leftovers from a prior aborted run for this SHA.
@@ -371,7 +374,7 @@ for REPO_ENTRY in "${REPOS[@]}"; do
   git -C "$LOCAL_PATH" worktree prune 2>/dev/null || true
 
   git -C "$LOCAL_PATH" fetch origin "$BASE_REF" -q 2>/dev/null || git -C "$LOCAL_PATH" fetch origin -q 2>/dev/null || true
-  mkdir -p "$HOME/Desktop/projects/_worktrees"
+  mkdir -p "$OS_PROJECTS_DIR/_worktrees"
   if ! git -C "$LOCAL_PATH" worktree add -b "$AUTOFIX_BRANCH" "$WT" "$HEAD_SHA" >>"$LOG_FILE" 2>&1; then
     log "  worktree create failed (sha ${HEAD_SHA:0:8}) — telegram report only"
     send_telegram "⚠️ Auto-fix couldn't create an isolated worktree for \`$REPO\` \`${HEAD_SHA:0:8}\`. Needs manual triage."
@@ -400,7 +403,7 @@ HARD CONSTRAINTS (absolute — if a fix would require violating ANY of these, do
 WHEN THE FIX IS READY: stage with 'git add <specific paths>' (NEVER 'git add -A'), lowercase conventional-commit message, push '$AUTOFIX_BRANCH', then open a PR with base branch '$BASE_REF' describing what failed, the fix, and how you verified it. Finally Telegram the PR URL via https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage to chat ${TELEGRAM_ALERT_CHAT_ID}."
 
   (
-    cd "$WT"
+    cd "$WT" || exit 1
     # Headless: skip interactive prompts so claude can run gh/git to open the
     # PR. Trusted context (Ahmad's machine + own repos); the HARD CONSTRAINTS
     # above + daily cap + isolated worktree bound the blast radius.

@@ -33,7 +33,7 @@
 #   ops/run-tests.sh --quiet    # only print failures + the summary
 # Exit: non-zero if any suite fails OR any class discovers nothing.
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 QUIET=0
 [ "${1:-}" = "--quiet" ] && QUIET=1

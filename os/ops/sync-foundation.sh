@@ -38,6 +38,9 @@
 #   0 — in sync (or synced successfully)
 #   1 — fatal (not a repo / missing tools)
 #   3 — (--check) drift detected, nothing changed
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 
@@ -46,7 +49,7 @@ OS_JOB_NAME=sync-foundation
 if command -v require_projects_access >/dev/null 2>&1; then require_projects_access || exit 0; fi
 
 
-REPO_DEFAULT="$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-foundation"
+REPO_DEFAULT="$OS_HOME"
 REPO="${FOUNDATION_REPO:-$REPO_DEFAULT}"
 # The only paths this script may auto-commit.
 #
@@ -73,7 +76,7 @@ info() { printf '%s\n' "$*"; }
 
 command -v git >/dev/null 2>&1 || { err "git not found"; exit 1; }
 [ -d "$REPO/.git" ] || { err "not a repo: $REPO"; exit 1; }
-cd "$REPO"
+cd "$REPO" || exit 1
 
 br="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 info "── sync-foundation: $REPO ($br) ──"

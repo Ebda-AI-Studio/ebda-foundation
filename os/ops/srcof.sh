@@ -13,8 +13,11 @@
 # exist upstream) and exits non-zero if it cannot. It never guesses.
 #
 #   srcof @opennextjs/cloudflare@1.19.11
-#   srcof @prisma/client --cwd ~/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-store/apps/api
+#   srcof @prisma/client --cwd $OS_PROJECTS_DIR/$OS_ORG/internal-projects/ebda-store/apps/api
 #   rg "getCloudflareContext" "$(srcof @opennextjs/cloudflare@1.19.11)"
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -euo pipefail
 
 CACHE="${SRCOF_CACHE:-$HOME/.srcof}"

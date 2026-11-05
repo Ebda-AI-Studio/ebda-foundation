@@ -25,11 +25,14 @@
 # Exit codes:
 #   0 — ran successfully (even if zero dependents found)
 #   1 — fatal: missing required tool (gh, python3) or bad arguments
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 NOTIFY="$HERE/notify.sh"
-GH_USER="${GH_USER:-Ebda-AI-Studio}"
+GH_USER="${GH_USER:-$OS_ORG}"
 BLAST_TOP_N="${BLAST_TOP_N:-20}"
 DRY_RUN="${DRY_RUN:-0}"
 
@@ -54,10 +57,10 @@ command -v python3 >/dev/null || { echo "blast-radius: python3 missing" >&2; exi
 # Locate the repo root (for graph.json lookup)
 # ---------------------------------------------------------------------------
 KNOWN_ROOTS=(
-  "$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-store"
-  "$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-whatsapp"
-  "$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-studio"
-  "$HOME/Desktop/projects/Personal/projects/digital-card"
+  "$OS_PROJECTS_DIR/$OS_ORG/internal-projects/ebda-store"
+  "$OS_PROJECTS_DIR/$OS_ORG/internal-projects/ebda-whatsapp"
+  "$OS_PROJECTS_DIR/$OS_ORG/internal-projects/ebda-studio"
+  "$OS_PROJECTS_DIR/Personal/projects/digital-card"
 )
 
 find_graph_json() {
@@ -75,7 +78,7 @@ find_graph_json() {
   done
   # Fallback: search worktrees dir
   local wt_graph
-  wt_graph=$(find "$HOME/Desktop/projects/_worktrees" -maxdepth 2 \
+  wt_graph=$(find "$OS_PROJECTS_DIR/_worktrees" -maxdepth 2 \
     -name "graph.json" -path "*/graphify-out/*" 2>/dev/null \
     | grep "$slug" | head -1)
   if [ -n "$wt_graph" ]; then

@@ -16,7 +16,7 @@
 
 # ── the Neon projects that are dumped nightly ────────────────────────────────
 # "friendly-name:neon-project-id[:neon-org-id]", one per line. friendly-name is also the
-# directory under ~/Desktop/projects/_backups/. The optional third field is only needed when a
+# directory under $OS_PROJECTS_DIR/_backups/. The optional third field is only needed when a
 # project's Neon org differs from backup-all-neon.sh's default $ORG.
 #
 # Project ids are infrastructure identifiers that belong to the machine, not the repo, so the
@@ -26,6 +26,9 @@
 #
 # A PAUSED project is left out on purpose: a nightly pg_dump restarts a paused Neon project's
 # billing clock. Watch it through backup_project_paused instead (the freshness check SKIPS it).
+# shellcheck source=os-config.sh
+command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
+[ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
 _bp_file="${OS_BACKUP_PROJECTS_FILE:-$HOME/.ebda-os.local.backup-projects}"
 if [ -z "${BACKUP_NEON_PROJECTS:-}" ] && [ -f "$_bp_file" ]; then
   BACKUP_NEON_PROJECTS="$(cat "$_bp_file")"

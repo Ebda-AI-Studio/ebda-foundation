@@ -2,7 +2,7 @@
 # ops/lib/guest-rebuild.sh — the rate limit + cooldown in front of the ONE
 # destructive remedy the CI runner guard has.
 #
-# WHY THIS EXISTS (measured 2026-09-16). The CI guest fwb-ci6 corrupted TWICE in
+# WHY THIS EXISTS (measured 2026-09-16). The CI guest $OS_VM corrupted TWICE in
 # two days, both times ext4 going read-only:
 #
 #   EXT4-fs error (device vda1): mb_free_blocks: ... block bitmap corrupt
@@ -11,7 +11,7 @@
 #
 # A reboot did NOT fix it (the stop was forced at 120s, readiness failed, and the
 # VM process burned 0.01s of CPU over a 10s sample — it was not executing).
-# `umbra rebuild fwb-ci6 --yes` DID: 8m35s, 20 runners restored, fresh disk
+# `umbra rebuild $OS_VM --yes` DID: 8m35s, 20 runners restored, fresh disk
 # CLEAN error_count=0. Ahmad authorised the guard to do that automatically:
 # "rebuild it if it comes back".
 #
@@ -33,6 +33,9 @@
 # Rolling history of automatic rebuilds, per machine. Runtime state, not
 # deployed config — a marker under ~/.whisky-os-state survives the script sync
 # (the same reasoning as the fleet park marker in lib/runner-fleet.sh).
+# shellcheck source=os-config.sh
+command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
+[ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
 GUEST_REBUILD_STATE="${GUEST_REBUILD_STATE:-$HOME/.whisky-os-state/guest-rebuild-history.json}"
 
 # At most MAX rebuilds per rolling WINDOW, and never two inside MIN_GAP.

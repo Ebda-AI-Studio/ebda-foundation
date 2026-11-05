@@ -16,7 +16,7 @@
 # Fail-open: no ledger / no gh -> status note, exit 0. bash 3.2-safe.
 # ============================================================
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 . ./lib/os-state.sh 2>/dev/null || true
 
 DRY_RUN="${DRY_RUN:-0}"

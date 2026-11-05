@@ -49,11 +49,19 @@ Applied to the ported files (all generic): #279 guard rebuild backoff, #278 hygi
 
 ## shellcheck baseline
 
-`shellcheck -S warning` on `ops/*.sh ops/lib/*.sh ops/hooks ops/git-hooks ops/remediation` is clean. Real defects found while porting were fixed (SC2318 `local` ordering in the DR drill, SC2222 dead `case` arm in the hung-job guard, SC2140 string join, SC2088 tilde in quotes, a bare empty-array expansion). Six stylistic classes the predecessor carried are suppressed in `os/.shellcheckrc` with their counts (SC2034 39, SC2164 21, SC1090 10, SC2207 7, SC2155 7, SC2010 2) so the gate fails on NEW problems; burn them down per file.
+`shellcheck -S warning` on `ops/*.sh ops/lib/*.sh ops/hooks ops/git-hooks ops/remediation` is clean. Real defects found while porting were fixed (SC2318, SC2222, SC2140, SC2088, a bare empty-array expansion) and every SC2164 site now reads `cd ... || exit 1` (or `|| return 1` inside functions). Five stylistic classes the predecessor carried are still suppressed in `os/.shellcheckrc` with their counts (SC2034 39, SC1090 10, SC2207 7, SC2155 7, SC2010 2) so the gate fails on NEW problems; burn them down per file.
+
+## Config contract
+
+`config/os.env` is the single source; `ops/lib/os-config.sh` (`os_config_load`) reads it, then `~/.ebda-os.local.env`, then falls back to built-in defaults that `tests/os-config-parity.test.sh` keeps identical. Every script that needs an identity value (primary org `$OS_ORG`, owners `$OS_ORGS`, `$OS_REPO_SLUG`, `$OS_PROJECTS_DIR`, `$OS_HOME`, `$OS_LAUNCHD_PREFIX`, `$OS_UMBRA_VMS` / `$OS_VM`, `$OS_SENTRY_ORG`, `$OS_NEON_ORG`, `$OS_PERSONAL_OWNER`, `$OS_SERVICES_ENV`) sources it and reads the key. `tests/no-literal-config.test.sh` fails when a literal of those values appears in `ops/` outside tests, fixtures, launchd templates, docs, comments and `os-config.sh`.
+
+## Secret scanning
+
+`gitleaks detect --source .` over the whole branch history reports no leaks, so no `.gitleaksignore` is needed (none exists). If a fixture ever trips it, add that fingerprint only.
 
 ## CI footprint added
 
-One job (`os`) in `ci.yml`: a checkout plus one `git diff` on every PR (about 10 s); shellcheck, the string guard and the Linux smoke (about 1 to 2 min, on the runner image ubuntu-latest = 24.04 or the Umbra runner) run only when `os/` or the workflow changed, and on every push to main. The full `os/tests/run-all.sh` (about 8 min, host-lock heavy) is deliberately NOT in PR CI; run it locally or nightly.
+One job (`os`) in `ci.yml`: a checkout plus one `git diff` on every PR (about 10 s). When `os/` or the workflow changed (and on every push to main) it also runs shellcheck and `os/tests/run-all.sh --quiet` (string and identity-literal guards, config parity, the ops suites, Linux smoke). Measured locally about 9 min on macOS for the suites; budget 25 min per run, so roughly 10 to 15 billable minutes on a hosted runner, or none on the Umbra runner (`EBDA_RUNS_ON`). PRs that do not touch `os/` pay only the diff step.
 
 ## macOS-only scripts
 

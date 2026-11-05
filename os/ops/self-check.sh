@@ -12,8 +12,11 @@
 #   ops/self-check.sh --notify   # same + Telegram summary if any ERROR/WARN exists
 #
 # READ-ONLY except for writing ../ARCHITECTURE.md. Never touches other repos. No git.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 NOTIFY_FLAG=0
 [ "${1:-}" = "--notify" ] && NOTIFY_FLAG=1
@@ -81,7 +84,7 @@ is_expected_ondemand() {
     notify.sh|blast-radius.sh|propagate.sh|install.sh|safe-to-admin-merge.sh|self-check.sh) return 0 ;;
     # dreaming-cycle phase scripts — called by dream.sh, not directly by launchd
     dream-research.sh|dream-scan.sh|dream-fix.sh|dream-act.sh) return 0 ;;
-    # runner-hook tooling — setup runs ON THE RUNNER HOST (Umbra fwb-ci6); health-detector is on-demand (alongside ci-runner-guard)
+    # runner-hook tooling — setup runs ON THE RUNNER HOST (Umbra $OS_VM); health-detector is on-demand (alongside ci-runner-guard)
     setup-runner-hooks.sh|runner-hook-health.sh) return 0 ;;
     *) return 1 ;;
   esac
@@ -326,7 +329,7 @@ done
 # checkout-monitor / alert-triage / anomaly-watch / dream jobs (2026-06-10).
 # Runnable copies MUST live in ~/.claude/scripts (non-protected). Scan BOTH the
 # repo templates AND the installed plists so a regression is caught either side.
-for plist in "$REPO/ops/launchd/"*.plist "$HOME/Library/LaunchAgents/com.ebda.os."*.plist; do
+for plist in "$REPO/ops/launchd/"*.plist "$HOME/Library/LaunchAgents/${OS_LAUNCHD_PREFIX}."*.plist; do
   [ -f "$plist" ] || continue
   label=$(basename "$plist")
   tcc_hit=$(python3 -c "

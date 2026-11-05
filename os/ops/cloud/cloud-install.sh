@@ -5,11 +5,14 @@
 #
 #   ssh ubuntu@<vm-ip>
 #   sudo apt-get update && sudo apt-get install -y git
-#   git clone https://github.com/Ebda-AI-Studio/ebda-foundation.git ~/ebda-foundation
+#   git clone https://github.com/$OS_REPO_SLUG.git ~/ebda-foundation
 #   nano ~/.whisky-os/secrets.env   # (created on first run; fill it, then re-run)
 #   bash ~/ebda-foundation/ops/cloud/cloud-install.sh
 #
 # Idempotent: re-run after a `git pull` to redeploy scripts + re-sync timers.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"     # ops/
@@ -85,14 +88,14 @@ TELEGRAM_ALERT_CHAT_ID=$TELEGRAM_ALERT_CHAT_ID
 EOF
 chmod 600 "$HOME/.whisky-whoop-telegram.env"
 # Bridge observability tokens to the file services-watch/alert-triage read.
-cat > "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" <<EOF
+cat > "$OS_SERVICES_ENV" <<EOF
 SENTRY_AUTH_TOKEN=${SENTRY_AUTH_TOKEN:-}
 SENTRY_ORG=${SENTRY_ORG:-}
 UPTIMEROBOT_API_KEY=${UPTIMEROBOT_API_KEY:-}
 RAILWAY_TOKEN=${RAILWAY_TOKEN:-}
 GEMINI_API_KEY=${GEMINI_API_KEY:-}
 EOF
-chmod 600 "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}"
+chmod 600 "$OS_SERVICES_ENV"
 
 # 3. Deploy runtime scripts (mirror ops/install.sh's set; cloud runs the watchdog tier).
 echo "deploying scripts -> $BIN"
@@ -169,5 +172,5 @@ systemctl --user list-timers 'whisky-os-*' --no-pager 2>/dev/null | head -20
 echo
 echo ">> ON THE MAC, unload the now-duplicated launchd jobs so alerts don't double-fire:"
 echo "   for j in services-watch anomaly-watch alert-triage checkout-monitor wbs-monitor os-watch runner-hook-health ci-runner-guard cost-guard dream docs-scan; do"
-echo "     launchctl bootout gui/\$(id -u)/com.ebda.os.\$j 2>/dev/null; done"
-echo "   KEEP on the Mac: com.ebda.os.neon-backup + com.ebda.os.mac-maintenance (Mac-local)."
+echo "     launchctl bootout gui/\$(id -u)/${OS_LAUNCHD_PREFIX}.\$j 2>/dev/null; done"
+echo "   KEEP on the Mac: ${OS_LAUNCHD_PREFIX}.neon-backup + ${OS_LAUNCHD_PREFIX}.mac-maintenance (Mac-local)."

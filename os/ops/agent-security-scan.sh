@@ -20,6 +20,9 @@
 #   ops/agent-security-scan.sh
 #
 # Exit codes: 0 = ran (even on WARN); this is a report tool, not a hard CI gate.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 
@@ -42,7 +45,7 @@ FOUNDATION_OPS="$HERE"
 # ebda-whatsapp / ebda-whatsapp backend src — try known locations,
 # skip gracefully if the repo isn't checked out on this machine.
 WBS_CANDIDATES=(
-  "$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-whatsapp/backend/src"
+  "$OS_PROJECTS_DIR/$OS_ORG/internal-projects/ebda-whatsapp/backend/src"
 )
 WBS_SRC=""
 for c in "${WBS_CANDIDATES[@]}"; do

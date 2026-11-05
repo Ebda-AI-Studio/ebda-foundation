@@ -23,6 +23,9 @@
 #
 # Usage:  ops/alert-triage.sh            # read + digest, print only
 #         ops/alert-triage.sh --notify   # also Telegram the new/surging/changed
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -euo pipefail
 
 # _ut (hard wall clock on external calls) lives in the shared lib — without this
@@ -41,11 +44,11 @@ cd "$(dirname "$0")"
 command -v host_online >/dev/null 2>&1 || { echo "alert-triage: FATAL - lib/net-probe.sh not found; refusing to run (run ops/install.sh)" >&2; exit 2; }
 CH_FAIL=0   # channel fetches that errored (as opposed to returning nothing)
 
-SVC_ENV="${WHISKY_SERVICES_ENV:-${OS_SERVICES_ENV:-$HOME/.whisky-services.env}}"
+SVC_ENV="${WHISKY_SERVICES_ENV:-$OS_SERVICES_ENV}"
 [ -f "$SVC_ENV" ] && { set -a; . "$SVC_ENV"; set +a; }
-SENTRY_ORG_V="${SENTRY_ORG:-org-lingering-river-25973882}"
+SENTRY_ORG_V="${SENTRY_ORG:-$OS_SENTRY_ORG}"
 SENTRY_PROJECTS="${SENTRY_PROJECTS:-ebda-api ebda-web}"
-CI_REPOS="${CI_REPOS:-Ebda-AI-Studio/ebda-store Ebda-AI-Studio/ebda-whatsapp Ebda-AI-Studio/ebda-studio}"
+CI_REPOS="${CI_REPOS:-$OS_ORG/ebda-store $OS_ORG/ebda-whatsapp $OS_ORG/ebda-studio}"
 RAILWAY_PROJECTS="${RAILWAY_PROJECTS:-}"   # optional "name:service" hints; CLI default if empty
 SURGE_DELTA="${ALERT_SURGE_DELTA:-25}"
 TOP_N="${SENTRY_TOP_N:-15}"

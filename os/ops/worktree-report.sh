@@ -19,8 +19,11 @@
 #   STALE    old + clean + unmerged     -> review; branch may still matter
 #   ORPHAN   git no longer tracks it    -> `git worktree prune` territory
 
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
-WT_ROOT="${WT_ROOT:-$HOME/Desktop/projects/_worktrees}"
+WT_ROOT="${WT_ROOT:-$OS_PROJECTS_DIR/_worktrees}"
 STATE_DIR="${WHISKY_STATE_DIR:-$HOME/.whisky-os-state}"
 IDLE_DAYS="${IDLE_DAYS:-7}"
 mkdir -p "$STATE_DIR"

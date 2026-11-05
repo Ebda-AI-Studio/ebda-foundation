@@ -11,7 +11,7 @@
 #      quote-studio, …) were never cleaned, so their worktrees accumulated
 #      indefinitely — ebda-foundation alone had 14. A cleanup tool that names
 #      the things it cleans stops covering anything added afterwards, silently.
-#      The repo set is now DISCOVERED: every git repo under ~/Desktop/projects
+#      The repo set is now DISCOVERED: every git repo under $OS_PROJECTS_DIR
 #      (plus one level of group folders) unioned with every repo named by an
 #      existing worktree directory.
 #   2. It assumed every repo's default branch is `main`. ebda-foundation uses
@@ -20,6 +20,9 @@
 #   3. It never removed a WORKTREE — only dead refs and merged branches. A worktree
 #      whose branch had long since merged stayed forever, which is what produced
 #      the pileup. Merged + clean + untouched-for-2h worktrees are now removed.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 . "$(dirname "$0")/lib/wt-safety.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-safety.sh" 2>/dev/null || { echo "worktree-cleanup: lib/wt-safety.sh missing; refusing to reap without the safety checks" >&2; exit 2; }
@@ -28,7 +31,7 @@ set -uo pipefail
 OS_JOB_NAME=worktree-cleanup
 if command -v require_projects_access >/dev/null 2>&1; then require_projects_access || exit 0; fi
 
-PROJECTS="${PROJECTS_DIR:-$HOME/Desktop/projects}"
+PROJECTS="${PROJECTS_DIR:-$OS_PROJECTS_DIR}"
 PROJECTS_ROOT="$PROJECTS"   # lib/projects-layout.sh reads this at call time
 WT_DIR="${WORKTREES_DIR:-$PROJECTS/_worktrees}"
 # A worktree touched more recently than this is assumed to belong to a live

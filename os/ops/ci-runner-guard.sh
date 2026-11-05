@@ -5,7 +5,7 @@
 # every `ubuntu-latest` job died instantly at the infrastructure level (no runner name,
 # no failed step, empty logs) — making green PRs un-mergeable for reasons unrelated to the
 # code. The fix was manual: set the repo's USE_SELF_HOSTED variable to 'true' so CI routes
-# to the free self-hosted runners (now the Umbra fwb-ci6 VM on this Mac; OrbStack retired 2026-07-12). This guard automates that detection + flip.
+# to the free self-hosted runners (now the Umbra $OS_VM VM on this Mac; OrbStack retired 2026-07-12). This guard automates that detection + flip.
 #
 # It is now BIDIRECTIONAL (2026-06-13). Two directions:
 #
@@ -30,6 +30,9 @@
 #
 # Read-mostly: the only mutations are `gh variable set USE_SELF_HOSTED <true|false>`,
 # always gated on detection and always announced.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 # Fleet park state — a thin wrapper over service_paused() from os-state.sh above,
@@ -68,7 +71,7 @@ command -v guest_rebuild_allowed >/dev/null 2>&1 || {
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/guest-wedge.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/guest-wedge.sh" 2>/dev/null || true
 command -v umbra_start_flags >/dev/null 2>&1 || umbra_start_flags() { return 0; }   # umbra U1: --fsck-if-dirty when supported
-GH_USER="Ebda-AI-Studio"
+GH_USER="$OS_ORG"
 
 # ── RUNNER FOCUS (2026-10-08) ────────────────────────────────────────────────
 # Only the focused repos' runners are EXPECTED to run (ops/runner-focus.sh; state
@@ -146,7 +149,7 @@ runner_online() {
 }
 
 # The self-hosted runner lives in a local Umbra VM on this Mac. Canonical host
-# since the 2026-07-30 rebuild is fwb-ci6 (the runner is a systemd unit inside
+# since the 2026-07-30 rebuild is $OS_VM (the runner is a systemd unit inside
 # it, so booting the VM restarts it). fwb-ci5, fwb-ci2 + the OrbStack fwb-ci machine are
 # retired. Heal Umbra first so this guard never resurrects a stale host.
 # Returns 0 when a runner is back online. Overrides: RUNNER_UMBRA_MACHINE /
@@ -211,7 +214,7 @@ _ut_tree() {
 
 umbra_fleet_running() {
   command -v umbra >/dev/null 2>&1 && \
-    _ut "$UMBRA_TIMEOUT" umbra list 2>/dev/null | grep -qE "^${RUNNER_UMBRA_MACHINE:-fwb-ci6}[[:space:]]+running"
+    _ut "$UMBRA_TIMEOUT" umbra list 2>/dev/null | grep -qE "^${RUNNER_UMBRA_MACHINE:-$OS_VM}[[:space:]]+running"
 }
 
 # The runner VM's lifecycle state as `umbra list` prints it — stopped, starting,
@@ -219,13 +222,13 @@ umbra_fleet_running() {
 umbra_vm_state() {
   command -v umbra >/dev/null 2>&1 || return 0
   _ut "$UMBRA_TIMEOUT" umbra list 2>/dev/null \
-    | awk -v m="${RUNNER_UMBRA_MACHINE:-fwb-ci6}" 'NR>1 && $1==m {print $2; exit}'
+    | awk -v m="${RUNNER_UMBRA_MACHINE:-$OS_VM}" 'NR>1 && $1==m {print $2; exit}'
 }
 
 # The state once any in-flight stop/start has finished, bounded by
 # UMBRA_TIMEOUT_SLOW. Still `starting`/`stopping` on return means it is STUCK.
 #
-# 2026-09-15: a human ran `umbra stop fwb-ci6 && umbra start fwb-ci6`, the stop
+# 2026-09-15: a human ran `umbra stop $OS_VM && umbra start $OS_VM`, the stop
 # took its full 120s graceful window, and this guard paged "NOT running and not
 # startable" — it knew only `running` and `stopped`, and read `stopping` as an
 # outage. umbra holds the machine in `stopping` for up to 180s (120s graceful +
@@ -255,7 +258,7 @@ umbra_vm_settled_state() {
 # entries of ~/.umbra/runners/<machine>.json (written by `umbra runner add`).
 # Echoes nothing when the manifest is absent or unreadable.
 umbra_manifest_runners() {
-  local f="$HOME/.umbra/runners/${RUNNER_UMBRA_MACHINE:-fwb-ci6}.json"
+  local f="$HOME/.umbra/runners/${RUNNER_UMBRA_MACHINE:-$OS_VM}.json"
   [ -f "$f" ] || return 0
   python3 -c '
 import json, sys
@@ -303,7 +306,7 @@ except Exception:
 #                       Ubuntu remounts root read-only (errors=remount-ro) and
 #                       sshd never starts. RESTARTING MAKES IT WORSE: every
 #                       unclean shutdown adds damage. This is not hypothetical —
-#                       fwb-ci6 was restart-looped every 30 minutes from
+#                       $OS_VM was restart-looped every 30 minutes from
 #                       2026-08-27 to 2026-09-07 while its filesystem degraded,
 #                       because doctor could only call the fault `unknown`.
 #                       Needs umbra >= the guest-disk-corrupt rung (umbra#28);
@@ -425,12 +428,12 @@ except Exception:
 # mid-job. So retry, and echo -1 (UNKNOWN, do NOT heal) if the probe never
 # returns a clean integer; a real count (0..N) only on a confirmed reading.
 umbra_active_runners() {
-  local um="${RUNNER_UMBRA_MACHINE:-fwb-ci6}" out _t
+  local um="${RUNNER_UMBRA_MACHINE:-$OS_VM}" out _t
   command -v umbra >/dev/null 2>&1 || { echo -1; return; }
   # HEALTHY means active/running AND STABLE, not "active right now".
   #
   # 2026-08-19 and again 2026-08-22 this guard reported "1/1 runner services
-  # active on fwb-ci6 — healthy" while EVERY runner unit was crash-looping and
+  # active on $OS_VM — healthy" while EVERY runner unit was crash-looping and
   # all CI had been queueing for two days. `--state=active | wc -l` is a single
   # sample, and a unit with Restart=always oscillates
   # activating -> active(running) -> exit 1 -> auto-restart, so a sample lands on
@@ -475,7 +478,7 @@ umbra_active_runners() {
 # Echoes -1 (UNKNOWN, do NOT heal) on a failed probe, same contract as
 # umbra_active_runners.
 umbra_installed_runners() {
-  local um="${RUNNER_UMBRA_MACHINE:-fwb-ci6}" out _t
+  local um="${RUNNER_UMBRA_MACHINE:-$OS_VM}" out _t
   command -v umbra >/dev/null 2>&1 || { echo -1; return; }
   for _t in 1 2; do
     out=$(_ut "$UMBRA_TIMEOUT" umbra shell "$um" -- "${FOCUS_PFX}"'systemctl list-units "actions.runner.*" --no-legend --all --plain 2>/dev/null | awk "{print \$1}" | sort -u | grep -E "$FRE" | wc -l' 2>/dev/null)
@@ -496,7 +499,7 @@ umbra_installed_runners() {
 # restarted by a heal. Kept in a variable so the test can run it against a stub.
 HEAL_UMBRA_CMD='for u in $(systemctl list-units "actions.runner.*" --all --no-legend --plain 2>/dev/null | awk "{ if (\$3 != \"active\") print \$1 }" | grep -E "$FRE"); do sudo systemctl reset-failed "$u" 2>/dev/null; sudo systemctl restart "$u" 2>/dev/null; done'
 heal_umbra_runners() {
-  local um="${RUNNER_UMBRA_MACHINE:-fwb-ci6}"
+  local um="${RUNNER_UMBRA_MACHINE:-$OS_VM}"
   # Unreadable focus file: heal nothing (see FOCUS_BROKEN above), report the count.
   [ "$FOCUS_BROKEN" -eq 1 ] && { umbra_active_runners; return; }
   hands_off "$um" "runner restart" && { umbra_active_runners; return; }
@@ -541,7 +544,7 @@ any_runner_online() {
 # and the guard misread SSH-dead as "busy" and never rebooted. Returns 0 when a
 # runner is back online after the reboot.
 reboot_guest() {
-  local um="${RUNNER_UMBRA_MACHINE:-fwb-ci6}" _i
+  local um="${RUNNER_UMBRA_MACHINE:-$OS_VM}" _i
   hands_off "$um" "guest reboot" && return 1
   _ut "$UMBRA_TIMEOUT_SLOW" umbra stop "$um" >/dev/null 2>&1 || true
   sleep 4
@@ -557,7 +560,7 @@ reboot_guest() {
 # ── auto-rebuild a guest whose ROOT FILESYSTEM is corrupt ────────────────────
 # Authorised by Ahmad on 2026-09-16: "rebuild it if it comes back".
 #
-# fwb-ci6 corrupted TWICE in two days — ext4 tripping its error flag and
+# $OS_VM corrupted TWICE in two days — ext4 tripping its error flag and
 # remounting root read-only. It surfaces as unrelated breakage (a missing
 # libpsl.so.5, a listener log frozen mid-write, a systemctl restart that does
 # nothing, runners draining 20->16 while jobs queue unrun), and a REBOOT does
@@ -732,7 +735,7 @@ rebuild_corrupt_guest() {
 # retired 2026-07-12 (VM deleted, app uninstalled) so there is no orb fallback.
 try_runner_heal() {
   local slug="$1" _i started=""
-  local um="${RUNNER_UMBRA_MACHINE:-fwb-ci6}"
+  local um="${RUNNER_UMBRA_MACHINE:-$OS_VM}"
   hands_off "$um" "runner heal" && return 1
   if command -v umbra >/dev/null 2>&1 && _ut "$UMBRA_TIMEOUT" umbra list 2>/dev/null | grep -qE "^${um}[[:space:]]+stopped"; then
     # shellcheck disable=SC2046  # intentional: empty flag list must vanish, not become an empty argument
@@ -818,7 +821,7 @@ current_use_self_hosted() {
 }
 
 # ── HOST disk pressure ────────────────────────────────────────────────────────
-# 2026-09-04: the fleet went down with fwb-ci6 "running" but SSH never ready and
+# 2026-09-04: the fleet went down with $OS_VM "running" but SSH never ready and
 # a 0-byte console.log. Cause: the HOST volume was at 98% — 9 GB free of 460 GB.
 # A guest whose disk.img is a 64 GB sparse file cannot fault in the blocks it
 # needs to boot, so it starts and never reaches sshd.
@@ -854,14 +857,14 @@ case "$host_disk_level" in
 esac
 
 # ── GLOBAL: Umbra runner fleet liveness (shared across all repos) ─────────────
-# The runner lives in ONE Umbra VM (fwb-ci6). A running VM with a dead runner
+# The runner lives in ONE Umbra VM ($OS_VM). A running VM with a dead runner
 # service (oom-kill) or a wholly HUNG guest (VM up, SSH dead) can leave the
 # runner offline — so probe the systemd unit directly, heal a dead service,
 # hard-reboot a hung guest, and alert on Telegram. This is the PRIMARY "runner
-# down" watcher. NOTE: the current fwb-ci6 runners are REPO-scoped (visible in the
+# down" watcher. NOTE: the current $OS_VM runners are REPO-scoped (visible in the
 # repo /actions/runners API); the org-scoped blind-spot handling below is kept
 # for the legacy/future org-registered setup.
-# Canonical since the 2026-07-30 rebuild: ONE Umbra guest (fwb-ci6) hosting the
+# Canonical since the 2026-07-30 rebuild: ONE Umbra guest ($OS_VM) hosting the
 # repo-scoped runners. fwb-ci5 and fwb-ci2 were DELETED that day — do NOT
 # default to either or this whole block silently no-ops against a machine that
 # does not exist. Both overridable via RUNNER_UMBRA_MACHINE / RUNNER_INSTANCE_COUNT.
@@ -877,7 +880,7 @@ if [ -z "$EXPECTED_RUNNERS" ]; then
   [ "${EXPECTED_RUNNERS:-0}" -ge 1 ] 2>/dev/null || EXPECTED_RUNNERS="$(umbra_manifest_runners)"
   [ "${EXPECTED_RUNNERS:-0}" -ge 1 ] 2>/dev/null || EXPECTED_RUNNERS=1
 fi
-UM="${RUNNER_UMBRA_MACHINE:-fwb-ci6}"
+UM="${RUNNER_UMBRA_MACHINE:-$OS_VM}"
 # FLEET_UP is the AUTHORITATIVE runner-liveness flag for the per-repo loop below,
 # which otherwise misreads a busy/queued fleet as "runners down" (the repo API
 # can't see org-registered runners). 1 = fleet is up (healthy or busy), 0 = down.
@@ -892,7 +895,7 @@ UM="${RUNNER_UMBRA_MACHINE:-fwb-ci6}"
 FLEET_UP=0
 # Pre-flight 0: is the fleet PARKED (deliberately out of service)?
 #
-# 2026-08-09: fwb-ci6 stopped booting on 08-06 and every repo was routed to cloud
+# 2026-08-09: $OS_VM stopped booting on 08-06 and every repo was routed to cloud
 # on 08-08 — but nothing told this guard, so it hard-rebooted a dead guest every
 # 30 minutes for three days and Telegrammed each failure. ~30 pages about a
 # runner no CI depended on. The `doctor_unhealable_rung` pre-flight below was
@@ -928,7 +931,7 @@ fi
 
 # Pre-flight 0b: is `umbra rebuild` provisioning $UM right now?
 #
-# 2026-10-16 02:53: this guard rebooted a brand-new fwb-ci6 in the middle of a
+# 2026-10-16 02:53: this guard rebooted a brand-new $OS_VM in the middle of a
 # rebuild ("SSH dead + no runner → reboot") — from outside, a guest being
 # provisioned looks exactly like a hung one, and with a doctor verdict in hand
 # the guard would even start a second `umbra rebuild` on top of the first.
@@ -1051,7 +1054,7 @@ elif command -v umbra >/dev/null 2>&1; then
         # boots emits firmware output within seconds, so 0 bytes plus an idle vm
         # process means nothing is running inside it.
         #
-        # 2026-09-06: fwb-ci6 sat at 0 bytes of console with the Virtualization XPC
+        # 2026-09-06: $OS_VM sat at 0 bytes of console with the Virtualization XPC
         # process at 0.0% CPU and 0.8GB resident against 6GiB configured, on a host
         # with 52GB free. It had been diagnosed for days as a macOS-update
         # networking fault and as "sshd not ready" — both describe a boot that was
@@ -1088,7 +1091,7 @@ else
   # than inheriting a healthy-looking default: a monitor that cannot see its
   # subject must report that, not go quiet.
   FLEET_UP=0
-  flipped "runner fleet: the 'umbra' CLI is NOT on PATH for this job, so fleet liveness could not be checked at all. umbra lives in /usr/local/bin — add it to the LaunchAgent PATH (com.ebda.os.ci-runner-guard)."
+  flipped "runner fleet: the 'umbra' CLI is NOT on PATH for this job, so fleet liveness could not be checked at all. umbra lives in /usr/local/bin — add it to the LaunchAgent PATH (${OS_LAUNCHD_PREFIX}.ci-runner-guard)."
 fi
 
 # Focus bookkeeping: say so if the focus file is unreadable (healing is disabled),
@@ -1139,9 +1142,9 @@ for r in "${REPOS[@]}"; do
         fi
       else
         if try_runner_heal "$slug" && gh variable set USE_SELF_HOSTED --repo "$slug" --body "true" >/dev/null 2>&1; then
-          flipped "$r: cloud minutes exhausted; Umbra runner '${RUNNER_UMBRA_MACHINE:-fwb-ci6}' was down — SELF-HEALED (VM/service restart) and FLIPPED to self-hosted ($reason)."
+          flipped "$r: cloud minutes exhausted; Umbra runner '${RUNNER_UMBRA_MACHINE:-$OS_VM}' was down — SELF-HEALED (VM/service restart) and FLIPPED to self-hosted ($reason)."
         else
-          flipped "$r: cloud minutes exhausted AND no self-hosted runner ONLINE — CI is DOWN. Check the Umbra runner: umbra start ${RUNNER_UMBRA_MACHINE:-fwb-ci6} / umbra shell ${RUNNER_UMBRA_MACHINE:-fwb-ci6} -- systemctl status 'actions.runner.*'."
+          flipped "$r: cloud minutes exhausted AND no self-hosted runner ONLINE — CI is DOWN. Check the Umbra runner: umbra start ${RUNNER_UMBRA_MACHINE:-$OS_VM} / umbra shell ${RUNNER_UMBRA_MACHINE:-$OS_VM} -- systemctl status 'actions.runner.*'."
         fi
       fi
       continue
@@ -1204,16 +1207,16 @@ for r in "${REPOS[@]}"; do
   else
     # Fleet is genuinely DOWN (the global check couldn't keep it up). Heal + alert.
     if try_runner_heal "$slug"; then
-      flipped "$r: runners were OFFLINE (Umbra '${RUNNER_UMBRA_MACHINE:-fwb-ci6}' VM or runner service down) — SELF-HEALED; runners back online, queued CI draining."
+      flipped "$r: runners were OFFLINE (Umbra '${RUNNER_UMBRA_MACHINE:-$OS_VM}' VM or runner service down) — SELF-HEALED; runners back online, queued CI draining."
     else
-      flipped "$r: USE_SELF_HOSTED=true but NO self-hosted runner is ONLINE — CI is queuing forever. Auto-heal didn't recover it: the usual cause is a VM-resume clock drift that made GitHub delete the registrations, which a restart CANNOT fix. Run 'ops/runner-reregister.sh' (re-registers every dead runner), or 'umbra start ${RUNNER_UMBRA_MACHINE:-fwb-ci6}' if the guest itself is down. Last resort: set USE_SELF_HOSTED=false."
+      flipped "$r: USE_SELF_HOSTED=true but NO self-hosted runner is ONLINE — CI is queuing forever. Auto-heal didn't recover it: the usual cause is a VM-resume clock drift that made GitHub delete the registrations, which a restart CANNOT fix. Run 'ops/runner-reregister.sh' (re-registers every dead runner), or 'umbra start ${RUNNER_UMBRA_MACHINE:-$OS_VM}' if the guest itself is down. Last resort: set USE_SELF_HOSTED=false."
     fi
   fi
 done
 
 # ── guest clock drift ─────────────────────────────────────────────────────────
 # GUEST CLOCK DRIFT — check this FIRST; it invalidates every other signal.
-# 2026-08-24: fwb-ci6 woke 26 HOURS behind the host after the Mac suspended.
+# 2026-08-24: $OS_VM woke 26 HOURS behind the host after the Mac suspended.
 # GitHub refuses any runner operation once the clock is off by more than five
 # minutes, so every runner failed to create a session, crash-looped, and six
 # registrations were reaped. The outage read as a disk problem, then as a
@@ -1267,7 +1270,7 @@ if command -v umbra >/dev/null 2>&1; then
 fi
 
 # ── guest disk pressure ───────────────────────────────────────────────────────
-# GUEST DISK PRESSURE. 2026-08-23: fwb-ci6 reached 0 bytes free of 58G — 18
+# GUEST DISK PRESSURE. 2026-08-23: $OS_VM reached 0 bytes free of 58G — 18
 # runners, ~40G of _work checkouts and node_modules. Every runner lost its
 # GitHub session, all 18 registrations went offline, and four repos sat with
 # runs that could never start. Nothing watched the disk, so the outage was

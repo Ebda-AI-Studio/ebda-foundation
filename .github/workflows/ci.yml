@@ -47,12 +47,12 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=low
 
-  # OS layer (os/): shellcheck, the predecessor-string guard and the Linux smoke. Affected-only: on a PR it does nothing
+  # OS layer (os/): shellcheck, then os/tests/run-all.sh (string + literal guards, config parity, the ops suites, Linux smoke). Affected-only: on a PR it does nothing
   # unless os/ or this workflow changed (one checkout + one git diff, ~10 s). On push to main it always runs.
   os:
-    name: OS layer (shellcheck, strings, Linux smoke)
+    name: OS layer (shellcheck, guards, suites, Linux smoke)
     runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
-    timeout-minutes: 10
+    timeout-minutes: 25
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -74,9 +74,11 @@ jobs:
         run: |
           command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
           shellcheck -S warning os/ops/*.sh os/ops/lib/*.sh os/ops/hooks/*.sh os/ops/git-hooks/*.sh os/ops/remediation/*.sh
-      - name: No predecessor strings
+      - name: Tools the suites need (present on ubuntu-latest; installed if the runner image lacks them)
         if: steps.chg.outputs.changed == 'true'
-        run: bash os/tests/no-force-strings.test.sh
-      - name: Linux smoke (bash -n + --help)
+        run: |
+          for t in jq rsync python3; do command -v "$t" >/dev/null || need="$need $t"; done
+          [ -z "${need:-}" ] || { sudo apt-get update -qq && sudo apt-get install -y -qq $need; }
+      - name: OS suites (string + literal guards, config parity, ops suites, Linux smoke)
         if: steps.chg.outputs.changed == 'true'
-        run: bash os/tests/linux-smoke.test.sh
+        run: bash os/tests/run-all.sh --quiet

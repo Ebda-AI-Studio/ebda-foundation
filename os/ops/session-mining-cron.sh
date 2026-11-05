@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Whisky AI OS — session-mining-cron.sh (monthly, launchd com.ebda.os.session-mining)
+# Whisky AI OS — session-mining-cron.sh (monthly, launchd ${OS_LAUNCHD_PREFIX}.session-mining)
 #
 # Runs the session-mining skill headlessly over the last ~60 session transcripts:
 # recurring requests, corrections, rituals, broken automation → candidate skills /
@@ -8,6 +8,9 @@
 # Born 2026-07-11 after the same mining request was made manually in 3+ sessions.
 #
 # Output: ~/.claude/instincts/session-mining-<YYYY-MM>.md + Telegram digest.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # claude CLI crashes under Homebrew node 25 — prefer nvm node 24 (same fix as
 # instinct-extract.sh; see feedback-session-mining-learning-loop.md).

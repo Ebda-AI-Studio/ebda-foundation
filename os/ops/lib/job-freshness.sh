@@ -27,7 +27,7 @@
 #   DAEMON (no schedule at all, KeepAlive / RunAtLoad)
 #     Evidence = whether the PROCESS IS ALIVE. A daemon has no cadence, so log
 #     mtime is evidence of nothing: a healthy resident process can sit silent
-#     for weeks. com.ebda.os.dashboard was handled by being `continue`d out of
+#     for weeks. ${OS_LAUNCHD_PREFIX}.dashboard was handled by being `continue`d out of
 #     the loop entirely — checked by nothing at all, which reads as a pass.
 #   NEITHER
 #     No determinable cadence and no liveness artifact. This must be a FINDING,
@@ -39,6 +39,9 @@
 # a test can assert on the verdict rather than on rendered English.
 
 # shellcheck source=./job-cadence.sh
+# shellcheck source=os-config.sh
+command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
+[ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/job-cadence.sh" 2>/dev/null || true
 
 # _jf_launchctl_state <label> -> running | loaded | absent | unknown
@@ -90,8 +93,8 @@ _jf_launchctl_state() {
 _jf_state_log() {
   local label="${1-}" state_dir="${2-}"
   case "$label" in
-    com.ebda.os.gate-guard) printf '%s\n' "$state_dir/gate-guard.log" ;;
-    com.ebda.os.heal-watch) printf '%s\n' "$state_dir/heal.log" ;;
+    "${OS_LAUNCHD_PREFIX}.gate-guard") printf '%s\n' "$state_dir/gate-guard.log" ;;
+    "${OS_LAUNCHD_PREFIX}.heal-watch") printf '%s\n' "$state_dir/heal.log" ;;
     *) printf '\n' ;;
   esac
 }
@@ -120,7 +123,7 @@ _jf_wake_epoch() {
 _jf_window() {
   local label="${1-}" period="${2-}"
   case "$label" in
-    com.ebda.os.neon-backup|com.ebda.os.ebda-cf-backup) echo $(( 36 * 3600 )); return 0 ;;
+    "${OS_LAUNCHD_PREFIX}.neon-backup"|"${OS_LAUNCHD_PREFIX}.ebda-cf-backup") echo $(( 36 * 3600 )); return 0 ;;
   esac
   job_stale_after "$period"
 }
@@ -150,7 +153,7 @@ job_freshness_verdict() {
 
   local label job dir
   label="$(basename "$plist" .plist)"
-  job="${label#com.ebda.os.}"
+  job="${label#${OS_LAUNCHD_PREFIX}.}"
   dir="$(dirname "$plist")"
 
   # One read for the shape facts the cadence library does not expose.

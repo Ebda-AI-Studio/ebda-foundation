@@ -11,6 +11,9 @@
 #
 # Test seams (ops/tests/guest-wedge-watch.test.sh): WEDGE_PROBE_CMD (prints seconds), WEDGE_JOBS_CMD (prints the
 # jobs file lines), WEDGE_NOW, WEDGE_STATE, UMBRA_BIN, WEDGE_NOTIFY.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # S0 (2026-10-26): --help runs nothing; one run at a time (lib/single-instance.sh)
 . "$(dirname "${BASH_SOURCE[0]}")/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
@@ -26,8 +29,8 @@ command -v umbra_provisioning >/dev/null 2>&1 || umbra_provisioning() { return 1
 command -v fleet_parked >/dev/null 2>&1 || fleet_parked() { return 1; }
 command -v umbra_start_flags >/dev/null 2>&1 || umbra_start_flags() { return 0; }   # umbra U1 flag, when the installed umbra has it
 
-VM="${WEDGE_VM:-fwb-ci6}"
-REPOS="${WEDGE_REPOS:-Whisky-11/ebda-store Ebda-AI-Studio/ebda-foundation}"
+VM="${WEDGE_VM:-$OS_VM}"
+REPOS="${WEDGE_REPOS:-$OS_ORG/ebda-store $OS_REPO_SLUG}"
 STATE="${WEDGE_STATE:-$HOME/.whisky-os-state/guest-wedge}"
 UMBRA="${UMBRA_BIN:-umbra}"
 NOTIFY="${WEDGE_NOTIFY:-$HERE/notify.sh}"

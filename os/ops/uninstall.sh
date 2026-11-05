@@ -5,23 +5,26 @@
 # this machine becomes a pure controller (SSH into the Studio) and stops running
 # the automations itself.
 #
-#   uninstall.sh              stop + unload all com.ebda.os.* jobs (reversible: re-run install.sh)
+#   uninstall.sh              stop + unload all ${OS_LAUNCHD_PREFIX}.* jobs (reversible: re-run install.sh)
 #   uninstall.sh --purge      also DELETE the plists + ~/.claude/scripts runtime copies
 #   uninstall.sh --dry-run    show what would happen, change nothing
 #
 # NEVER touches ops/ source, memory, the vault, or ~/.whisky-services.env — only
 # the local launchd jobs (+ runtime copies with --purge). Fully reversible via install.sh.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 PURGE=0; DRY=0
 for a in "$@"; do case "$a" in --purge) PURGE=1;; --dry-run) DRY=1;; esac; done
 U=$(id -u)
 LA="$HOME/Library/LaunchAgents"
 
-jobs=$(ls "$LA/"com.ebda.os.*.plist 2>/dev/null | wc -l | tr -d ' ')
+jobs=$(ls "$LA/"${OS_LAUNCHD_PREFIX}.*.plist 2>/dev/null | wc -l | tr -d ' ')
 echo "OS jobs on this machine: $jobs"
 [ "$DRY" = 1 ] && echo "(dry-run — nothing will change)"
 
-for plist in "$LA/"com.ebda.os.*.plist; do
+for plist in "$LA/"${OS_LAUNCHD_PREFIX}.*.plist; do
   [ -f "$plist" ] || continue
   label=$(basename "$plist" .plist)
   if [ "$DRY" = 1 ]; then

@@ -13,6 +13,9 @@
 # Tunables: STALE_DAYS (default 5 — older than this = "forgotten"), MIN_COUNT
 # (default 10 — ignore trivial), RECENT_DAYS (default 3 — must have fired within
 # this to count as "still bleeding"). SENTRY_NOISE_RE mirrors alert-triage.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # S0 (2026-10-26): --help runs nothing; one run at a time (lib/single-instance.sh)
 . "$(dirname "${BASH_SOURCE[0]}")/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
@@ -27,9 +30,9 @@ ts(){ date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo now; }
 . "$HERE/lib/os-state.sh" 2>/dev/null || true
 
 STOK="${SENTRY_AUTH_TOKEN:-}"
-[ -z "$STOK" ] && [ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] && STOK="$(grep -E '^SENTRY_AUTH_TOKEN=' "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" 2>/dev/null | cut -d= -f2- | tr -d '"')"
+[ -z "$STOK" ] && [ -f "$OS_SERVICES_ENV" ] && STOK="$(grep -E '^SENTRY_AUTH_TOKEN=' "$OS_SERVICES_ENV" 2>/dev/null | cut -d= -f2- | tr -d '"')"
 SORG="${SENTRY_ORG:-}"
-[ -z "$SORG" ] && [ -f "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" ] && SORG="$(grep -E '^SENTRY_ORG=' "${OS_SERVICES_ENV:-$HOME/.whisky-services.env}" 2>/dev/null | cut -d= -f2- | tr -d '"')"
+[ -z "$SORG" ] && [ -f "$OS_SERVICES_ENV" ] && SORG="$(grep -E '^SENTRY_ORG=' "$OS_SERVICES_ENV" 2>/dev/null | cut -d= -f2- | tr -d '"')"
 [ -n "$STOK" ] && [ -n "$SORG" ] || { echo "sentry-stale-watch: sentry not configured — skip"; exit 0; }
 
 PROJECTS="${SENTRY_PROJECTS:-ebda-api ebda-web ebda-admin}"

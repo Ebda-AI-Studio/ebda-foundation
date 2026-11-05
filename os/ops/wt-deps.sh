@@ -15,8 +15,8 @@
 #   WT_DEPS_FORCE=1       replace an existing non-empty node_modules with the clone
 #   WT_DEPS_HOOK=1        HOOK MODE, set by the automatic callers (global git post-checkout, Claude PostToolUse). Those
 #                         fire on repos nobody chose, so it is CLONE-ONLY and TRUSTED-ONLY: (1) origin must be an exact
-#                         github.com URL of Whisky-11/Ebda-AI-Studio/voidengineer-911 (lib/trusted-origin.sh) AND the worktree's
-#                         real path under ~/Desktop/projects, else exit 0 doing nothing; (2) it only clones an existing
+#                         github.com URL of one of $OS_ORGS (lib/trusted-origin.sh) AND the worktree's
+#                         real path under $OS_PROJECTS_DIR, else exit 0 doing nothing; (2) it only clones an existing
 #                         cache entry (built by a deliberate install); a cache MISS prints the manual command and exits 0 -
 #                         it never runs npm/pnpm/yarn (their lockfile/.npmrc/registry/pnpmfile/yarnPath are repo-controlled
 #                         code paths); (3) no husky re-arm (that would execute dependency code).
@@ -25,6 +25,9 @@
 # for the root AND every workspace's nested node_modules, snapshotted (cloned) from a real install.
 # Miss -> install once in THIS worktree (npm ci | pnpm --frozen-lockfile | yarn --frozen-lockfile),
 # snapshot, prune. Non-APFS / cross-volume cache -> plain install, no cache.
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 CHECK=0; if [ "${1:-}" = "--check" ]; then CHECK=1; shift; fi
 WT="$(cd "${1:-.}" && pwd -P)" || { echo "wt-deps: bad dir" >&2; exit 2; }

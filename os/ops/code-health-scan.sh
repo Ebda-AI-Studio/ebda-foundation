@@ -27,8 +27,11 @@
 #
 # Deps: bash 3.2+, python3 (stdlib). knip/jscpd/claude optional (fail-open).
 # ============================================================
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 . ./lib/os-state.sh 2>/dev/null || true
 
@@ -53,7 +56,7 @@ done
 
 STATE_DIR="$HOME/.whisky-os-state"; mkdir -p "$STATE_DIR"
 FINDINGS_FILE="$STATE_DIR/code-health-findings.json"
-PROJECTS="$HOME/Desktop/projects"
+PROJECTS="$OS_PROJECTS_DIR"
 ENGINE="./lib/code-health.py"
 NORMALIZE_LIB="./lib"
 

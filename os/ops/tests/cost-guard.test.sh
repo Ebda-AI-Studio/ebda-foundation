@@ -95,7 +95,7 @@ fi
 
 # MC1 — mutation: force a single org; A and C must go red
 MUT="$TMP/mut-cost-guard.sh"
-sed 's/^GH_ORGS="\${GH_ORGS:-Ebda-AI-Studio Whisky-11}"/GH_ORGS="Ebda-AI-Studio"/' "$SRC" > "$MUT"
+sed 's/^GH_ORGS="\${GH_ORGS:-\$OS_BILLED_ORGS}"/GH_ORGS="Ebda-AI-Studio"/' "$SRC" > "$MUT"
 if grep -q '^GH_ORGS="Ebda-AI-Studio"$' "$MUT"; then
   rc=$(run_guard "$MUT" billing)
   [ "$rc" = "0" ] && pass "MC1: single-org mutation misses the Whisky-11 billing refusal (A can fail)" || fail "MC1: mutation still caught it — test not sensitive (rc=$rc)"
