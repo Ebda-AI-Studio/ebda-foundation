@@ -64,19 +64,21 @@ const unconfigured = (h: ReturnType<typeof harness>, id: string) => expect(h.ing
 
 describe('classify: watcher self-reports never become hands jobs', () => {
   for (const kind of ['monitor-unconfigured', 'watcher-error']) {
-    it(`${kind} is a question-lane finding, never nightly or urgent, whatever else it carries`, () => {
+    it(`${kind} is a digest-lane finding, never nightly, urgent or question, whatever else it carries`, () => {
       for (const extra of [{}, { severity: 'P1' as const, selfHealExhausted: true }, { touches: [] as string[] }]) {
         const c = classifyFinding({ source: 'watcher', kind, key: 'x:y:z', title: 't', ...extra });
-        expect(c.lane).toBe('question');
+        expect(c.lane).toBe('digest');
+        expect(c.lane).not.toBe('question');
         expect(c.lane).not.toBe('nightly');
         expect(c.lane).not.toBe('urgent');
       }
     });
   }
-  it('in the brain they raise a pending question and queue NO nightly/urgent job', async () => {
+  it('in the brain they are recorded and deduped with NO job and NO question', async () => {
     const brain = brainStub(env);
     const r = await brain.ingestFinding({ source: 'watcher', kind: 'monitor-unconfigured', key: 'services:config:unconfigured', title: 'watcher services is not running' }, NOW);
-    expect(r.lane).toBe('question');
+    expect(r.lane).toBe('digest');
+    expect(r.jobId).toBeNull();
     const again = await brain.ingestFinding({ source: 'watcher', kind: 'monitor-unconfigured', key: 'services:config:unconfigured', title: 'watcher services is not running' }, NOW + 1000);
     expect(again.deduped).toBe(true);
     const st = await brain.state(NOW + 2000);
@@ -479,9 +481,6 @@ describe('runner + real Durable Object', () => {
     expect(r['cf-workers']).toBe('ran');
     expect(h.ingested.some((f) => f.kind === 'watcher-error' && f.key === 'cf-workers:cloudflare:error')).toBe(true);
     expect(r['world-watch']).toBe('ran');
-  });
-  it('a dream-source monitor-unconfigured keeps its nightly lane (only source watcher is question-only)', () => {
-    expect(classifyFinding({ source: 'dream', kind: 'monitor-unconfigured', key: 'k', title: 't' }).lane).toBe('nightly');
   });
   it('brain DO: a done drill job without drill:pass (or with drill:fail) is NOT a pass; drill:pass is', async () => {
     const brain = brainStub(env);

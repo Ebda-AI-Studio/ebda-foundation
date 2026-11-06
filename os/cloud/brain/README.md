@@ -20,7 +20,7 @@ BrainDO ──► Telegram (≤ 3/day + 1 digest, deduped)        dashboard /das
 Ten watchers in `src/watchers/`, run from the Worker cron (never inside the DO), entry `src/watchers/run.ts`. Each is a pure function of
 `(env, sink, now, fetch)` with a 10 s timeout per request, a KV cadence gate (`wd:last:<id>`), and findings
 `source: watcher` with the stable key `<watcher>:<subject>:<state>`; the classifier picks the lane and nothing messages Telegram directly.
-Shared rules (`common.ts`): a var left unset skips the watcher and raises ONE deduped `monitor-unconfigured` finding; non-2xx, timeout,
+Shared rules (`common.ts`): a var left unset skips the watcher and raises ONE deduped `monitor-unconfigured` finding (lane `digest`: recorded, listed once in the daily digest, never a hands job or a Telegram question; same for `watcher-error`, from any source); non-2xx, timeout,
 unparsable JSON, `success:false` and GraphQL 200 + `errors` raise a `watcher-error` finding (never "all clear", and an unreadable source
 never resolves earlier findings); a finding whose condition is gone is resolved. Tokens are env secrets (`wrangler secret put`) and never
 appear in a finding. Targets are config only: set the vars below at deploy with `OS_BRAIN_<NAME>` in `~/.ebda-os.local.env` (`scripts/deploy.sh`

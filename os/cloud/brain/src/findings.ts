@@ -2,7 +2,7 @@
 // messages about a finding; it turns it into a job (act first) and reports outcomes.
 import { hexEncode } from './relay';
 
-export type Lane = 'urgent' | 'nightly' | 'question';
+export type Lane = 'urgent' | 'nightly' | 'question' | 'digest';
 export type MergePolicy = 'auto-when-gate-green' | 'pr-and-question';
 
 export interface Finding {

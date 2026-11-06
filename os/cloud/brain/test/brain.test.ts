@@ -434,3 +434,45 @@ describe('fix round 1: re-sighting, promotion, message ceiling, retries', () => 
     expect(h.sent.filter((m) => /urgent: fixed and merged/.test(m.text))).toHaveLength(1);
   });
 });
+
+describe('digest lane (monitor self-reports)', () => {
+  const selfReport = (x: Partial<Finding> = {}) => finding({ kind: 'monitor-unconfigured', key: 'services:config:unconfigured', title: 'watcher services is not running: SERVICE_TARGETS is not set', ...x });
+  it('no job, no question, no Telegram send; deduped; not an OS bug after 24 h', async () => {
+    const h = await harness();
+    const a = await h.run((b) => b.ingestFinding(selfReport(), T0));
+    const again = await h.run((b) => b.ingestFinding(selfReport(), T0 + 5 * MIN));
+    expect(a).toMatchObject({ lane: 'digest', jobId: null, deduped: false });
+    expect(again).toMatchObject({ deduped: true, jobId: null });
+    await h.run((b) => b.tick(T0 + 26 * HOUR));
+    const s = await h.run((b) => b.state(T0 + 26 * HOUR));
+    expect(s.jobs).toMatchObject({ queuedNightly: 0, queuedUrgent: 0, awaitingAnswer: 0 });
+    expect(s.osBugs).toBe(0);
+    expect(s.questions).toHaveLength(0);
+    expect(s.findings.recent).toHaveLength(1);
+    expect(s.findings.recent[0]).toMatchObject({ lane: 'digest', status: 'digest', seen_count: 2 });
+    expect(h.sent).toHaveLength(0);
+    expect(h.hands.started).toHaveLength(0);
+  });
+  it('the daily digest lists it exactly once, as the only message', async () => {
+    const h = await harness();
+    await h.run((b) => b.ingestFinding(selfReport(), T0));
+    await h.run((b) => b.ingestFinding(selfReport({ kind: 'watcher-error', key: 'cf-workers:cloudflare:error', title: 'watcher cf-workers could not read its source: HTTP 401' }), T0));
+    await h.run((b) => b.digest(T0 + HOUR));
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]!.text).toContain('Monitors needing attention');
+    expect(h.sent[0]!.text).toContain('SERVICE_TARGETS is not set');
+    expect(h.sent[0]!.text).toContain('HTTP 401');
+    await h.run((b) => b.digest(T0 + 25 * HOUR));
+    expect(h.sent).toHaveLength(2);
+    expect(h.sent[1]!.text).not.toContain('Monitors needing attention');
+  });
+  it('a recurrence after resolution is news again in the next digest', async () => {
+    const h = await harness();
+    await h.run((b) => b.ingestFinding(selfReport(), T0));
+    await h.run((b) => b.digest(T0 + HOUR));
+    await h.run((b) => b.resolveFinding(selfReport(), 'configured', T0 + 2 * HOUR));
+    await h.run((b) => b.ingestFinding(selfReport({ detail: { n: 2 } }), T0 + 30 * HOUR));
+    await h.run((b) => b.digest(T0 + 49 * HOUR));
+    expect(h.sent.at(-1)!.text).toContain('Monitors needing attention');
+  });
+});

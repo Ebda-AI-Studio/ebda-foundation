@@ -7,6 +7,7 @@
 //   (3) a data exposure (PII or secret leak) detected by a watcher.
 // QUESTION: anything destructive or irreversible (deletes, prod data writes, purchases, secrets, billing) and anything
 //   touching money, auth, data deletion, deploy config or prod data waits for Ahmad's answer before any work starts.
+// DIGEST: monitor self-reports (monitor-unconfigured, watcher-error): recorded + listed once in the digest, no job, no question.
 // NIGHTLY: everything else, in the one batched run at the end of the day. Only the pre-approved classes (dependency /
 //   CVE bumps, docs, tests, lint, flaky-test fixes) may auto-merge, and only when the repo's merge gate is green;
 //   every other change becomes a PR plus one question.
@@ -32,12 +33,11 @@ function matches(re: RegExp, f: Finding): boolean {
 export function classifyFinding(f: Finding): Classification {
   const kind = f.kind.toLowerCase();
 
-  // Watcher self-reports (a watcher with no config, or one that cannot read its source) are ops problems: a hands container
-  // cannot set a token or a var, so they never become a nightly/urgent hands job. They go to Ahmad as ONE deduped question
-  // (the existing question/digest path carries it), nothing else.
-  // (Scoped to source 'watcher': the dreaming cycle's own monitor-unconfigured / scan findings stay nightly jobs, see classify.test.ts.)
-  if (f.source === 'watcher' && (kind === 'monitor-unconfigured' || kind === 'watcher-error')) {
-    return { lane: 'question', reason: 'watcher self-report (config or source access): needs Ahmad, not the hands', mergePolicy: 'pr-and-question' };
+  // Self-reports of a monitor (no config, or a source it cannot read; any source: cloud watchers, dream, heal-watch) are ops
+  // problems a hands container cannot fix (it cannot set a token or a var). They are recorded and deduped, listed once in the
+  // daily digest, and never become a hands job or a Telegram question (rulings R-4a-1, R-4a-2).
+  if (kind === 'monitor-unconfigured' || kind === 'watcher-error') {
+    return { lane: 'digest', reason: 'monitor self-report (config or source access): digest only, no hands job, no question', mergePolicy: 'pr-and-question' };
   }
 
   // (3) data exposure: contain it now. Rotating a secret stays a question for the hands (destructive class).

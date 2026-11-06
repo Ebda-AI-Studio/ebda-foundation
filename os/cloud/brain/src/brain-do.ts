@@ -21,7 +21,7 @@ const DAY = 24 * HOUR;
 export const NIGHTLY_MAX_JOBS = 25;
 export const UNACTED_LIMIT_MS = DAY;
 /** In flight: a re-sighting only updates last_seen (and may promote the lane, never demote it). `waiting` = fix PR open. */
-const ACTIVE = new Set(['open', 'queued', 'question', 'dispatched', 'waiting']);
+const ACTIVE = new Set(['open', 'queued', 'question', 'dispatched', 'waiting', 'digest']);
 /** Re-sighting rules after a finding left the active set (controller ruling 4a-I1):
  *  - held (Ahmad said hold): never reopened by a re-sighting; only a resolution clears it.
  *  - done / failed / resolved: reopened only after the cool-down AND only when the evidence changed. A persistent outage
@@ -184,6 +184,12 @@ export class BrainDO extends DurableObject<Env> {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
         fp, f.source, f.kind, f.key, f.title, f.repo ?? null, f.url ?? null, data, evidence, c.lane, c.reason, c.mergePolicy, now, now, now,
       );
+    }
+    if (c.lane === 'digest') {
+      // digest-only: no job, no question, no message. Counted as acted (the digest is the action) so self-check never flags it.
+      this.sql.exec(`UPDATE findings SET status = 'digest', acted_at = COALESCE(acted_at, ?) WHERE fp = ?`, now, fp);
+      if (existing) this.setMeta('digest:shown', (this.getMeta<string[]>('digest:shown') ?? []).filter((x) => x !== fp)); // a recurrence is news again
+      return { fp, deduped: false, reopened: !!existing, lane: 'digest', reason: c.reason, jobId: null };
     }
     const jobId = uid('job');
     if (c.lane === 'question') {
@@ -629,6 +635,9 @@ export class BrainDO extends DurableObject<Env> {
       return { title: String(r.title), status: o.status, prUrl: o.prUrl ?? null };
     });
     for (const r of this.rows(`SELECT title, outcome FROM findings WHERE status = 'resolved' AND closed_at > ?`, since)) outcomes.push({ title: String(r.title), status: String(r.outcome ?? 'resolved'), prUrl: null });
+    // digest-lane findings (monitor self-reports) are listed ONCE: the fingerprints already shown are remembered
+    const shown = new Set(this.getMeta<string[]>('digest:shown') ?? []);
+    const watchRows = this.rows(`SELECT fp, title FROM findings WHERE lane = 'digest' AND status = 'digest' ORDER BY first_seen LIMIT 20`).filter((r) => !shown.has(String(r.fp)));
     const a24 = this.actedOn(now, DAY);
     const a7 = this.actedOn(now, 7 * DAY);
     const pending = this.rows(`SELECT id, text, default_opt FROM questions WHERE status = 'pending' ORDER BY created_at LIMIT 10`);
@@ -642,11 +651,13 @@ export class BrainDO extends DurableObject<Env> {
       ratio7d: a7.ratio,
       pendingQuestions: pending.map((q) => ({ id: String(q.id), text: String(q.text), defaultOption: String(q.default_opt) })),
       rolledUp: rolled.map((r) => ({ text: String(r.text), failed: r.status === 'undelivered' })),
+      monitorNotes: watchRows.map((r) => String(r.title)),
       osBugs: this.selfCheck(now).length,
       usageNote: refused && now - refused.at < DAY ? refused.reason : null,
     });
     const r = await this.emit(msg, now);
     if (r === 'sent') {
+      if (watchRows.length) this.setMeta('digest:shown', [...shown, ...watchRows.map((x) => String(x.fp))].slice(-500));
       for (const m of rolled) this.sql.exec(`UPDATE messages SET status = 'rolled' WHERE dedupe_key = ?`, m.dedupe_key);
       // questions delivered through the digest start their deadline now
       const deadline = now + this.policy.questionDeadlineHours * HOUR;

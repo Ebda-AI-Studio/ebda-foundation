@@ -101,6 +101,8 @@ export interface DigestInput {
   rolledUp: Array<{ text: string; failed: boolean }>;
   osBugs: number;
   usageNote: string | null;
+  /** digest-lane findings not shown before: monitors that are unconfigured or cannot read their source */
+  monitorNotes?: string[];
 }
 
 export function digestMessage(d: DigestInput): Outgoing {
@@ -119,6 +121,10 @@ export function digestMessage(d: DigestInput): Outgoing {
   if (d.pendingQuestions.length) {
     lines.push('', 'Waiting for you:');
     for (const q of d.pendingQuestions.slice(0, 10)) lines.push(`- ${q.text} (default "${q.defaultOption}")`);
+  }
+  if (d.monitorNotes?.length) {
+    lines.push('', 'Monitors needing attention (no job opened):');
+    for (const t of d.monitorNotes.slice(0, 10)) lines.push(`- ${t}`);
   }
   if (d.rolledUp.length) {
     lines.push('', 'Rolled up (over budget or not delivered):');
