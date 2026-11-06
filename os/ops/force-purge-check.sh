@@ -13,16 +13,20 @@
 # Usage: force-purge-check.sh [--home DIR] [--projects DIR]   (defaults: $HOME, $HOME/Desktop/projects)
 set -uo pipefail
 case "${1:-}" in -h|--help) sed -n 2,14p "${BASH_SOURCE[0]}" | sed "s/^# \{0,1\}//"; exit 0 ;; esac
-H="$HOME"; P=""
+H="$HOME"; P=""; ARG_P=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --home) H="${2:?--home needs a directory}"; shift 2 ;;
-    --projects) P="${2:?--projects needs a directory}"; shift 2 ;;
+    --projects) ARG_P="${2:?--projects needs a directory}"; shift 2 ;;
     *) echo "force-purge-check: unknown arg $1" >&2; exit 2 ;;
   esac
 done
 [ -d "$H" ] || { echo "force-purge-check: no such home $H" >&2; exit 2; }
-[ -n "$P" ] || P="$H/Desktop/projects"
+HOME="$H"; export HOME   # the config loader derives its defaults from HOME, so a fake --home stays fake
+# shellcheck source=lib/os-config.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$H/.claude/scripts/lib/os-config.sh" 2>/dev/null || { echo "force-purge-check: cannot load os-config.sh" >&2; exit 2; }
+os_config_load
+P="${ARG_P:-$OS_PROJECTS_DIR}"
 RE='force-ai-foundation|ForceAI-KW|com\.forceai'
 CNT="$(mktemp)"; trap 'rm -f "$CNT"' EXIT
 section() { # section <name> <description>; hits on stdin
@@ -32,11 +36,23 @@ section() { # section <name> <description>; hits on stdin
   [ "$n" -gt 0 ] && printf '%s\n' "$lines" | sed 's/^/  /'
   echo "$name $n" >> "$CNT"
 }
-# grep -n output reduced to path:line (no content)
-refs() { grep -HInE "$RE" -- "$@" 2>/dev/null | cut -d: -f1,2; }
+# print "path:line" per match, never content; the path is printed by us (not split out of grep output), so ':' in paths is safe
+refs() { local f="$1" n; grep -InE "$RE" -- "$f" 2>/dev/null | cut -d: -f1 | while IFS= read -r n; do printf '%s:%s\n' "$f" "$n"; done; }
+# follow a symlink chain hop by hop (readlink without -f is portable); print "link -> hop" for the first hop inside Force-AI/
+chain_hit() {
+  local cur="$1" t i=0 first=""
+  while [ -L "$cur" ] && [ "$i" -lt 40 ]; do
+    t="$(readlink "$cur")"; case "$t" in /*) ;; *) t="$(dirname "$cur")/$t" ;; esac
+    case "/$t/" in */Force-AI/*) first="${first:-$t}" ;; esac
+    cur="$t"; i=$((i+1))
+  done
+  case "/$cur/" in */Force-AI/*) first="${first:-$cur}" ;; esac
+  [ -n "$first" ] && printf '%s -> %s\n' "$1" "$first"
+  return 0
+}
 
 { [ -d "$H/.claude" ] && find "$H/.claude" \( -name node_modules -o -name .git \) -prune -o -type l -print 2>/dev/null |
-  while IFS= read -r l; do t="$(readlink "$l")"; case "/$t/" in */Force-AI/*) echo "$l -> $t" ;; esac; done; } | section symlinks "claude-dir symlinks resolving into Force-AI/"
+  while IFS= read -r l; do chain_hit "$l"; done; } | section symlinks "claude-dir symlinks (any hop of the chain) resolving into Force-AI/"
 
 { for p in "$H"/Library/LaunchAgents/com.forceai.*.plist "$H"/Library/LaunchAgents/com.salam.erp-backup.plist; do [ -e "$p" ] && echo "$p"; done; } | section launchd-plists "predecessor LaunchAgents (disabled plists count)"
 
@@ -48,7 +64,7 @@ refs() { grep -HInE "$RE" -- "$@" 2>/dev/null | cut -d: -f1,2; }
 
 { for f in "$H/.claude/CLAUDE.md" "$H/AGENTS.md"; do [ -f "$f" ] && refs "$f"; done; } | section instructions "CLAUDE.md / AGENTS.md naming the predecessor"
 
-{ for b in Ebda-AI-Studio Whisky-11 Personal; do [ -d "$P/$b" ] &&
+{ for b in $OS_NONFORCE_BUSINESS_DIRS; do [ -d "$P/$b" ] &&
     grep -rIlE 'force-ai-foundation' --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next --exclude-dir=dist --exclude-dir=graphify-out "$P/$b" 2>/dev/null; done; } | section repo-docs "files in non-predecessor repos referencing force-ai-foundation"
 
 { v="$P/calude code meomry"; [ -d "$v/.git" ] || [ -f "$v/.git" ] && { u="$(git -C "$v" remote get-url origin 2>/dev/null)"; case "$u" in *ForceAI-KW/*) echo "$v remote=$u" ;; esac; }; } | section memory-vault "vault remote on the predecessor org (OD-1)"

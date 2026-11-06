@@ -39,6 +39,7 @@ os_config_load() {
   : "${OS_SENTRY_ORG:=org-lingering-river-25973882}"
   : "${OS_PERSONAL_OWNER:=voidengineer-911}"
   : "${OS_NEON_ORG:=org-lingering-river-25973882}"
+  : "${OS_NONFORCE_BUSINESS_DIRS:=Ebda-AI-Studio Whisky-11 Personal}"
   OS_ORG="${OS_ORGS%% *}"
   OS_BILLED_ORGS=""   # the orgs only (OS_ORGS minus the personal account): what billing and GHAS checks iterate
   for _o in $OS_ORGS; do [ "$_o" = "$OS_PERSONAL_OWNER" ] || OS_BILLED_ORGS="${OS_BILLED_ORGS:+$OS_BILLED_ORGS }$_o"; done
