@@ -66,5 +66,17 @@ out="$("${E[@]}" bash "$OPS/dream-scan.sh" 2>&1)"; rc=$?
 "${E[@]}" DREAM_PHASES_DIR="$OPS" bash "$OPS/dream.sh" --daily >/dev/null 2>&1; rc=$?
 [ "$rc" = 1 ] && pass "dream.sh fails when the scan has no targets" || fail "dream with no targets rc=$rc"
 
+# scan script missing entirely (failed:absent): exit 1, ledger says failed:absent, a dream-scan-failed finding is spooled
+mkdir -p "$T/emptyphases"; rm -f "$T/state/brain-spool.ndjson" "$T/state/dream-ledger.json"
+"${E[@]}" DREAM_PHASES_DIR="$T/emptyphases" bash "$OPS/dream.sh" --daily >/dev/null 2>&1; rc=$?
+[ "$rc" = 1 ] && pass "dream.sh exits 1 when dream-scan.sh is missing" || fail "missing scan rc=$rc"
+python3 -I -c "
+import json,sys; e=json.load(open(sys.argv[1]))['entries'][-1]
+sys.exit(0 if e['phases_status']['scan']=='failed:absent' else 1)" "$T/state/dream-ledger.json" && pass "ledger records scan failed:absent" || fail "ledger status"
+python3 -I -c "
+import json,sys
+rows=[json.loads(l) for l in open(sys.argv[1])]
+sys.exit(0 if any(r['kind']=='dream-scan-failed' and r['source']=='dream' for r in rows) else 1)" "$T/state/brain-spool.ndjson" && pass "a dream-scan-failed finding was spooled for the brain" || fail "no dream-scan-failed finding"
+
 echo "── $_pass passed, $_fail failed ──"
 [ "$_fail" -eq 0 ]
