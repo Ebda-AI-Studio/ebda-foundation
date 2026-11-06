@@ -9,6 +9,7 @@ echo "== no-literal-config =="; bash "$ROOT/os/tests/no-literal-config.test.sh" 
 echo "== standard-links =="; node "$ROOT/os/tests/standard-links.test.mjs" || rc=1
 echo "== os-local-list =="; bash "$ROOT/os/tests/os-local-list.test.sh" || rc=1
 echo "== os-config-parity =="; bash "$ROOT/os/tests/os-config-parity.test.sh" || rc=1
+echo "== install-dryrun =="; bash "$ROOT/os/tests/install-dryrun.test.sh" || rc=1
 echo "== ops suites ==";       bash "$ROOT/os/ops/run-tests.sh" "$@" || rc=1
 echo "== linux-smoke ==";      bash "$ROOT/os/tests/linux-smoke.test.sh" || rc=1
 [ "$rc" -eq 0 ] && echo "os run-all: PASS" || echo "os run-all: FAIL"

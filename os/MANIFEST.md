@@ -87,3 +87,19 @@ These touch launchd, the Keychain `security` tool, `sw_vers`, `xcrun` or similar
 - Launchd labels use the `com.ebda.os.` prefix.
 
 Layering and cost-if-wrong: `docs/rulings/FDN-OS-1.md`.
+
+## Installer and the launchd set (Task 5, Amendment A)
+
+`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (13 jobs, down from the 34 plist templates of the old fleet). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
+
+| Old job | Decision |
+|---|---|
+| ci-runner-guard, guest-wedge-watch, hung-job-guard (Umbra guard) | Mac-local, installed |
+| mac-maintenance, workspace-hygiene (hygiene / worktree sweeps) | Mac-local, installed |
+| usage-sentinel (reads local Claude usage) | Mac-local, installed |
+| graph-backfill, instinct-extract, session-mining, claude-home-export (memory pipeline side) | Mac-local, installed |
+| ebda-cf-backup (backup to local disk) | Mac-local, installed |
+| os-selftest (checks the local install) | Mac-local, installed |
+| hands-mac-local (pull-only provider, template in `cloud/hands/providers/launchd/`) | Mac-local, installed |
+| alert-triage, anomaly-watch, cf-workers-watch, ci-alert, deploy-drift, journey-monitor, os-watch, services-watch, sentry-stale-watch, world-watch | brain cron / watcher, not installed |
+| pr-shepherd, gate-guard, ghas-guard, drift-watch, dead-gate-detect, docs-scan, fleet-dep-audit, ebda-foundation-bump, acceptance-feedback, audit-pack-daily, cost-guard, dr-drill | brain cron or hands batch, not installed |
