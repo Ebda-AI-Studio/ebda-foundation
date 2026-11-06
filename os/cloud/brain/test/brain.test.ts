@@ -466,6 +466,23 @@ describe('digest lane (monitor self-reports)', () => {
     expect(h.sent).toHaveLength(2);
     expect(h.sent[1]!.text).not.toContain('Monitors needing attention');
   });
+  it('15 notes: digest 1 lists 10 + "+5 more", digest 2 lists the other 5; none lost, none repeated', async () => {
+    const h = await harness();
+    for (let i = 1; i <= 15; i++) await h.run((b) => b.ingestFinding(selfReport({ key: `w${i}:config:unconfigured`, title: `note-${String(i).padStart(2, '0')}` }), T0 + i));
+    await h.run((b) => b.digest(T0 + HOUR));
+    const d1 = h.sent[0]!.text;
+    const in1 = [...d1.matchAll(/note-(\d\d)/g)].map((m) => m[1]);
+    expect(in1).toHaveLength(10);
+    expect(d1).toContain('+5 more pending');
+    await h.run((b) => b.digest(T0 + 25 * HOUR));
+    const d2 = h.sent[1]!.text;
+    const in2 = [...d2.matchAll(/note-(\d\d)/g)].map((m) => m[1]);
+    expect(in2).toHaveLength(5);
+    expect(d2).not.toContain('more pending');
+    expect(new Set([...in1, ...in2]).size).toBe(15);
+    await h.run((b) => b.digest(T0 + 49 * HOUR));
+    expect(h.sent[2]!.text).not.toContain('Monitors needing attention');
+  });
   it('a recurrence after resolution is news again in the next digest', async () => {
     const h = await harness();
     await h.run((b) => b.ingestFinding(selfReport(), T0));

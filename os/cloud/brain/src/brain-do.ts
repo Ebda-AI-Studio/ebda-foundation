@@ -12,7 +12,7 @@ import type { Env, Policy } from './env';
 import { policyFrom } from './env';
 import { evidenceOf, fingerprint, type Finding, type Lane, type MergePolicy } from './findings';
 import { providerFor, type HandsBatch, type HandsJob, type HandsProvider, type JobOutcome, type RunKind, type UsageReport } from './hands';
-import { admit, dayKey, digestMessage, questionMessage, sendTelegram, URGENT_KINDS, type MsgKind, type Outgoing } from './telegram';
+import { admit, dayKey, digestMessage, MONITOR_NOTES_PER_DIGEST, questionMessage, sendTelegram, URGENT_KINDS, type MsgKind, type Outgoing } from './telegram';
 import { usageGuard } from './usage';
 import type { AdvisoryRunSummary } from './watchers/advisories';
 
@@ -637,7 +637,9 @@ export class BrainDO extends DurableObject<Env> {
     for (const r of this.rows(`SELECT title, outcome FROM findings WHERE status = 'resolved' AND closed_at > ?`, since)) outcomes.push({ title: String(r.title), status: String(r.outcome ?? 'resolved'), prUrl: null });
     // digest-lane findings (monitor self-reports) are listed ONCE: the fingerprints already shown are remembered
     const shown = new Set(this.getMeta<string[]>('digest:shown') ?? []);
-    const watchRows = this.rows(`SELECT fp, title FROM findings WHERE lane = 'digest' AND status = 'digest' ORDER BY first_seen LIMIT 20`).filter((r) => !shown.has(String(r.fp)));
+    const watchRows = this.rows(`SELECT fp, title FROM findings WHERE lane = 'digest' AND status = 'digest' ORDER BY first_seen LIMIT 500`).filter((r) => !shown.has(String(r.fp)));
+    // only the notes the digest actually renders are marked shown; the rest wait for the next digest
+    const rendered = watchRows.slice(0, MONITOR_NOTES_PER_DIGEST);
     const a24 = this.actedOn(now, DAY);
     const a7 = this.actedOn(now, 7 * DAY);
     const pending = this.rows(`SELECT id, text, default_opt FROM questions WHERE status = 'pending' ORDER BY created_at LIMIT 10`);
@@ -651,13 +653,14 @@ export class BrainDO extends DurableObject<Env> {
       ratio7d: a7.ratio,
       pendingQuestions: pending.map((q) => ({ id: String(q.id), text: String(q.text), defaultOption: String(q.default_opt) })),
       rolledUp: rolled.map((r) => ({ text: String(r.text), failed: r.status === 'undelivered' })),
-      monitorNotes: watchRows.map((r) => String(r.title)),
+      monitorNotes: rendered.map((r) => String(r.title)),
+      monitorMore: watchRows.length - rendered.length,
       osBugs: this.selfCheck(now).length,
       usageNote: refused && now - refused.at < DAY ? refused.reason : null,
     });
     const r = await this.emit(msg, now);
     if (r === 'sent') {
-      if (watchRows.length) this.setMeta('digest:shown', [...shown, ...watchRows.map((x) => String(x.fp))].slice(-500));
+      if (rendered.length) this.setMeta('digest:shown', [...shown, ...rendered.map((x) => String(x.fp))].slice(-1000));
       for (const m of rolled) this.sql.exec(`UPDATE messages SET status = 'rolled' WHERE dedupe_key = ?`, m.dedupe_key);
       // questions delivered through the digest start their deadline now
       const deadline = now + this.policy.questionDeadlineHours * HOUR;

@@ -103,7 +103,12 @@ export interface DigestInput {
   usageNote: string | null;
   /** digest-lane findings not shown before: monitors that are unconfigured or cannot read their source */
   monitorNotes?: string[];
+  /** digest-lane findings beyond the ones rendered; they stay unshown and lead the next digest */
+  monitorMore?: number;
 }
+
+/** Most monitor notes one digest renders; the brain marks exactly this many shown, never more. */
+export const MONITOR_NOTES_PER_DIGEST = 10;
 
 export function digestMessage(d: DigestInput): Outgoing {
   const lines: string[] = [`Ebda OS daily digest ${d.day}`];
@@ -124,7 +129,8 @@ export function digestMessage(d: DigestInput): Outgoing {
   }
   if (d.monitorNotes?.length) {
     lines.push('', 'Monitors needing attention (no job opened):');
-    for (const t of d.monitorNotes.slice(0, 10)) lines.push(`- ${t}`);
+    for (const t of d.monitorNotes.slice(0, MONITOR_NOTES_PER_DIGEST)) lines.push(`- ${t}`);
+    if (d.monitorMore) lines.push(`- +${d.monitorMore} more pending (next digest)`);
   }
   if (d.rolledUp.length) {
     lines.push('', 'Rolled up (over budget or not delivered):');
