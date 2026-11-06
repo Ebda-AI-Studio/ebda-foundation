@@ -6,7 +6,7 @@
 # seed missing). Registry-driven: ops/lib/app-error-registry.json.
 #
 # Action model (mirrors self-heal's tiering):
-#   escalate            → fire the class's precise runbook via notify.sh. SAFE
+#   escalate            → hand the class's precise runbook to the brain as a finding (no chat message). SAFE
 #                         default; MANDATORY for any data-touching class.
 #   redeploy:<svc-id>   → compute-only recovery via self-heal.sh <svc-id> for
 #                         leaked-connection/stuck-process classes. Never data.
@@ -18,10 +18,12 @@
 command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:$PATH"
-HERE="$HOME/.claude/scripts"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$HERE/lib/brain-post.sh" 2>/dev/null || true
+. "$HERE/lib/heal-registry.sh" 2>/dev/null || true
 REG="${APP_ERR_REG:-$HERE/lib/app-error-registry.json}"
-STATE="$HOME/.whisky-os-state"; LOG="$STATE/app-error-heal.log"; mkdir -p "$STATE"
-NOTIFY="$HERE/notify.sh"; DRY="${DRY_RUN:-0}"
+STATE="$OS_STATE_DIR"; LOG="$STATE/app-error-heal.log"; mkdir -p "$STATE"
+DRY="${DRY_RUN:-0}"
 ts(){ date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo now; }
 log(){ printf '%s [app-error-heal] %s\n' "$(ts)" "$*" >>"$LOG"; }
 . "$HERE/lib/os-state.sh" 2>/dev/null || true
@@ -102,16 +104,16 @@ except Exception: print('0\t-')
   case "$ACTION" in
     escalate)
       log "ESCALATE '$NAME' ($total ev): $sample"
-      [ "$DRY" = 0 ] && "$NOTIFY" "⚠️ App-error class firing: $NAME" "$msg" >/dev/null 2>&1 || echo "[dry] escalate $NAME"
+      if [ "$DRY" = 0 ]; then heal_report app-error P2 false "$NAME" "$msg"; else echo "[dry] escalate $NAME"; fi
       ;;
     redeploy:*)
       svc="${ACTION#redeploy:}"
       log "COMPUTE-HEAL '$NAME' -> self-heal $svc (redeploy) + escalate context ($total ev)"
-      [ "$DRY" = 0 ] && "$NOTIFY" "⚠️ App-error class firing: $NAME → redeploy $svc" "$msg" >/dev/null 2>&1 || true
+      [ "$DRY" = 0 ] && heal_report app-error P2 false "$NAME" "$msg (compute redeploy of $svc started)"
       [ "$DRY" = 0 ] && "$HERE/self-heal.sh" "$svc" "app-error-heal: $NAME class breached ($total ev/${WIN}h)" >/dev/null 2>&1 || echo "[dry] would self-heal $svc"
       ;;
     *) log "'$NAME' unknown action '$ACTION' — escalate as fallback"
-       [ "$DRY" = 0 ] && "$NOTIFY" "⚠️ App-error class firing: $NAME (unmapped action)" "$msg" >/dev/null 2>&1 || true ;;
+       [ "$DRY" = 0 ] && heal_report app-error P2 false "$NAME" "$msg (unmapped action)" ;;
   esac
   [ "$DRY" = 0 ] && python3 -c "import json;json.dump({'last':$now,'events':$total},open('$SF','w'))" 2>/dev/null
 done

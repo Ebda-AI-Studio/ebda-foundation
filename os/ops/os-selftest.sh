@@ -51,7 +51,7 @@ STATE_DIR="$HOME/.whisky-os-state"; mkdir -p "$STATE_DIR"
 # to the foundation checkout, then to the ACTUALLY-LOADED LaunchAgents (2026-07-12:
 # the freshness check silently skipped when run from ~/.claude/scripts).
 LAUNCHD_DIR="$(pwd)/launchd"
-[ -d "$LAUNCHD_DIR" ] || LAUNCHD_DIR="$OS_HOME/ops/launchd"
+[ -d "$LAUNCHD_DIR" ] || LAUNCHD_DIR="$OS_HOME/os/ops/launchd"
 [ -d "$LAUNCHD_DIR" ] || LAUNCHD_DIR="$HOME/Library/LaunchAgents"
 PROJECTS="$OS_PROJECTS_DIR"
 NORMALIZE_LIB="./lib/findings-normalize.py"

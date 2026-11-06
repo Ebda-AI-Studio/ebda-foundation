@@ -133,14 +133,14 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | usage-sentinel | KEEP-MAC | usage-sentinel | reads local Claude usage |
 | workspace-hygiene | KEEP-MAC | workspace-hygiene | local worktrees, disk and Umbra prune |
 | world-watch | PORT-BRAIN | world-watch | HTTP poll of external sources |
-| dream | KEEP-MAC | pending-task-6 | dream cycle runs the Claude CLI over local memory; script lands in Task 6 |
-| reflect | KEEP-MAC | pending-task-6 | reflect phase of the dream cycle, same Mac-only inputs; Task 6 |
+| dream | KEEP-MAC | dream | dream cycle runs the Claude CLI over local memory; findings go to the brain job queue, no messages |
+| reflect | KEEP-MAC | reflect | reflect phase of the dream cycle (dream.sh --reflect-only, midweek), same Mac-only inputs |
 | daily-brief | REPLACED-BY | cloud/brain/src/brain-do.ts | brain digest alarm (digest) sends the daily message |
 | page-load-monitor | PORT-BRAIN | page-load | fetch-based page checks, always-on |
-| self-heal | KEEP-MAC | pending-task-6 | heals Mac services through the Claude CLI; Task 6 |
-| heal-watch | KEEP-MAC | pending-task-6 | watches the heal ledger on local disk; Task 6 |
+| self-heal | KEEP-MAC | heal-watch | heals services through the redeploy and rollback recipes; launched by heal-watch.sh, reports to the brain |
+| heal-watch | KEEP-MAC | heal-watch | watches the heal ledger on local disk; probes the services listed in the local config |
 | findings-watch | REPLACED-BY | cloud/brain/src/findings.ts | brain ingests and queues findings |
-| app-error-heal | KEEP-MAC | pending-task-6 | runs the Claude CLI against app errors; Task 6 |
+| app-error-heal | KEEP-MAC | app-error-heal | runs the Sentry class checks from the Mac; findings go to the brain |
 | event-listener | REPLACED-BY | cloud/brain/src/relay.ts | signed relay events, drained through /pending |
 | dashboard | REPLACED-BY | cloud/brain/public/dash | brain serves the dashboard |
 | code-health | KEEP-MAC | code-health | knip/jscpd and the claude judgment pass over local checkouts |

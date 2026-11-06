@@ -112,3 +112,7 @@ Full design + grading: `standard/disk-discipline.md`. In short:
 - `workspace-hygiene.sh` runs `umbra prune <vm>` on running machines when host free < 40 GB or disk.img grew > 10 GB since
   the last prune (`UMBRA_PRUNE_FREE_GB`, `UMBRA_PRUNE_GROWTH_GB`; state `~/.cache/wt-deps/umbra-prune.tsv`; log
   `~/Library/Logs/ebda-os-umbra-prune.log`); skips a VM under `umbra rebuild`; Telegram if still < 30 GB after.
+
+## Dream cycle, self-heal and the brain hand-off (Task 6)
+
+`dream.sh` (daily 08:00; Sundays deep, midweek `--reflect-only`), `dream-reflect.sh`, `dream-standard-drift.sh`, `self-heal.sh`, `heal-watch.sh` and `app-error-heal.sh` run on the Mac and report to the brain, not to a chat. `lib/brain-post.sh` POSTs findings to `$OS_BRAIN_URL/findings` (Bearer `INGEST_TOKEN`, both from `$OS_SERVICES_ENV`); with no brain configured, or when the POST fails, they are appended to `$OS_STATE_DIR/brain-spool.ndjson` and drained on the next successful post. Self-heal services come from `heal_services` in `~/.ebda-os.local.json` (`lib/heal-registry.sh`); the lists are Ebda-only. `dream-standard-drift.sh --reseed` re-proposes, once each, lessons that the previous repo's ledger recorded. The research/scan/act phases of `dream.sh` run when their scripts are installed and are reported `absent` otherwise.

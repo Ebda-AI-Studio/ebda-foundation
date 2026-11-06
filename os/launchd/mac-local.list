@@ -24,3 +24,7 @@ gate-guard	ops/launchd/com.ebda.os.gate-guard.plist
 os-watch	ops/launchd/com.ebda.os.os-watch.plist
 code-health	ops/launchd/com.ebda.os.code-health.plist
 runner-hook-health	ops/launchd/com.ebda.os.runner-hook-health.plist
+dream	ops/launchd/com.ebda.os.dream.plist
+reflect	ops/launchd/com.ebda.os.reflect.plist
+heal-watch	ops/launchd/com.ebda.os.heal-watch.plist
+app-error-heal	ops/launchd/com.ebda.os.app-error-heal.plist

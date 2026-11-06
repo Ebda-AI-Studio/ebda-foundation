@@ -60,7 +60,8 @@ REPO="${FOUNDATION_REPO:-$REPO_DEFAULT}"
 # renumbering ("community": 22 -> 23) across unchanged nodes. A 4 MB blob whose
 # diffs carry no information. It is refreshed by whatever PR actually changes the
 # code it describes.
-ALLOWLIST="ARCHITECTURE.md"
+# the OS lives under os/ in the repo: the self-map is os/ARCHITECTURE.md, written by os/ops/self-check.sh (run from os/ops)
+ALLOWLIST="os/ARCHITECTURE.md"
 CHECK_ONLY=0; NO_PUSH=0
 for a in "$@"; do
   case "$a" in
@@ -150,7 +151,7 @@ MARKER="$STATE_DIR/foundation-last-sync-commit"
 head_now="$(git rev-parse HEAD 2>/dev/null)"
 last_sync="$(cat "$MARKER" 2>/dev/null || echo none)"
 # source = every tracked path EXCEPT the generated graph + self-map
-src_drift="$(git status --porcelain -- . ':(exclude)graphify-out' ':(exclude)ARCHITECTURE.md' 2>/dev/null | head -1)"
+src_drift="$(git status --porcelain -- . ':(exclude)graphify-out' ':(exclude)os/ARCHITECTURE.md' 2>/dev/null | head -1)"
 REGEN=1
 # The marker alone is NOT evidence the graph is current: it records what this script
 # BELIEVES it last synced, not what the graph actually contains. On 2026-09-04 the
@@ -175,9 +176,9 @@ elif [ "$graph_stale" = "1" ] && [ "$head_now" = "$last_sync" ] && [ -z "$src_dr
 fi
 
 # ── 2. regenerate the self-map (only when source changed) ───────────────────
-if [ "$REGEN" = "1" ] && [ -x "ops/self-check.sh" ]; then
-  bash ops/self-check.sh >/dev/null 2>&1 || true   # exits non-zero on ERROR findings; the map is still written
-  ok "   ✓ regenerated self-map (ARCHITECTURE.md)"
+if [ "$REGEN" = "1" ] && [ -x "os/ops/self-check.sh" ]; then
+  ( cd os/ops && bash self-check.sh >/dev/null 2>&1 ) || true   # exits non-zero on ERROR findings; the map is still written
+  ok "   ✓ regenerated self-map (os/ARCHITECTURE.md)"
 fi
 
 # ── 3. refresh the graph (AST-only, no token cost; only when source changed) ─
@@ -197,11 +198,11 @@ pending="$(git add --dry-run --ignore-errors -- $ALLOWLIST 2>/dev/null \
 # a PR) per pipeline tick that says nothing. If the ONLY change is that line, revert
 # the file and treat it as no change.
 if [ -n "$pending" ]; then
-  real_change="$(git diff -U0 -- ARCHITECTURE.md \
+  real_change="$(git diff -U0 -- os/ARCHITECTURE.md \
     | grep -E '^[-+]' | grep -vE '^(\+\+\+|---)' \
     | grep -vE '^[-+]_Last-commit date:' || true)"
   if [ -z "$real_change" ]; then
-    git checkout -- ARCHITECTURE.md 2>/dev/null || true
+    git checkout -- os/ARCHITECTURE.md 2>/dev/null || true
     pending=""
     ok "   ✓ self-map unchanged (date stamp only) — nothing to commit"
   fi

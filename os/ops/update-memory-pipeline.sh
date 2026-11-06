@@ -751,12 +751,12 @@ MSG
 # here must never break the memory pipeline.
 sync_foundation() {
   local fnd="$OS_HOME"
-  local sync="$fnd/ops/sync-foundation.sh"
+  local sync="$fnd/os/ops/sync-foundation.sh"
   if [ ! -x "$sync" ]; then
     echo "  [foundation] skip — $sync not found"; return 0
   fi
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "  [foundation] DRY: would run ops/sync-foundation.sh --check"
+    echo "  [foundation] DRY: would run os/ops/sync-foundation.sh --check"
     bash "$sync" --check 2>&1 | sed 's/^/  [foundation] /' || true
     return 0
   fi
@@ -866,7 +866,7 @@ nudge_runtime() {
   # os-state.sh provides write_status + emit_event (installed by the foundation).
   # shellcheck disable=SC1090
   . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null \
-    || . "$OS_HOME/ops/lib/os-state.sh" 2>/dev/null \
+    || . "$OS_HOME/os/ops/lib/os-state.sh" 2>/dev/null \
     || return 0
   local ts; ts="$(date -u +%FT%TZ)"
   if command -v write_status >/dev/null 2>&1; then
