@@ -8,6 +8,7 @@ The AI OS layer of ebda-foundation: the operating tooling that every business (E
 |---|---|---|
 | `config/os.env` | Single source for the OS identity: repo slug, orgs, launchd prefix, git chain key, state dir, services env path. | present |
 | `ops/*.sh`, `ops/lib/`, `ops/hooks/`, `ops/git-hooks/`, `ops/remediation/`, `ops/detectors/`, `ops/journeys/`, `ops/cloud/` | The generic OS core: monitors, guards, installer, merge gate, worktree and runner tooling. | ported (Task 2) |
+| `ops/force-purge-check.sh` | Read-only purge readiness: lists, by category with counts, everything on this Mac still tied to the predecessor business. Deletes nothing. Test: `tests/force-purge-check.test.sh`. | new (Task 9) |
 | `ops/launchd/com.ebda.os.*.plist` | Scheduled-job templates (`__HOME__` / `__PATH__` tokens, filled by `ops/install.sh`). | ported (Task 2) |
 | `ops/lib/os-config.sh` | `os_config_load`: sources `config/os.env`, then `~/.ebda-os.local.env`. | new (Task 2) |
 | `ops/lib/keychain.sh` | `keychain_get <service>`: Keychain read with the hex-decode rule (same rule as ebda-store `scripts/cf/lib/keychain.mjs`). | new (Task 2) |

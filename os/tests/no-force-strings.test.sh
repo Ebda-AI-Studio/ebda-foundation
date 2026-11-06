@@ -13,7 +13,7 @@ fi
 RE2='forceai[-_.]|\b(fwb|wbs)\b|force-website-builder|whatsapp-bulk-sender|gcc-horse-market|horse-market|work-wise|legende|olounge|beethoven|al[-_]?assriya|wady|pecan+bee|forcemedia|force_app|force-ai\.co'
 RE_CI='\bforce[-_ ]?ai'
 hits=$(printf '%s\n' "$files" \
-  | grep -vE '^(docs/history/|\.superpowers/|node_modules/|\.git/|docs/plans/2026-11-05-foundation-takeover\.md$|os/tests/no-force-strings\.test\.sh$|package-lock\.json$)' \
+  | grep -vE '^(docs/history/|\.superpowers/|node_modules/|\.git/|docs/plans/2026-11-05-foundation-takeover\.md$|os/tests/no-force-strings\.test\.sh$|os/ops/force-purge-check\.sh$|os/tests/force-purge-check\.test\.sh$|package-lock\.json$)' \
   | while IFS= read -r f; do [ -f "$f" ] && { grep -InE "$RE" -- "$f" 2>/dev/null; grep -InEi "$RE2|$RE_CI" -- "$f" 2>/dev/null; } | sort -u | grep -v "OS_UMBRA_VMS" | sed "s|^|$f:|"; done)
 if [ -n "$hits" ]; then
   echo "FAIL: predecessor strings found outside docs/history/:"
