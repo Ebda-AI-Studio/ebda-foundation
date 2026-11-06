@@ -18,6 +18,8 @@ export interface Env {
   URGENT_RUN_CAP_MIN: string;
   QUESTION_DEADLINE_HOURS: string;
   USAGE_WEEKLY_THRESHOLD_PCT: string;
+  /** optional: consecutive fully-skipped nightly batches before the brain alerts (default 3) */
+  USAGE_STARVED_ALERT_AFTER?: string;
   HANDS_PROVIDER: string;
   /** cloudflare-sandbox: the brain's public URL the container calls back (rendered from OS_BRAIN_HOST) */
   HANDS_BRAIN_URL?: string;
@@ -68,6 +70,8 @@ export interface Policy {
   questionDeadlineHours: number;
   usageThresholdPct: number;
   healthFailBudget: number;
+  /** ruling 4b-6: alert after this many consecutive nightly batches in which every job was skipped by the usage guard */
+  usageStarvedAlertAfter: number;
 }
 
 export function policyFrom(env: Partial<Env>): Policy {
@@ -79,5 +83,6 @@ export function policyFrom(env: Partial<Env>): Policy {
     questionDeadlineHours: intVar(env.QUESTION_DEADLINE_HOURS, 24),
     usageThresholdPct: intVar(env.USAGE_WEEKLY_THRESHOLD_PCT, 80),
     healthFailBudget: intVar(env.HEALTH_FAIL_BUDGET, 3),
+    usageStarvedAlertAfter: intVar(env.USAGE_STARVED_ALERT_AFTER, 3),
   };
 }

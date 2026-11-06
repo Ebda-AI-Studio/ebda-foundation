@@ -320,8 +320,8 @@ export class BrainDO extends DurableObject<Env> {
   // ---------- messages ----------
   private dayCounts(day: string) {
     const r = this.row(
-      `SELECT SUM(CASE WHEN kind IN ('urgent-outcome','p1-unhealed') THEN 1 ELSE 0 END) AS urgent,
-              SUM(CASE WHEN kind NOT IN ('urgent-outcome','p1-unhealed','digest') THEN 1 ELSE 0 END) AS normal,
+      `SELECT SUM(CASE WHEN kind IN ('urgent-outcome','p1-unhealed','usage-starved') THEN 1 ELSE 0 END) AS urgent,
+              SUM(CASE WHEN kind NOT IN ('urgent-outcome','p1-unhealed','usage-starved','digest') THEN 1 ELSE 0 END) AS normal,
               SUM(CASE WHEN kind = 'digest' THEN 1 ELSE 0 END) AS digest
        FROM messages WHERE day = ? AND status = 'sent'`,
       day,
@@ -362,7 +362,7 @@ export class BrainDO extends DurableObject<Env> {
   async retryFailed(now: number = Date.now()): Promise<{ sent: number; undelivered: number }> {
     let sent = 0;
     let undelivered = 0;
-    for (const m of this.rows(`SELECT * FROM messages WHERE status = 'failed' AND kind IN ('urgent-outcome','p1-unhealed') AND next_at IS NOT NULL AND next_at <= ?`, now)) {
+    for (const m of this.rows(`SELECT * FROM messages WHERE status = 'failed' AND kind IN ('urgent-outcome','p1-unhealed','usage-starved') AND next_at IS NOT NULL AND next_at <= ?`, now)) {
       const res = await sendTelegram(this.env.TELEGRAM_BOT_TOKEN, this.env.TELEGRAM_CHAT_ID, { dedupeKey: String(m.dedupe_key), kind: m.kind as MsgKind, text: String(m.text) }, this.fetchImpl);
       const attempts = Number(m.attempts) + 1;
       if (res.ok) {
@@ -506,11 +506,27 @@ export class BrainDO extends DurableObject<Env> {
     const guard = this.usage(now);
     if (!guard.allowed) {
       this.setMeta('usage:refused', { at: now, reason: guard.reason, jobs: jobs.length });
+      await this.noteNightly(true, guard.reason, now);
       return { started: false, jobs: jobs.length, reason: guard.reason };
     }
     const b = await this.startRun('nightly', jobs, 45, now);
     if (!b) return { started: false, jobs: jobs.length, reason: `hands provider ${this.hands.name} failed to start; jobs stay queued` };
     return { started: true, jobs: jobs.length, reason: guard.reason, runId: b.runId };
+  }
+
+  /**
+   * Ruling 4b-6: a nightly batch in which EVERY job was skipped by the usage guard (refused at start, or all jobs
+   * came back skipped_usage) is "starved". After `usageStarvedAlertAfter` of them in a row (and every multiple of
+   * that after), one urgent-class alert; any batch that made progress resets the streak.
+   */
+  private async noteNightly(starved: boolean, why: string, now: number): Promise<void> {
+    const prev = this.getMeta<{ streak: number }>('nightly:starved')?.streak ?? 0;
+    const streak = starved ? prev + 1 : 0;
+    this.setMeta('nightly:starved', { streak, at: now });
+    const n = this.policy.usageStarvedAlertAfter;
+    if (starved && n > 0 && streak % n === 0) {
+      await this.emit({ dedupeKey: `usage-starved:${streak}`, kind: 'usage-starved', text: `Ebda OS: the last ${streak} nightly batches did no work, every job was skipped by the usage guard.\n${why}\nQueued findings are waiting; check Claude usage.` }, now);
+    }
   }
 
   /** Mac fallback: the mac-local hands claim queued nightly work themselves when awake. */
@@ -546,6 +562,7 @@ export class BrainDO extends DurableObject<Env> {
       this.sql.exec(`UPDATE jobs SET status = 'queued', run_id = NULL, started_at = NULL, lane = 'nightly' WHERE id = ?`, jobId);
       this.sql.exec(`UPDATE findings SET status = 'queued' WHERE fp = ?`, j.fp);
     } else {
+      if (j.lane === 'nightly' && j.run_id) this.setMeta(`run:progress:${j.run_id}`, 1);
       const ok = o.status === 'merged' || o.status === 'pr_opened' || o.status === 'fix_deployed';
       this.sql.exec(`UPDATE jobs SET status = ?, finished_at = ?, outcome = ? WHERE id = ?`, ok ? 'done' : 'failed', now, JSON.stringify(o), jobId);
       // a PR that is open keeps the finding in flight ('waiting') until the condition is gone; merged / deployed = done
@@ -561,6 +578,10 @@ export class BrainDO extends DurableObject<Env> {
     }
     if (j.run_id && !this.row(`SELECT 1 FROM jobs WHERE run_id = ? AND status = 'running'`, j.run_id)) {
       this.sql.exec(`UPDATE runs SET status = 'done', finished_at = ? WHERE id = ? AND status = 'running'`, now, j.run_id);
+      if (this.row(`SELECT 1 FROM runs WHERE id = ? AND kind = 'nightly'`, j.run_id)) {
+        const progressed = this.getMeta<number>(`run:progress:${j.run_id}`) === 1;
+        await this.noteNightly(!progressed, 'every job in the batch was skipped by the usage guard', now);
+      }
     }
     return { ok: true };
   }

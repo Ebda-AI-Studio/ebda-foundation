@@ -7,7 +7,7 @@
 // bucket rolls into the next digest.
 // Credentials: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID Worker secrets only.
 
-export type MsgKind = 'urgent-outcome' | 'p1-unhealed' | 'question' | 'digest';
+export type MsgKind = 'urgent-outcome' | 'p1-unhealed' | 'usage-starved' | 'question' | 'digest';
 
 export interface Outgoing {
   dedupeKey: string;
@@ -18,7 +18,7 @@ export interface Outgoing {
 
 export type Admission = 'send' | 'duplicate' | 'defer';
 
-export const URGENT_KINDS: ReadonlySet<MsgKind> = new Set(['urgent-outcome', 'p1-unhealed']);
+export const URGENT_KINDS: ReadonlySet<MsgKind> = new Set(['urgent-outcome', 'p1-unhealed', 'usage-starved']);
 
 export interface DayCounts {
   /** normal (non-urgent, non-digest) messages already sent today */

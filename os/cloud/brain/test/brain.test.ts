@@ -99,6 +99,48 @@ describe('nightly batch', () => {
   });
 });
 
+describe('usage-starved alert (ruling 4b-6)', () => {
+  const DAY = 24 * HOUR;
+  it('alerts once after 3 consecutive nightly batches refused by the usage guard, not before', async () => {
+    const h = await harness();
+    await h.run((b) => b.ingestFinding(finding(), T0));
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 90 }, T0));
+    for (let i = 1; i <= 2; i++) await h.run((b) => b.runNightly(T0 + i * DAY));
+    expect(h.sent.filter((m) => /nightly batches did no work/.test(m.text))).toHaveLength(0);
+    await h.run((b) => b.runNightly(T0 + 3 * DAY));
+    const alerts = h.sent.filter((m) => /last 3 nightly batches did no work/.test(m.text));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.text).toMatch(/threshold 80%/);
+  });
+  it('a nightly batch that made progress resets the streak', async () => {
+    const h = await harness();
+    await h.run((b) => b.ingestFinding(finding(), T0));
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 90 }, T0));
+    await h.run((b) => b.runNightly(T0 + DAY));
+    await h.run((b) => b.runNightly(T0 + 2 * DAY));
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 10 }, T0 + 2 * DAY));
+    const r = await h.run((b) => b.runNightly(T0 + 3 * DAY));
+    expect(r.started).toBe(true);
+    const [j] = h.hands.started[0]!.jobs;
+    await h.run((b) => b.recordOutcome(j!.id, { status: 'merged' }, T0 + 3 * DAY + HOUR));
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 90 }, T0 + 3 * DAY));
+    await h.run((b) => b.ingestFinding(finding(), T0 + 4 * DAY));
+    await h.run((b) => b.runNightly(T0 + 4 * DAY));
+    await h.run((b) => b.runNightly(T0 + 5 * DAY));
+    expect(h.sent.filter((m) => /nightly batches did no work/.test(m.text))).toHaveLength(0);
+  });
+  it('a started run whose every job comes back skipped_usage counts as a starved batch', async () => {
+    const h = await harness();
+    for (let i = 0; i < 3; i++) {
+      await h.run((b) => b.ingestFinding(finding(), T0 + i * DAY));
+      const r = await h.run((b) => b.runNightly(T0 + i * DAY + HOUR));
+      expect(r.started).toBe(true);
+      for (const j of h.hands.started[i]!.jobs) await h.run((b) => b.recordOutcome(j.id, { status: 'skipped_usage' }, T0 + i * DAY + 2 * HOUR));
+    }
+    expect(h.sent.filter((m) => /last 3 nightly batches did no work/.test(m.text))).toHaveLength(1);
+  });
+});
+
 describe('urgent lane (Amendment A.1)', () => {
   const outage = (key: string): Finding => ({ source: 'health', kind: 'prod-outage', key, title: `${key} down`, severity: 'P1', selfHealExhausted: true });
 
