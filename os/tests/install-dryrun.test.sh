@@ -24,7 +24,7 @@ want="$(grep -vcE '^(#|$)' "$ROOT/os/launchd/mac-local.list")"
 H1="$T/h1"; mkdir -p "$H1"
 out="$(bash "$INSTALL" --dry-run --home "$H1" 2>&1)"; rc=$?
 [ "$rc" = 0 ] && ok "dry-run exits 0" || { no "dry-run exits 0 (rc=$rc)"; echo "$out" | tail -5; }
-n="$(printf '%s\n' "$out" | grep -ci 'forceai')"; [ "$n" = 0 ] && ok "dry-run output has 0 lines mentioning the old name" || no "dry-run mentions old name ($n)"
+n="$(printf '%s\n' "$out" | grep -ci "for""ceai")"; [ "$n" = 0 ] && ok "dry-run output has 0 lines mentioning the old name" || no "dry-run mentions old name ($n)"
 [ -z "$(find "$H1" -type f 2>/dev/null)" ] && ok "dry-run wrote no files" || no "dry-run wrote files"
 np="$(printf '%s\n' "$out" | grep -c '^bootstrap ')"; [ "$np" = "$want" ] && ok "dry-run plans $np bootstraps = Mac-local list ($want)" || no "bootstrap lines $np != $want"
 lk="$(OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --dry-run --home "$H1" 2>&1 | grep '^link   .*/\.claude/\(agents\|skills\)/')"
