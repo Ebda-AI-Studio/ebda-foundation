@@ -90,16 +90,66 @@ Layering and cost-if-wrong: `docs/rulings/FDN-OS-1.md`.
 
 ## Installer and the launchd set (Task 5, Amendment A)
 
-`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (13 jobs, down from the 34 plist templates of the old fleet). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
+`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (24 jobs: 23 KEEP-MAC plus the new hands-mac-local; table below). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
 
-| Old job | Decision |
-|---|---|
-| ci-runner-guard, guest-wedge-watch, hung-job-guard (Umbra guard) | Mac-local, installed |
-| mac-maintenance, workspace-hygiene (hygiene / worktree sweeps) | Mac-local, installed |
-| usage-sentinel (reads local Claude usage) | Mac-local, installed |
-| graph-backfill, instinct-extract, session-mining, claude-home-export (memory pipeline side) | Mac-local, installed |
-| ebda-cf-backup (backup to local disk) | Mac-local, installed |
-| os-selftest (checks the local install) | Mac-local, installed |
-| hands-mac-local (pull-only provider, template in `cloud/hands/providers/launchd/`) | Mac-local, installed |
-| alert-triage, anomaly-watch, cf-workers-watch, ci-alert, deploy-drift, journey-monitor, os-watch, services-watch, sentry-stale-watch, world-watch | brain cron / watcher, not installed |
-| pr-shepherd, gate-guard, ghas-guard, drift-watch, dead-gate-detect, docs-scan, fleet-dep-audit, ebda-foundation-bump, acceptance-feedback, audit-pack-daily, cost-guard, dr-drill | brain cron or hands batch, not installed |
+
+## Old-job dispositions (Task 5 fix round 1)
+
+Every job the previous OS ran (the 34 plist templates plus `launchd/unported-jobs.list`) has exactly one row. `ops/cutover-gate-check.sh` parses this table: KEEP-MAC detail = suffix in `launchd/mac-local.list` (or `pending-task-6` until its script lands), PORT-BRAIN detail = watcher id that must exist as `cloud/brain/src/watchers/<id>.ts`, REPLACED-BY detail = a path under `os/` that must exist, DROP needs a reason.
+
+| Job | Disposition | Detail | Reason |
+|---|---|---|---|
+| acceptance-feedback | KEEP-MAC | acceptance-feedback | reads and writes local feedback files |
+| alert-triage | REPLACED-BY | cloud/brain/src/classify.ts | brain classifies findings (urgent vs pre-approved) |
+| anomaly-watch | DROP | - | Ahmad 2026-11-06: Force products only |
+| audit-pack-daily | KEEP-MAC | audit-pack-daily | assembles the audit pack from local repos |
+| cf-workers-watch | PORT-BRAIN | cf-workers | HTTP/API poll of Cloudflare Workers state; brain health.ts covers only 2 URLs |
+| ci-alert | REPLACED-BY | cloud/brain/src/relay.ts | CI failures arrive as signed webhooks into the brain relay inbox |
+| ci-runner-guard | KEEP-MAC | ci-runner-guard | drives Umbra and the runner service |
+| claude-home-export | KEEP-MAC | claude-home-export | exports local ~/.claude state |
+| cost-guard | PORT-BRAIN | cost-guard | billing API poll |
+| dead-gate-detect | KEEP-MAC | dead-gate-detect | inspects locally installed hooks and gates |
+| deploy-drift | PORT-BRAIN | deploy-drift | compares live /health commit with main over HTTP |
+| docs-scan | KEEP-MAC | docs-scan | scans local checkouts |
+| dr-drill | PORT-BRAIN | dr-drill | weekly restore-drill trigger; API calls only |
+| drift-watch | KEEP-MAC | drift-watch | diffs installed copies against the repo on disk |
+| ebda-cf-backup | KEEP-MAC | ebda-cf-backup | pulls the Cloudflare backup to local disk |
+| ebda-foundation-bump | KEEP-MAC | ebda-foundation-bump | git operations in local checkouts |
+| fleet-dep-audit | KEEP-MAC | fleet-dep-audit | runs npm audit inside local checkouts |
+| gate-guard | KEEP-MAC | gate-guard | checks gates against local runner and checkouts |
+| ghas-guard | DROP | - | Ahmad 2026-11-06: GitHub Advanced Security is never used |
+| graph-backfill | KEEP-MAC | graph-backfill | runs graphify and claude over local files |
+| guest-wedge-watch | KEEP-MAC | guest-wedge-watch | Umbra guest wedge detection |
+| hung-job-guard | KEEP-MAC | hung-job-guard | kills hung runner jobs via Umbra |
+| instinct-extract | KEEP-MAC | instinct-extract | claude CLI over local sessions |
+| journey-monitor | PORT-BRAIN | journey-monitor | synthetic HTTP journey checks |
+| mac-maintenance | KEEP-MAC | mac-maintenance | local disk and Umbra upkeep |
+| os-selftest | KEEP-MAC | os-selftest | checks the local install |
+| os-watch | KEEP-MAC | os-watch | self-check of the local OS runtime and Umbra |
+| pr-shepherd | PORT-BRAIN | pr-shepherd | GitHub API poll of open PRs |
+| sentry-stale-watch | PORT-BRAIN | sentry-stale | Sentry API poll |
+| services-watch | PORT-BRAIN | services | HTTP probes; brain health.ts covers only 2 URLs |
+| session-mining | KEEP-MAC | session-mining | claude CLI over local session files |
+| usage-sentinel | KEEP-MAC | usage-sentinel | reads local Claude usage |
+| workspace-hygiene | KEEP-MAC | workspace-hygiene | local worktrees, disk and Umbra prune |
+| world-watch | PORT-BRAIN | world-watch | HTTP poll of external sources |
+| dream | KEEP-MAC | pending-task-6 | dream cycle runs the Claude CLI over local memory; script lands in Task 6 |
+| reflect | KEEP-MAC | pending-task-6 | reflect phase of the dream cycle, same Mac-only inputs; Task 6 |
+| daily-brief | REPLACED-BY | cloud/brain/src/brain-do.ts | brain digest alarm (digest) sends the daily message |
+| page-load-monitor | PORT-BRAIN | page-load | fetch-based page checks, always-on |
+| self-heal | KEEP-MAC | pending-task-6 | heals Mac services through the Claude CLI; Task 6 |
+| heal-watch | KEEP-MAC | pending-task-6 | watches the heal ledger on local disk; Task 6 |
+| findings-watch | REPLACED-BY | cloud/brain/src/findings.ts | brain ingests and queues findings |
+| app-error-heal | KEEP-MAC | pending-task-6 | runs the Claude CLI against app errors; Task 6 |
+| event-listener | REPLACED-BY | cloud/brain/src/relay.ts | signed relay events, drained through /pending |
+| dashboard | REPLACED-BY | cloud/brain/public/dash | brain serves the dashboard |
+| code-health | KEEP-MAC | code-health | knip/jscpd and the claude judgment pass over local checkouts |
+| cost-attribution | DROP | - | per-client cost model was client finance data and was not ported |
+| runner-hook-health | KEEP-MAC | runner-hook-health | checks runner hooks on this host |
+| neon-backup | DROP | - | Ahmad 2026-11-06: only Force/client Neon databases; the Ebda OS never backs up Force products |
+| predecessor-client-backup-1 | DROP | - | Ahmad 2026-11-06: Force client database backup |
+| predecessor-client-backup-2 | DROP | - | Ahmad 2026-11-06: Force client database backup |
+| predecessor-product-monitor-1 | DROP | - | Ahmad 2026-11-06: Force product monitor |
+| predecessor-product-monitor-2 | DROP | - | Ahmad 2026-11-06: Force product monitor |
+
+Rule (Ahmad 2026-11-06): the Ebda OS never backs up, monitors or alerts on the predecessor business's products (named jobs are in docs/history). A job that exists only for those products or their clients is DROP; a job that watches both keeps only its Ebda/Whisky targets, read from `~/.ebda-os.local.json` lists.

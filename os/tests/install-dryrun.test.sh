@@ -13,6 +13,7 @@ cat > "$T/bin/launchctl" <<'STUB'
 case "$1" in
   list) [ -n "${FAKE_LOADED:-}" ] && printf '123\t0\t%s\n' "$FAKE_LOADED"; printf '%s\t0\t%s\n' 1 com.apple.fake; exit 0 ;;
   print) exit 1 ;;
+  bootstrap) [ -n "${FAKE_BOOTSTRAP_FAIL:-}" ] && exit 5; exit 0 ;;
   *) exit 0 ;;
 esac
 STUB
@@ -52,5 +53,18 @@ H3="$T/h3"; mkdir -p "$H3"
 msg="$(FAKE_LOADED="com.for""ceai.os-watch" bash "$INSTALL" --home "$H3" 2>&1)"; rc=$?
 [ "$rc" != 0 ] && printf '%s' "$msg" | grep -q 'os/cutover.sh' && ok "refuses with 'run os/cutover.sh' while an old-prefix label is loaded" || no "no refusal (rc=$rc)"
 [ -z "$(find "$H3" -type f 2>/dev/null)" ] && ok "refusal wrote nothing" || no "refusal wrote files"
+# a literal /Users/ path in any installed template breaks other users and --home installs
+lit=""; for t in $(grep -vE '^(#|[[:space:]]*$)' "$ROOT/os/launchd/mac-local.list" | cut -f2); do lit="$lit$(grep -Hn '/Users/' "$ROOT/os/$t")"; done
+[ -z "$lit" ] && ok "no template in the Mac-local set hard-codes /Users/" || { no "hard-coded /Users/ path"; echo "$lit"; }
+lit2="$(grep -ln '/Users/' "$ROOT"/os/ops/launchd/*.plist 2>/dev/null)"
+[ -z "$lit2" ] && ok "no plist template at all hard-codes /Users/" || no "hard-coded /Users/ in: $lit2"
+# bootstrap failure must fail the install
+H4="$T/h4"; mkdir -p "$H4"
+FAKE_BOOTSTRAP_FAIL=1 bash "$INSTALL" --home "$H4" >/dev/null 2>&1; rc=$?
+[ "$rc" != 0 ] && ok "install exits non-zero when a bootstrap fails (rc=$rc)" || no "bootstrap failure ignored"
+# hook-registration failure (unparseable settings.json) must fail the install
+H5="$T/h5"; mkdir -p "$H5/.claude"; echo '{not json' > "$H5/.claude/settings.json"
+bash "$INSTALL" --home "$H5" >/dev/null 2>&1; rc=$?
+[ "$rc" != 0 ] && ok "install exits non-zero when hook registration fails (rc=$rc)" || no "hook failure ignored"
 [ "$fail" = 0 ] && echo "install-dryrun: PASS" || echo "install-dryrun: FAIL"
 exit "$fail"

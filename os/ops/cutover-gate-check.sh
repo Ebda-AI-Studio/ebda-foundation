@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# cutover-gate-check.sh - the Task 7 cutover gate. Reads the old-job disposition table in os/MANIFEST.md and exits 1, listing:
+#   - every old job (ops/launchd plist or launchd/unported-jobs.list) with no row
+#   - every PORT-BRAIN row whose cloud/brain/src/watchers/<id>.ts does not exist
+#   - every REPLACED-BY row whose named path under os/ does not exist
+#   - every KEEP-MAC row not in launchd/mac-local.list (except the explicit pending-task-6 marker, which is listed as pending)
+#   - every DROP row without a reason
+# Usage: cutover-gate-check.sh [--root REPO_ROOT]   (default: the repo this script lives in)
+set -uo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+case "${1:-}" in -h|--help) sed -n 2,9p "${BASH_SOURCE[0]}" | sed "s/^# \{0,1\}//"; exit 0 ;; esac
+[ "${1:-}" = "--root" ] && ROOT="$(cd "${2:?--root needs a directory}" && pwd)"
+OSD="$ROOT/os"; MAN="$OSD/MANIFEST.md"
+[ -f "$MAN" ] || { echo "cutover-gate: no $MAN" >&2; exit 2; }
+bad=0
+say() { echo "BLOCKED: $*"; bad=$((bad+1)); }
+jobs="$( { for p in "$OSD"/ops/launchd/*.plist; do [ -f "$p" ] && basename "$p" .plist | sed 's/^com\.[a-z]*\.os\.//'; done
+           grep -vE '^(#|[[:space:]]*$)' "$OSD/launchd/unported-jobs.list" 2>/dev/null; } | sort -u)"
+table="$(awk -F'|' '/^## Old-job dispositions/{on=1;next} on && /^\| /{gsub(/^ +| +$/,"",$2);gsub(/^ +| +$/,"",$3);gsub(/^ +| +$/,"",$4);gsub(/^ +| +$/,"",$5);print $2"\t"$3"\t"$4"\t"$5}' "$MAN" | grep -vE '^(Job|---)')"
+for j in $jobs; do
+  printf '%s\n' "$table" | cut -f1 | grep -qxF "$j" || say "old job '$j' has no disposition row"
+done
+while IFS=$'\t' read -r job disp detail reason; do
+  [ -n "$job" ] || continue
+  case "$disp" in
+    PORT-BRAIN) [ -f "$OSD/cloud/brain/src/watchers/$detail.ts" ] || say "$job: PORT-BRAIN watcher '$detail' missing (os/cloud/brain/src/watchers/$detail.ts)" ;;
+    REPLACED-BY) [ -e "$OSD/$detail" ] || say "$job: REPLACED-BY target os/$detail does not exist" ;;
+    KEEP-MAC)
+      if [ "$detail" = pending-task-6 ]; then say "$job: KEEP-MAC but its script and launchd entry are not landed yet (Task 6)"
+      elif ! grep -q "^$detail	" "$OSD/launchd/mac-local.list"; then say "$job: KEEP-MAC but '$detail' is not in launchd/mac-local.list"; fi ;;
+    DROP) { [ -n "$reason" ] && [ "$reason" != - ]; } || say "$job: DROP without a reason" ;;
+    *) say "$job: unknown disposition '$disp'" ;;
+  esac
+done <<< "$table"
+if [ "$bad" -gt 0 ]; then echo "cutover-gate: $bad blocker(s)"; exit 1; fi
+echo "cutover-gate: clear"

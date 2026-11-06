@@ -33,6 +33,7 @@ PREFIX="$OS_LAUNCHD_PREFIX"; CHAIN="$OS_GIT_CHAIN_KEY"
 # The predecessor's label prefix, built in two pieces so no source file spells it out.
 OLD_PREFIX="com.for""ceai"
 
+FAILS=0
 say() { printf '%s\n' "$*"; }
 act() { [ "$DRY" = 1 ] || "$@"; }
 
@@ -132,7 +133,9 @@ while IFS=$'\t' read -r name tmpl; do
       cp "$tmp" "$target"
       launchctl bootout "gui/$U/$label" 2>/dev/null || true
       for _ in 1 2 3 4 5 6; do launchctl print "gui/$U/$label" >/dev/null 2>&1 || break; sleep 0.5; done
-      launchctl bootstrap "gui/$U" "$target" 2>/dev/null || say "WARN: bootstrap failed $label - retry: launchctl bootstrap gui/$U $target"
+      if ! { launchctl bootstrap "gui/$U" "$target" 2>/dev/null || launchctl print "gui/$U/$label" >/dev/null 2>&1; }; then
+        say "ERROR: bootstrap failed $label - retry: launchctl bootstrap gui/$U $target"; FAILS=$((FAILS+1))
+      fi
     fi
   fi
   rm -f "$tmp"
@@ -148,7 +151,8 @@ done
 
 # --- 5. Claude Code hooks (settings.json merge) -------------------------------------------------------------------------------
 if [ "$DRY" = 1 ]; then say "hooks  would register via ops/install-hooks.sh"
-else bash "$OSD/ops/install-hooks.sh" >/dev/null 2>&1 || say "WARN: hook registration failed - re-run $OSD/ops/install-hooks.sh"; fi
+else bash "$OSD/ops/install-hooks.sh" >/dev/null 2>&1 || { say "ERROR: hook registration failed - re-run $OSD/ops/install-hooks.sh"; FAILS=$((FAILS+1)); }; fi
 [ -f "$OS_SERVICES_ENV" ] || { say "create $OS_SERVICES_ENV (empty, 0600)"; [ "$DRY" = 1 ] || install -m 600 /dev/null "$OS_SERVICES_ENV"; }
 
 say "summary: $n_copy file(s) to copy ($n_same unchanged), $n_link link(s), $n_plist Mac-local launchd job(s)$([ "$DRY" = 1 ] && echo ' [dry-run: nothing written]')"
+[ "$FAILS" = 0 ] || { echo "install: $FAILS step(s) failed (see ERROR above)" >&2; exit 1; }

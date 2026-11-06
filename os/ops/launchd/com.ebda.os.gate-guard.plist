@@ -5,23 +5,23 @@
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>HOME</key>
-		<string>/Users/ahmadsharaf</string>
+		<string>__HOME__</string>
 		<key>PATH</key>
-		<string>/Users/ahmadsharaf/.local/bin:/opt/homebrew/bin:/opt/homebrew/opt/postgresql@17/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<string>__PATH__</string>
 	</dict>
 	<key>Label</key>
 	<string>com.ebda.os.gate-guard</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/bash</string>
-		<string>/Users/ahmadsharaf/.claude/scripts/gate-guard.sh</string>
+		<string>__HOME__/.claude/scripts/gate-guard.sh</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>/Users/ahmadsharaf/Library/Logs/ebda-os-gate-guard.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-gate-guard.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/ahmadsharaf/Library/Logs/ebda-os-gate-guard.log</string>
+	<string>__HOME__/Library/Logs/ebda-os-gate-guard.log</string>
 	<key>StartInterval</key>
 	<integer>21600</integer>
 </dict>
