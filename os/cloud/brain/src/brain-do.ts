@@ -240,6 +240,12 @@ export class BrainDO extends DurableObject<Env> {
     return true;
   }
 
+  /** Newest finish time of a successfully completed hands job for a finding class (dr-drill freshness), or null. */
+  lastDoneAt(source: string, kind: string): number | null {
+    const r = this.row(`SELECT MAX(j.finished_at) AS at FROM jobs j JOIN findings f ON f.fp = j.fp WHERE f.source = ? AND f.kind = ? AND j.status = 'done'`, source, kind);
+    return r?.at == null ? null : Number(r.at);
+  }
+
   /** Resolve every open finding of source+kind whose key is not in `openKeys` (complete advisory listing only). */
   async reconcile(source: string, kind: string, keyPrefix: string, openKeys: string[], now: number = Date.now()): Promise<number> {
     const open = new Set(openKeys);

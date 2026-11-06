@@ -22,7 +22,7 @@
 
   // Cron Triggers (UTC). Keep in sync with CRONS in src/schedule.ts (test/config.test.ts enforces it).
   // No weekday field is used: on Cloudflare 1 = Sunday and 0 is rejected, so a weekday cron needs care.
-  "triggers": { "crons": ["*/5 * * * *", "7 * * * *", "30 21 * * *", "0 5 * * *"] },
+  "triggers": { "crons": ["*/5 * * * *", "2-59/15 * * * *", "7 * * * *", "17 */6 * * *", "30 21 * * *", "0 5 * * *"] },
 
   "vars": {
     "OS_ORGS": "__OS_ORGS__",
@@ -31,6 +31,10 @@
     // live public endpoints only (both answered 200 on 2026-11-05); override with OS_BRAIN_HEALTH_TARGETS at deploy
     "HEALTH_TARGETS": "[{\"url\":\"https://api.ebda.app/health\",\"kind\":\"api\"},{\"url\":\"https://ebda.app/\",\"kind\":\"page\"}]",
     "HEALTH_FAIL_BUDGET": "3",
+    // Cloud watchers (src/watchers/*): a var left unset makes that watcher raise ONE monitor-unconfigured finding instead of
+    // running. Set them at deploy with OS_BRAIN_<NAME> (scripts/deploy.sh); the Ebda repo that holds the restore drill is the
+    // only default.
+    "DR_DRILL_REPO": "Ebda-AI-Studio/ebda-store",
     "MESSAGE_BUDGET_PER_DAY": "3",
     "URGENT_MESSAGE_BUDGET_PER_DAY": "3",
     "URGENT_RUNS_PER_DAY": "3",
@@ -47,6 +51,7 @@
     "ACCESS_AUD": "__ACCESS_AUD__"
   }
   // Secrets (wrangler secret put, never here): GH_WEBHOOK_SECRET, RELAY_SECRET, GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
-  // TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, HANDS_TOKEN, INGEST_TOKEN; hands container (Task 7): CLAUDE_CODE_OAUTH_TOKEN,
+  // TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, HANDS_TOKEN, INGEST_TOKEN, CF_API_TOKEN, SENTRY_AUTH_TOKEN (GITHUB_TOKEN also feeds
+  // deploy-drift, pr-shepherd, cost-guard); hands container (Task 7): CLAUDE_CODE_OAUTH_TOKEN,
   // HANDS_GH_TOKEN, HANDS_CONFIG_JSON, HANDS_GIT_NAME, HANDS_GIT_EMAIL. See README.md and os/cloud/hands/README.md.
 }

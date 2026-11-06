@@ -19,6 +19,7 @@ import { cronName } from './schedule';
 import { validateUsage } from './usage';
 import { watchAdvisories } from './watchers/advisories';
 import { checkAll, parseTargets } from './watchers/health';
+import { runWatchers } from './watchers/run';
 
 export { BrainDO } from './brain-do';
 export { HandsContainer } from './hands-container';
@@ -225,8 +226,15 @@ export default {
         await brain.tick(now);
         return;
       }
+      case 'quarter':
+        await runWatchers('quarter', env, brain, now);
+        return;
       case 'hourly':
         await watchAdvisories(env, brain, now);
+        await runWatchers('hourly', env, brain, now);
+        return;
+      case 'sixhourly':
+        await runWatchers('sixhourly', env, brain, now);
         return;
       case 'nightly':
         await brain.runNightly(now);

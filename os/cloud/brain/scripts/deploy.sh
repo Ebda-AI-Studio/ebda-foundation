@@ -8,7 +8,9 @@
 #   OS_BRAIN_HOST           the brain's hostname on a zone in that account (custom domain; workers.dev stays off)
 # Optional: OS_BRAIN_ACCESS_TEAM_DOMAIN + OS_BRAIN_ACCESS_AUD (until set, /api/* answers 503 = fail closed),
 #           OS_BRAIN_HEALTH_TARGETS (JSON list, replaces the default health targets),
-#           OS_BRAIN_DEPLOYED_REPOS (space/comma list of owner/name; until set no advisory is urgent).
+#           OS_BRAIN_DEPLOYED_REPOS (space/comma list of owner/name; until set no advisory is urgent),
+#           OS_BRAIN_<NAME> for each cloud-watcher var in src/env.ts (SERVICE_TARGETS, PAGE_LOAD_TARGETS, JOURNEY_CONFIG,
+#           DEPLOY_DRIFT_TARGETS, CF_ACCOUNT_ID, COST_GH_ORG, SENTRY_ORG, SENTRY_PROJECTS, WORLD_NPM_DEPS, ...): copied into vars.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=/dev/null
@@ -46,6 +48,26 @@ if ht:
     json.loads(ht)  # fail loud on a malformed list
     import re
     t = re.sub(r'"HEALTH_TARGETS": "(?:[^"\\]|\\.)*"', '"HEALTH_TARGETS": ' + json.dumps(ht), t)
+# cloud watcher vars: OS_BRAIN_<NAME> -> vars.<NAME> (JSON-valued ones are validated; unset ones stay absent = unconfigured)
+WATCHER_VARS = ["SERVICE_TARGETS", "PAGE_LOAD_TARGETS", "PAGE_LOAD_P50_MS", "JOURNEY_CONFIG", "DEPLOY_DRIFT_TARGETS",
+    "DEPLOY_DRIFT_GRACE_MIN", "PR_SHEPHERD_STALE_HOURS", "CF_ACCOUNT_ID", "CF_WORKERS_PREFIXES", "CF_WORKERS_EXPECTED",
+    "CF_WORKER_ERROR_RATE", "COST_GH_ORG", "COST_ACTIONS_WARN_MIN", "COST_ACTIONS_STOP_MIN", "CF_REQUESTS_WARN",
+    "CF_REQUESTS_STOP", "SENTRY_ORG", "SENTRY_PROJECTS", "SENTRY_BASE_URL", "DR_DRILL_REPO", "DR_DRILL_STALE_DAYS",
+    "WORLD_STATUS_URLS", "WORLD_NPM_DEPS"]
+JSON_VARS = {"SERVICE_TARGETS", "PAGE_LOAD_TARGETS", "JOURNEY_CONFIG", "DEPLOY_DRIFT_TARGETS", "WORLD_STATUS_URLS", "WORLD_NPM_DEPS"}
+extra = ""
+for name in WATCHER_VARS:
+    val = os.environ.get("OS_BRAIN_" + name)
+    if not val:
+        continue
+    if name in JSON_VARS:
+        json.loads(val)  # fail loud on a malformed list
+    if name == "DR_DRILL_REPO":
+        t = t.replace('"DR_DRILL_REPO": "Ebda-AI-Studio/ebda-store"', '"DR_DRILL_REPO": ' + json.dumps(val))
+        continue
+    extra += "    %s: %s,\n" % (json.dumps(name), json.dumps(val))
+if extra:
+    t = t.replace('"vars": {\n', '"vars": {\n' + extra, 1)
 open(out, "w", encoding="utf-8").write(t)
 PY
 grep -q '__ACCESS_AUD__' "$OUT" && echo "deploy: Access not configured yet: /api/* will answer 503 until OS_BRAIN_ACCESS_* are set" >&2

@@ -11,6 +11,40 @@ export interface Env {
   /** owner/name list of repos whose code is deployed; an advisory is urgent only there */
   DEPLOYED_REPOS?: string;
   HEALTH_TARGETS: string;
+  // cloud watcher config (all optional; unset = that watcher raises one monitor-unconfigured finding). JSON vars are lists.
+  /** services: [{name,url,kind:'api'|'page'|'money'}] */
+  SERVICE_TARGETS?: string;
+  /** page-load: [{name,url}] and the p50 limit in ms (1500) */
+  PAGE_LOAD_TARGETS?: string;
+  PAGE_LOAD_P50_MS?: string;
+  /** journey-monitor: [{name,steps:[{name,url,contains?}]}] (GET only, checkout/payment paths refused) */
+  JOURNEY_CONFIG?: string;
+  /** deploy-drift: [{name,healthUrl,repo,branch?}] and the grace in minutes (120) */
+  DEPLOY_DRIFT_TARGETS?: string;
+  DEPLOY_DRIFT_GRACE_MIN?: string;
+  /** pr-shepherd: hours without an update before an open PR is flagged (24) */
+  PR_SHEPHERD_STALE_HOURS?: string;
+  /** cf-workers + cost-guard: the personal Cloudflare account id; name prefixes to watch (ebda-), expected Workers, error rate (0.05) */
+  CF_ACCOUNT_ID?: string;
+  CF_WORKERS_PREFIXES?: string;
+  CF_WORKERS_EXPECTED?: string;
+  CF_WORKER_ERROR_RATE?: string;
+  /** cost-guard: Actions org and minute thresholds (48000 / 49500), Cloudflare request thresholds (8M / 10M) */
+  COST_GH_ORG?: string;
+  COST_ACTIONS_WARN_MIN?: string;
+  COST_ACTIONS_STOP_MIN?: string;
+  CF_REQUESTS_WARN?: string;
+  CF_REQUESTS_STOP?: string;
+  /** sentry-stale */
+  SENTRY_ORG?: string;
+  SENTRY_PROJECTS?: string;
+  SENTRY_BASE_URL?: string;
+  /** dr-drill: owner/name of the repo holding scripts/ops/restore-drill.mjs; days before a missing drill result is a finding (8) */
+  DR_DRILL_REPO?: string;
+  DR_DRILL_STALE_DAYS?: string;
+  /** world-watch: [{name,url}] status pages (default Cloudflare + GitHub) and {"npm-package":["version"]} */
+  WORLD_STATUS_URLS?: string;
+  WORLD_NPM_DEPS?: string;
   HEALTH_FAIL_BUDGET: string;
   MESSAGE_BUDGET_PER_DAY: string;
   URGENT_MESSAGE_BUDGET_PER_DAY?: string;
@@ -37,6 +71,10 @@ export interface Env {
   GH_WEBHOOK_SECRET?: string;
   RELAY_SECRET?: string;
   GITHUB_TOKEN?: string;
+  /** cf-workers + cost-guard: Account Analytics:Read + Workers Scripts:Read */
+  CF_API_TOKEN?: string;
+  /** sentry-stale: project:read */
+  SENTRY_AUTH_TOKEN?: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
