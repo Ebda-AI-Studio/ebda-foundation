@@ -30,7 +30,19 @@ REG="$(heal_registry_path 2>/dev/null)"
 # redeploying production off a local network blip.
 command -v net_probe >/dev/null 2>&1 || { echo "heal-watch: FATAL — lib/net-probe.sh not found; refusing to form DOWN verdicts (run ops/install.sh)" >&2; exit 2; }
 STATE="$OS_STATE_DIR"; LOG="$STATE/heal.log"; mkdir -p "$STATE"
-HAVE_REG=1; [ -n "$REG" ] && [ -f "$REG" ] || { echo "no services configured (heal_services is empty in the local config): skipping probes"; HAVE_REG=0; }
+. "$HERE/lib/brain-post.sh" 2>/dev/null || true
+HAVE_REG=1
+if ! { [ -n "$REG" ] && [ -f "$REG" ]; }; then
+  HAVE_REG=0
+  # a watcher with nothing to watch must not look healthy: say so in the log and the output, and hand the brain ONE finding
+  echo "heal-watch: NO SERVICES REGISTERED (heal_services is empty or missing in the local config): nothing is being probed or healed" >&2
+  printf '%s [heal-watch] NO SERVICES REGISTERED: nothing is being probed or healed\n' "$(date '+%Y-%m-%d %H:%M:%S')" >>"$LOG"
+  if [ ! -e "$STATE/heal-watch-noreg.reported" ]; then
+    heal_report monitor-unconfigured P3 false heal-watch "heal-watch has no services registered (heal_services missing): self-heal is inactive" && : > "$STATE/heal-watch-noreg.reported"
+  fi
+else
+  rm -f "$STATE/heal-watch-noreg.reported"
+fi
 ts(){ date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo now; }
 isots(){ date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo ""; }
 

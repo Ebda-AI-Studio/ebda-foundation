@@ -241,10 +241,13 @@ else
     warn "     stranding an unpushable commit on the root. Commit it in a PR."
   else
     sync_br="chore/os-selfmap-$(git log -1 --format=%cd --date=format:%Y%m%d%H%M origin/"$br" 2>/dev/null || echo manual)"
-    stash_ref=""
-    if git stash push -q -- $ALLOWLIST 2>/dev/null; then stash_ref="1"; fi
+    # carry the regenerated allowlist files across the branch switch by copying them aside (never the shared stack)
+    bak="$(mktemp -d)"
+    for _f in $ALLOWLIST; do mkdir -p "$bak/$(dirname "$_f")"; cp -p "$_f" "$bak/$_f" 2>/dev/null || true; done
+    git checkout -q -- $ALLOWLIST 2>/dev/null || true
+    restore_allowlist() { for _f in $ALLOWLIST; do [ -f "$bak/$_f" ] && cp -p "$bak/$_f" "$_f"; done; return 0; }
     if git checkout -q -B "$sync_br" "origin/$br" 2>/dev/null; then
-      [ -n "$stash_ref" ] && git stash pop -q 2>/dev/null
+      restore_allowlist
       git add -- $ALLOWLIST 2>/dev/null || true
       if git commit -q -m "chore(os): sync self-map [skip ci]" \
            -m "Mechanical foundation sync via ops/sync-foundation.sh (called by the memory pipeline). Allowlist: ARCHITECTURE.md. Opened as a PR because master is protected."; then
@@ -262,8 +265,9 @@ else
       fi
     else
       warn "   ⚠ could not create $sync_br — leaving working tree as-is"
-      [ -n "$stash_ref" ] && git stash pop -q 2>/dev/null
+      restore_allowlist
     fi
+    rm -rf "$bak"
     # Always return the root to the protected branch, tracking origin, clean.
     git checkout -q "$br" 2>/dev/null || true
     printf '%s' "$(git rev-parse HEAD)" > "$MARKER"

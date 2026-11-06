@@ -71,6 +71,10 @@ cat > "$T/phases/dream-reflect.sh" <<S
 #!/usr/bin/env bash
 cp '$T/df.json' "\$OS_STATE_DIR/dream-findings.json"
 S
+cat > "$T/phases/dream-scan.sh" <<'S'
+#!/usr/bin/env bash
+echo '{"findings":[]}' > "$OS_STATE_DIR/dream-findings.json"
+S
 cat > "$T/phases/notify.sh" <<S
 #!/usr/bin/env bash
 echo called >> '$T/notify.called'
@@ -86,6 +90,27 @@ import json,sys; e=json.load(open(sys.argv[1]))['entries'][-1]
 sys.exit(0 if e['run_mode']=='weekly' and e['total_findings']==2 and e['phases_status']['reflect']=='ok' and e['phases_status']['research']=='absent' else 1)" "$T/state/dream-ledger.json" && pass "learn-back ledger entry written" || fail "ledger entry wrong"
 grep -rqE 'notify\.sh|NOTIFY' "$OPS/dream.sh" "$OPS/self-heal.sh" "$OPS/heal-watch.sh" "$OPS/app-error-heal.sh" "$OPS/dream-standard-drift.sh" "$OPS/dream-reflect.sh" 2>/dev/null \
   && fail "a ported script still references notify" || pass "no ported script references notify"
+
+# 5b. a MISSING scan is a failure of the cycle: exit 1, ledger says so, a dream-scan-failed finding is handed over
+mv "$T/phases/dream-scan.sh" "$T/phases/dream-scan.sh.off"; : > "$T/brain.log"; rm -f "$T/state/dream-ledger.json" "$T/state/dream-findings.json"
+out="$("${E[@]}" DREAM_PHASES_DIR="$T/phases" bash "$OPS/dream.sh" --daily 2>&1)"; rc=$?
+[ "$rc" = 1 ] && pass "missing scan -> dream.sh exits 1" || { fail "missing scan rc=$rc (want 1)"; echo "$out"; }
+python3 -I -c "
+import json,sys; e=json.load(open(sys.argv[1]))['entries'][-1]
+sys.exit(0 if e['phases_status']['scan']=='failed:absent' else 1)" "$T/state/dream-ledger.json" && pass "ledger records scan failed:absent (not 'absent ok')" || fail "ledger scan status wrong"
+python3 -I -c "
+import json,sys
+rows=[json.loads(l) for l in open(sys.argv[1])]
+ks=[b['kind'] for r in rows for b in r['body']]
+sys.exit(0 if 'dream-scan-failed' in ks else 1)" "$T/brain.log" && pass "a dream-scan-failed finding reached the brain" || fail "no dream-scan-failed finding"
+# a scan that exits 0 but wrote no findings file is also a failure
+printf '#!/usr/bin/env bash\nexit 0\n' > "$T/phases/dream-scan.sh"
+"${E[@]}" DREAM_PHASES_DIR="$T/phases" bash "$OPS/dream.sh" --daily >/dev/null 2>&1; rc=$?
+[ "$rc" = 1 ] && pass "scan that wrote no findings file -> exit 1" || fail "silent scan rc=$rc"
+printf '#!/usr/bin/env bash\nexit 7\n' > "$T/phases/dream-scan.sh"
+"${E[@]}" DREAM_PHASES_DIR="$T/phases" bash "$OPS/dream.sh" --daily >/dev/null 2>&1; rc=$?
+[ "$rc" = 1 ] && pass "scan that exits non-zero -> exit 1" || fail "failing scan rc=$rc"
+rm -f "$T/phases/dream-scan.sh"; mv "$T/phases/dream-scan.sh.off" "$T/phases/dream-scan.sh"
 
 # 6. reflect-only: runs just reflect + hand-off
 : > "$T/brain.log"; rm -f "$T/state/dream-ledger.json"
@@ -116,7 +141,13 @@ sys.exit(0 if o['source']=='self-heal' and o['kind']=='prod-outage' and o['sever
 # 9. heal-watch with no services configured: exits 0, no probes, no spool growth
 rm -f "$T/local.json"; : > "$SPOOL"
 "${E[@]}" bash "$OPS/heal-watch.sh" >"$T/hw.out" 2>&1; rc=$?
-{ [ "$rc" = 0 ] && grep -q "no services configured" "$T/hw.out"; } && pass "heal-watch with no services configured does nothing, exit 0" || { fail "heal-watch rc=$rc"; cat "$T/hw.out"; }
+{ [ "$rc" = 0 ] && grep -q "NO SERVICES REGISTERED" "$T/hw.out"; } && pass "heal-watch with no services: exit 0 but LOUD" || { fail "heal-watch rc=$rc"; cat "$T/hw.out"; }
+grep -q "NO SERVICES REGISTERED" "$T/state/heal.log" && pass "the empty registry is in heal.log" || fail "not logged"
+python3 -I -c "
+import json,sys; o=json.loads(open(sys.argv[1]).readline())
+sys.exit(0 if o['kind']=='monitor-unconfigured' else 1)" "$SPOOL" && pass "one monitor-unconfigured finding handed over" || fail "no finding"
+"${E[@]}" bash "$OPS/heal-watch.sh" >/dev/null 2>&1
+[ "$(wc -l < "$SPOOL" | tr -d ' ')" = 1 ] && pass "reported once, not every cycle" || fail "re-reported"
 
 echo "── $_pass passed, $_fail failed ──"
 [ "$_fail" -eq 0 ]

@@ -40,10 +40,10 @@ for f in (d.get("findings") or []):
     repo = str(f.get("repo") or "")
     cls = str(f.get("class") or "finding")
     title = str(f.get("title") or cls)[:500]
-    key = "%s|%s|%s|%s" % (repo, cls, f.get("file") or "", hashlib.sha256(title.encode()).hexdigest()[:12])
+    key = str(f.get("key") or "") or "%s|%s|%s|%s" % (repo, cls, f.get("file") or "", hashlib.sha256(title.encode()).hexdigest()[:12])
     o = {"source": "dream", "kind": cls[:80], "key": key[:500], "title": title,
          "severity": sev.get(str(f.get("severity")), "P3"),
-         "detail": {k: f.get(k) for k in ("file", "line", "detail", "fix", "autofixable") if f.get(k) not in (None, "")}}
+         "detail": {k: f.get(k) for k in ("product", "evidence", "file", "line", "detail", "fix", "autofixable") if f.get(k) not in (None, "")}}
     if repo and repo != "__memory__" and "/" in repo:
         o["repo"] = repo
     out.append(o)

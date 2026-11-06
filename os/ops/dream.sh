@@ -6,13 +6,16 @@
 # the cycle's findings are POSTed to the brain's findings endpoint (lib/brain-post.sh), which queues them as jobs;
 # with no brain configured they are spooled to $OS_STATE_DIR/brain-spool.ndjson. Nothing here messages anyone.
 #
-# Phases (a phase whose script is not installed is reported "absent", never silently "ok"):
-#   1 LEARN   dream-research.sh   (external CVE / ecosystem digest)
-#   2 SCAN    dream-scan.sh       (lockfile drift, audits; deep on Sundays)
-#   2.5 REFLECT dream-reflect.sh  (deep/weekly only: recurring memory lessons with no enforcement mechanism)
-#   3 ACT     dream-act.sh        (classify + dispatch fixes)
+# Phases:
+#   1 SCAN      dream-scan.sh      REQUIRED. Ebda products from `dream_products` (deps + npm audit, untested paths, failing CI, live
+#                                  perf/a11y/SEO probes). A scan that is missing, fails or finds no targets is a FAILURE of the whole
+#                                  cycle: it is recorded, handed to the brain as a `dream-scan-failed` finding, and dream.sh exits 1.
+#   2 RESEARCH  dream-research.sh  the week's scan history -> ranked `improvement` candidates per product
+#   2.5 REFLECT dream-reflect.sh   (deep/weekly only: recurring memory lessons with no enforcement mechanism)
+#   3 ACT       hand-off           every finding -> the brain's job queue (the hands do the work); there is no local act script
 #   3.5 STANDARD-DRIFT dream-standard-drift.sh (propose-only: memory lesson -> os/standard draft PR / issue)
-#   4 LEARN-BACK  ledger entry     5 HAND-OFF  findings -> brain
+#   4 LEARN-BACK  ledger entry
+# Optional phases (reflect, research, standard-drift) that are not installed are reported "absent".
 # Ebda-only (Ahmad 2026-11-06): targets come from the Ebda memory and ~/.ebda-os.local.json lists, never the predecessor's products.
 #
 # Usage: dream.sh [--daily|--weekly] [--notify (accepted, ignored)] [--always (ignored)]
@@ -65,14 +68,38 @@ _info ""; _info "Ebda AI OS - Dreaming Cycle ($([ "$DEEP" = 1 ] && echo weekly |
 
 if [ "$ONLY_REFLECT" = 1 ]; then P1="skipped:reflect-only"; P2="$P1"; P3="$P1"; P35="$P1"
 else
-_sep; _info "  PHASE 1: LEARN"; run_phase learn dream-research.sh; P1="$PHASE_STATUS"
-_sep; _info "  PHASE 2: SCAN"; if [ "$DEEP" = 1 ]; then run_phase scan dream-scan.sh --deep; else run_phase scan dream-scan.sh; fi; P2="$PHASE_STATUS"
+_sep; _info "  PHASE 1: SCAN"; run_phase scan dream-scan.sh; P1="$PHASE_STATUS"
+# a scan that did not produce a findings file did not run, whatever its exit code said
+[ "$P1" = ok ] && [ ! -f "$FINDINGS_FILE" ] && [ "$DRY_RUN" != 1 ] && P1="failed:no-findings-file"
+[ "$P1" = absent ] && P1="failed:absent"
+_sep; _info "  PHASE 2: RESEARCH"; run_phase research dream-research.sh; P2="$PHASE_STATUS"
 fi
 if [ "$DEEP" = 1 ]; then _sep; _info "  PHASE 2.5: REFLECT"; run_phase reflect dream-reflect.sh; P25="$PHASE_STATUS"; else P25="skipped:daily"; fi
 if [ "$ONLY_REFLECT" != 1 ]; then
-_sep; _info "  PHASE 3: ACT"; run_phase act dream-act.sh; P3="$PHASE_STATUS"
 _sep; _info "  PHASE 3.5: STANDARD-DRIFT"; run_phase standard-drift dream-standard-drift.sh; P35="$PHASE_STATUS"
 fi
+
+# ---------- PHASE 3: ACT = hand every finding to the brain (act, not ping) ----------
+_sep; _info "  PHASE 3: ACT (findings -> brain job queue)"
+P3=ok
+if [ "$ONLY_REFLECT" = 1 ]; then P3="skipped:reflect-only"; fi
+_tmp="$(mktemp)"
+if [ -f "$FINDINGS_FILE" ] && command -v brain_dream_to_findings >/dev/null 2>&1; then brain_dream_to_findings "$FINDINGS_FILE" > "$_tmp"; else echo '[]' > "$_tmp"; fi
+case "$P1" in failed*|exit*)
+  # the failed scan is itself a finding: the cycle must not go quiet when its eyes are shut
+  python3 -I -c '
+import json, sys, datetime
+a = json.load(open(sys.argv[1])); a.append({"source": "dream", "kind": "dream-scan-failed", "key": "dream-scan-failed@" + datetime.date.today().isoformat(),
+  "title": "the dream scan did not run (" + sys.argv[2] + "): no product was scanned today", "severity": "P2"})
+json.dump(a, open(sys.argv[1], "w"))' "$_tmp" "$P1" ;;
+esac
+if command -v brain_post_findings >/dev/null 2>&1; then
+  brain_post_findings "$_tmp"; _rc=$?
+  [ "$_rc" = 10 ] && _info "  brain not reachable/configured: findings spooled"
+else
+  _info "  brain-post lib missing: nothing handed over"; P3="failed:no-brain-post"
+fi
+rm -f "$_tmp"
 
 # ---------- PHASE 4: LEARN-BACK ----------
 END_ISO=$(_now_iso)
@@ -88,7 +115,7 @@ print(json.dumps({"type": "learn-back", "run_mode": mode, "started_at": start, "
     "critical_count": sum(1 for f in fs if f.get("severity") == "critical"),
     "high_count": sum(1 for f in fs if f.get("severity") == "high"),
     "repos_affected": sorted({f.get("repo") for f in fs if f.get("repo")}),
-    "phases_status": {"research": p1, "scan": p2, "reflect": p25, "act": p3, "standard_drift": p35}}))
+    "phases_status": {"scan": p1, "research": p2, "reflect": p25, "act": p3, "standard_drift": p35}}))
 PY
 )"
 if [ "$DRY_RUN" = 1 ]; then
@@ -106,19 +133,7 @@ print("[dream] learn-back note appended to " + p)
 PY
 fi
 
-# ---------- PHASE 5: HAND-OFF to the brain (act, not ping) ----------
-_sep; _info "  PHASE 5: HAND-OFF (findings -> brain job queue)"
-if [ -f "$FINDINGS_FILE" ] && command -v brain_post_findings >/dev/null 2>&1; then
-  _tmp="$(mktemp)"; brain_dream_to_findings "$FINDINGS_FILE" > "$_tmp"
-  brain_post_findings "$_tmp"
-  rm -f "$_tmp"
-else
-  _info "  no findings file, nothing to hand over"
-fi
 _info "  Findings: $(python3 -I -c 'import json,sys; print(json.loads(sys.argv[1])["total_findings"])' "$SUMMARY" 2>/dev/null || echo ?)  Ledger: $LEDGER_FILE"
 
-# Exit non-zero only when every real phase failed (an absent phase is not a failure of the others).
-fails=0; ran=0
-for p in "$P1" "$P2" "$P3"; do case "$p" in absent|skipped*) continue ;; esac; ran=$((ran+1)); [ "$p" != ok ] && fails=$((fails+1)); done
-[ "$ran" -gt 0 ] && [ "$fails" -eq "$ran" ] && exit 1
-exit 0
+# The scan is the cycle's purpose: a missing/failed scan fails the run. Any other phase failing is logged in the ledger only.
+case "$P1" in ok|skipped*) exit 0 ;; *) _log "FAILED: scan status $P1"; exit 1 ;; esac
