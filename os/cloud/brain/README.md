@@ -7,12 +7,40 @@ It never writes code itself (that is `os/cloud/hands/`, Task 4b) and never calls
 GitHub org webhooks ──► POST /github/webhook ──► KV (Mac fallback, GET /pending)   ┐
 Mac watchers / dream ─► POST /findings ─────────────────────────────────────────────┤
 cron */5  CI inbox, prod health, questions, urgent dispatch, self-check            ├─► BrainDO (SQLite)
-cron :07  dependency/CVE advisories (ETag) + CISA KEV (daily)                      │   findings → classify → jobs
+cron */15 services, page-load, journey-monitor  ·  :07 advisories + CISA KEV, deploy-drift,│
+cron 6 h  cf-workers, sentry-stale, cost-guard, world-watch, dr-drill        pr-shepherd│   findings → classify → jobs
 cron 21:30 UTC  the ONE nightly hands batch                                         │   runs, questions, messages
 cron 05:00 UTC  the ONE daily digest                                                ┘
 BrainDO ──► HandsProvider.start(batch) ──► hands pull GET /hands/runs/:id, post outcomes + usage
 BrainDO ──► Telegram (≤ 3/day + 1 digest, deduped)        dashboard /dash/ + /api/* (behind Cloudflare Access)
 ```
+
+## Cloud watchers (ported from the Mac watchers, Task 4a)
+
+Ten watchers in `src/watchers/`, run from the Worker cron (never inside the DO), entry `src/watchers/run.ts`. Each is a pure function of
+`(env, sink, now, fetch)` with a 10 s timeout per request, a KV cadence gate (`wd:last:<id>`), and findings
+`source: watcher` with the stable key `<watcher>:<subject>:<state>`; the classifier picks the lane and nothing messages Telegram directly.
+Shared rules (`common.ts`): a var left unset skips the watcher and raises ONE deduped `monitor-unconfigured` finding; non-2xx, timeout,
+unparsable JSON, `success:false` and GraphQL 200 + `errors` raise a `watcher-error` finding (never "all clear", and an unreadable source
+never resolves earlier findings); a finding whose condition is gone is resolved. Tokens are env secrets (`wrangler secret put`) and never
+appear in a finding. Targets are config only: set the vars below at deploy with `OS_BRAIN_<NAME>` in `~/.ebda-os.local.env` (`scripts/deploy.sh`
+validates the JSON ones); the only default is `DR_DRILL_REPO`.
+
+| Watcher (cron) | Checks | Config (vars / secrets) | Finding keys |
+|---|---|---|---|
+| `services` (15 min) | named Ebda services through `health.ts` `checkOne` (200 with `ok:false` is down); finding after `HEALTH_FAIL_BUDGET` consecutive fails (KV streak), urgent per classifier | `SERVICE_TARGETS` `[{name,url,kind}]` | `services:<name>:down` (`prod-outage` / `money-path-broken`) |
+| `page-load` (15 min) | 3 sequential GETs per page; p50 of TTFB or total over the limit, or 2+ of 3 non-2xx | `PAGE_LOAD_TARGETS` `[{name,url}]`, `PAGE_LOAD_P50_MS` (1500) | `page-load:<name>:slow` / `:unreachable` |
+| `journey-monitor` (15 min) | guest GET journeys (home, product, cart); step fails on non-2xx, timeout or missing `contains` text. Read-only by construction: checkout/payment/order/login paths are refused at parse time | `JOURNEY_CONFIG` `[{name,steps:[{name,url,contains?}]}]` | `journey-monitor:<journey>:failed`, `:config:error` |
+| `deploy-drift` (hourly :07) | live `/health` commit vs tip of the branch (GitHub API); drift = differs AND tip older than the grace | `DEPLOY_DRIFT_TARGETS` `[{name,healthUrl,repo,branch?}]`, `DEPLOY_DRIFT_GRACE_MIN` (120), secret `GITHUB_TOKEN` | `deploy-drift:<name>:drifted` |
+| `pr-shepherd` (hourly :07) | open PRs in `OS_ORGS` that are CONFLICTING, have a FAILURE/ERROR check rollup, or sit non-draft without update for `PR_SHEPHERD_STALE_HOURS` | `OS_ORGS`, `PR_SHEPHERD_STALE_HOURS` (24), secret `GITHUB_TOKEN` | `pr:<repo>#<n>:conflicting|failed-checks|waiting` |
+| `cf-workers` (6 h) | Workers named `CF_WORKERS_PREFIXES` (default `ebda-`): error rate over 6 h above `CF_WORKER_ERROR_RATE` (0.05, min 20 requests); `CF_WORKERS_EXPECTED` Workers missing from the account. A failed Workers Builds deploy is not visible through these APIs (CI owns it) | `CF_ACCOUNT_ID`, `CF_WORKERS_*`, secret `CF_API_TOKEN` (Analytics:Read + Workers Scripts:Read) | `cf-workers:<script>:errors|missing` |
+| `cost-guard` (6 h) | GitHub Actions minutes this month for `COST_GH_ORG` (warn 48000 / stop 49500) and Workers requests this month (warn 8M / stop 10M) | `COST_GH_ORG`, `COST_ACTIONS_WARN_MIN`, `COST_ACTIONS_STOP_MIN`, `CF_REQUESTS_WARN`, `CF_REQUESTS_STOP`, `CF_ACCOUNT_ID`, secrets `GITHUB_TOKEN` (org billing read), `CF_API_TOKEN` | `cost-guard:<counter>:warn|stop` |
+| `sentry-stale` (6 h) | unresolved issues `age:+72h lastSeen:-24h` per project | `SENTRY_ORG`, `SENTRY_PROJECTS`, `SENTRY_BASE_URL`, secret `SENTRY_AUTH_TOKEN` | `sentry-stale:<project>/<id>:stale` |
+| `world-watch` (6 h) | Statuspage incidents (impact major/critical, unresolved) for Cloudflare + GitHub; npm bulk advisories (high/critical) for the pinned runtime deps | `WORLD_STATUS_URLS` (default CF + GitHub), `WORLD_NPM_DEPS` `{"pkg":["x.y.z"]}` | `world-watch:<source>:<incident>`, `world-watch:npm/<pkg>/<id>:open` |
+| `dr-drill` (6 h, enqueue weekly) | once a week ONE nightly finding "run restore drill (node scripts/ops/restore-drill.mjs --target api) on ebda-store" for the hands; a stale finding when no drill job completed for `DR_DRILL_STALE_DAYS` (8) | `DR_DRILL_REPO` (default `Ebda-AI-Studio/ebda-store`), `DR_DRILL_STALE_DAYS` | `dr-drill:ebda-store:week-<n>`, `dr-drill:ebda-store:stale` |
+
+Crons (`src/schedule.ts` = `wrangler.jsonc`): `quarter` `2-59/15 * * * *`, `sixhourly` `17 */6 * * *`; `hourly` also runs deploy-drift and pr-shepherd.
+Footprint: at most 3 outbound requests per service per 15 min and a few dozen per 6 h; KV writes are one gate key per watcher run; no new paid service.
 
 ## Design
 
@@ -97,7 +125,7 @@ All on the **personal** Cloudflare account. Never put an id or secret in the rep
    CLOUDFLARE_ACCOUNT_ID=$OS_CF_ACCOUNT_ID npx wrangler kv namespace create ebda-os-brain-events
    echo 'OS_BRAIN_KV_ID=<id printed above>' >> ~/.ebda-os.local.env
    ```
-3. Deploy (creates the Worker, the SQLite DO via migration `v1`, the custom domain and the 4 crons):
+3. Deploy (creates the Worker, the SQLite DO via migration `v1`, the custom domain and the 6 crons):
    ```bash
    bash scripts/deploy.sh --dry-run && bash scripts/deploy.sh
    curl -s https://$OS_BRAIN_HOST/health        # {"ok":true,"service":"ebda-os-brain"}
