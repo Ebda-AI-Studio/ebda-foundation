@@ -42,6 +42,11 @@ export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {},
 }
 
 async function report(brain, job, o, log) {
+  // a restore-drill job proves nothing by finishing: only the drill's own PASS (and no FAIL) marks it fresh in the brain
+  if (job.finding?.kind === 'dr-drill') {
+    const ok = ['merged', 'pr_opened', 'fix_deployed'].includes(o.status) && /\bPASS\b/.test(o.note ?? '') && !/\bFAIL/.test(o.note ?? '');
+    o = { ...o, drill: ok ? 'pass' : 'fail' };
+  }
   log(`job ${job.id}: ${o.status}${o.prUrl ? ` ${o.prUrl}` : ''}${o.note ? ` (${o.note})` : ''}`);
   try {
     await brain.outcome(job.id, o);

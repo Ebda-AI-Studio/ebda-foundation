@@ -38,8 +38,8 @@ export const GROUPS: Record<WatcherGroup, Entry[]> = {
     { id: sentryStale.ID, intervalMs: sentryStale.INTERVAL_MS, run: sentryStale.watchSentryStale },
     { id: costGuard.ID, intervalMs: costGuard.INTERVAL_MS, run: costGuard.watchCostGuard },
     { id: world.ID, intervalMs: world.INTERVAL_MS, run: world.watchWorld },
-    // the freshness check runs every time, the weekly enqueue only when its own weekly gate opens
-    { id: drDrill.ID, intervalMs: 0, run: async (ctx) => drDrill.watchDrDrill(ctx, await due(ctx, `${drDrill.ID}:weekly`, drDrill.INTERVAL_MS)) },
+    // the freshness check runs every time, the weekly enqueue only when its own weekly KV gate (written after the ingest) opens
+    { id: drDrill.ID, intervalMs: 0, run: drDrill.watchDrDrill },
   ],
 };
 

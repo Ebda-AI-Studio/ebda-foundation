@@ -32,6 +32,14 @@ function matches(re: RegExp, f: Finding): boolean {
 export function classifyFinding(f: Finding): Classification {
   const kind = f.kind.toLowerCase();
 
+  // Watcher self-reports (a watcher with no config, or one that cannot read its source) are ops problems: a hands container
+  // cannot set a token or a var, so they never become a nightly/urgent hands job. They go to Ahmad as ONE deduped question
+  // (the existing question/digest path carries it), nothing else.
+  // (Scoped to source 'watcher': the dreaming cycle's own monitor-unconfigured / scan findings stay nightly jobs, see classify.test.ts.)
+  if (f.source === 'watcher' && (kind === 'monitor-unconfigured' || kind === 'watcher-error')) {
+    return { lane: 'question', reason: 'watcher self-report (config or source access): needs Ahmad, not the hands', mergePolicy: 'pr-and-question' };
+  }
+
   // (3) data exposure: contain it now. Rotating a secret stays a question for the hands (destructive class).
   if (EXPOSURE_KINDS.has(kind)) {
     return { lane: 'urgent', reason: 'data exposure detected by a watcher', mergePolicy: 'pr-and-question' };

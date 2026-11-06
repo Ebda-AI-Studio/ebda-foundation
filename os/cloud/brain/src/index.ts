@@ -140,7 +140,7 @@ async function handleHands(request: Request, env: Env, path: string): Promise<Re
   }
   if ((m = path.match(/^\/hands\/jobs\/([\w-]+)\/outcome$/))) {
     if (!OUTCOME_STATUSES.includes(body?.status)) return json({ error: `status must be one of ${OUTCOME_STATUSES.join('|')}` }, 400);
-    const o: JobOutcome = { status: body.status, ...(typeof body.prUrl === 'string' ? { prUrl: body.prUrl.slice(0, 500) } : {}), ...(typeof body.note === 'string' ? { note: body.note.slice(0, 1000) } : {}) };
+    const o: JobOutcome = { status: body.status, ...(typeof body.prUrl === 'string' ? { prUrl: body.prUrl.slice(0, 500) } : {}), ...(typeof body.note === 'string' ? { note: body.note.slice(0, 1000) } : {}), ...(body.drill === 'pass' || body.drill === 'fail' ? { drill: body.drill as 'pass' | 'fail' } : {}) };
     const r = await brain.recordOutcome(m[1]!, o);
     return json(r, r.ok ? 200 : 409);
   }

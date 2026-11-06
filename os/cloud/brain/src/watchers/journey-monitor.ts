@@ -6,7 +6,15 @@ import { finding, isHttps, isObj, parseList, reportUnconfigured, settle, Watcher
 
 export const ID = 'journey-monitor';
 export const INTERVAL_MS = 15 * 60 * 1000;
-const FORBIDDEN_PATH = /checkout|payment|\bpay\b|purchase|\border(s)?\b|place-order|confirm|webhook|login|signin|sign-in|register/i;
+/** Whole path SEGMENTS that mean checkout, payment, order creation or auth: /cart/checkout and /payment/x are refused, /products/order-box is not. */
+const FORBIDDEN_SEGMENTS = new Set(['checkout', 'payment', 'payments', 'pay', 'purchase', 'order', 'orders', 'place-order', 'confirm', 'confirmation', 'webhook', 'webhooks', 'login', 'signin', 'sign-in', 'register', 'signup', 'sign-up']);
+export function forbiddenPath(pathname: string): boolean {
+  try {
+    return pathname.split('/').some((seg) => FORBIDDEN_SEGMENTS.has(decodeURIComponent(seg).toLowerCase()));
+  } catch {
+    return true; // an undecodable path is refused, never browsed
+  }
+}
 
 export interface JourneyStep {
   name: string;
@@ -22,7 +30,7 @@ export function isStep(x: unknown): x is JourneyStep {
   if (!isObj(x) || !isHttps(x.url) || typeof x.name !== 'string' || !/^[\w .-]{1,40}$/.test(x.name)) return false;
   if (x.contains !== undefined && (typeof x.contains !== 'string' || x.contains.length > 200)) return false;
   try {
-    return !FORBIDDEN_PATH.test(new URL(x.url).pathname);
+    return !forbiddenPath(new URL(x.url).pathname);
   } catch {
     return false;
   }
@@ -35,6 +43,11 @@ async function runStep(ctx: WatchCtx, s: JourneyStep): Promise<string | null> {
     if (r.status < 200 || r.status > 299) {
       await r.body?.cancel();
       return `HTTP ${r.status}`;
+    }
+    // a redirect that landed on a checkout/payment/login path is a failure of the journey, not a place to keep browsing
+    if (r.url && forbiddenPath(new URL(r.url).pathname)) {
+      await r.body?.cancel();
+      return 'redirected to a checkout or login path';
     }
     const body = await r.text();
     if (s.contains && !body.includes(s.contains)) return 'expected text missing';

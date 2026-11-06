@@ -9,8 +9,8 @@ import { due, graphql, type Sink, type WatchCtx } from '../src/watchers/common';
 import { watchCfWorkers } from '../src/watchers/cf-workers';
 import { watchCostGuard } from '../src/watchers/cost-guard';
 import { watchDeployDrift } from '../src/watchers/deploy-drift';
-import { watchDrDrill } from '../src/watchers/dr-drill';
-import { isStep, watchJourneys } from '../src/watchers/journey-monitor';
+import { isoWeek, watchDrDrill, WEEKLY_GATE } from '../src/watchers/dr-drill';
+import { forbiddenPath, isStep, watchJourneys } from '../src/watchers/journey-monitor';
 import { median, watchPageLoad } from '../src/watchers/page-load';
 import { watchPrShepherd } from '../src/watchers/pr-shepherd';
 import { GROUPS, runWatchers } from '../src/watchers/run';
@@ -42,7 +42,7 @@ function harness(vars: Partial<Env>, routes: Route[], lastDone: number | null = 
       reconciled.push({ kind, prefix, open });
       return 0;
     },
-    async lastDoneAt() {
+    async lastPassAt() {
       return lastDone;
     },
   };
@@ -61,6 +61,29 @@ const fresh = async (...keys: string[]) => {
 };
 const json = (b: unknown, status = 200) => Response.json(b, { status });
 const unconfigured = (h: ReturnType<typeof harness>, id: string) => expect(h.ingested).toMatchObject([{ kind: 'monitor-unconfigured', key: `${id}:config:unconfigured` }]);
+
+describe('classify: watcher self-reports never become hands jobs', () => {
+  for (const kind of ['monitor-unconfigured', 'watcher-error']) {
+    it(`${kind} is a question-lane finding, never nightly or urgent, whatever else it carries`, () => {
+      for (const extra of [{}, { severity: 'P1' as const, selfHealExhausted: true }, { touches: [] as string[] }]) {
+        const c = classifyFinding({ source: 'watcher', kind, key: 'x:y:z', title: 't', ...extra });
+        expect(c.lane).toBe('question');
+        expect(c.lane).not.toBe('nightly');
+        expect(c.lane).not.toBe('urgent');
+      }
+    });
+  }
+  it('in the brain they raise a pending question and queue NO nightly/urgent job', async () => {
+    const brain = brainStub(env);
+    const r = await brain.ingestFinding({ source: 'watcher', kind: 'monitor-unconfigured', key: 'services:config:unconfigured', title: 'watcher services is not running' }, NOW);
+    expect(r.lane).toBe('question');
+    const again = await brain.ingestFinding({ source: 'watcher', kind: 'monitor-unconfigured', key: 'services:config:unconfigured', title: 'watcher services is not running' }, NOW + 1000);
+    expect(again.deduped).toBe(true);
+    const st = await brain.state(NOW + 2000);
+    expect(st.jobs.queuedNightly).toBe(0);
+    expect(st.jobs.queuedUrgent).toBe(0);
+  });
+});
 
 describe('common', () => {
   it('due() opens once per interval', async () => {
@@ -164,6 +187,18 @@ describe('journey-monitor', () => {
     const h = harness({ JOURNEY_CONFIG: j(ok) }, [['j.test', () => new Response('empty page')]]);
     await watchJourneys(h.ctx);
     expect(h.ingested[0]).toMatchObject({ kind: 'journey-failed', detail: { step: 'product', reason: 'expected text missing' } });
+  });
+  it('forbidden paths match whole segments: /cart/checkout and /payment are refused, /products/order-box and /pay-it-forward are fine', () => {
+    for (const p of ['/checkout', '/cart/checkout', '/payment', '/payment/intent', '/orders', '/order', '/login', '/account/login/', '/CHECKOUT']) expect(forbiddenPath(p)).toBe(true);
+    for (const p of ['/products/order-box', '/p/payment-terminal-case', '/blog/how-to-pay', '/cart', '/p/tee', '/', '/collections/reorder']) expect(forbiddenPath(p)).toBe(false);
+    expect(forbiddenPath('/%zz')).toBe(true);
+    expect(isStep({ name: 's', url: 'https://j.test/products/order-box' })).toBe(true);
+    expect(isStep({ name: 's', url: 'https://j.test/cart/checkout' })).toBe(false);
+  });
+  it('a redirect that lands on /checkout fails the step', async () => {
+    const h = harness({ JOURNEY_CONFIG: j([{ name: 'cart', url: 'https://j.test/cart' }]) }, [['j.test', () => Object.defineProperty(new Response('x'), 'url', { value: 'https://j.test/checkout' })]]);
+    await watchJourneys(h.ctx);
+    expect(h.ingested[0]).toMatchObject({ kind: 'journey-failed', detail: { reason: 'redirected to a checkout or login path' } });
   });
   it('checkout / payment / order / login paths are refused: the journey is dropped and a config error raised', async () => {
     for (const p of ['/checkout', '/api/payment/intent', '/orders', '/place-order', '/login']) expect(isStep({ name: 's', url: `https://j.test${p}` })).toBe(false);
@@ -369,39 +404,55 @@ describe('world-watch', () => {
 
 describe('dr-drill', () => {
   const base = { DR_DRILL_REPO: 'Ebda-AI-Studio/ebda-store' };
+  it('ISO week key: year-Www, correct across year boundaries', () => {
+    expect(isoWeek(Date.UTC(2026, 10, 6))).toBe('2026-W45');
+    expect(isoWeek(Date.UTC(2026, 0, 1))).toBe('2026-W01');
+    expect(isoWeek(Date.UTC(2027, 0, 1))).toBe('2026-W53');
+    expect(isoWeek(Date.UTC(2024, 11, 30))).toBe('2025-W01');
+  });
   it('unconfigured', async () => {
     const h = harness({ DR_DRILL_REPO: undefined }, []);
-    await watchDrDrill(h.ctx, true);
+    await watchDrDrill(h.ctx);
     unconfigured(h, 'dr-drill');
   });
-  it('weekly enqueue: one nightly-lane drill job per week, none when the weekly gate is closed', async () => {
-    await fresh('dr:first-run');
+  it('weekly enqueue: one nightly-lane drill job per ISO week; the gate closes after the ingest', async () => {
+    await fresh('dr:first-run', WEEKLY_GATE);
     const h = harness(base, [], NOW - 86400000);
-    expect(await watchDrDrill(h.ctx, true)).toEqual({ enqueued: true, stale: false });
+    expect(await watchDrDrill(h.ctx)).toEqual({ enqueued: true, stale: false });
     expect(h.ingested).toHaveLength(1);
-    expect(h.ingested[0]).toMatchObject({ kind: 'dr-drill', repo: 'Ebda-AI-Studio/ebda-store' });
+    expect(h.ingested[0]).toMatchObject({ kind: 'dr-drill', repo: 'Ebda-AI-Studio/ebda-store', key: 'dr-drill:ebda-store:2026-W45' });
     expect(h.ingested[0]!.title).toContain('node scripts/ops/restore-drill.mjs --target api');
-    expect(h.ingested[0]!.key).toMatch(/^dr-drill:ebda-store:week-\d+$/);
     expect(classifyFinding(h.ingested[0]!).lane).toBe('nightly');
-    const closed = harness(base, [], NOW - 86400000);
-    await watchDrDrill(closed.ctx, false);
-    expect(closed.ingested).toEqual([]);
+    expect(await env.EVENTS.get(WEEKLY_GATE)).toBe(String(NOW));
+    const again = harness(base, [], NOW - 86400000);
+    expect((await watchDrDrill({ ...again.ctx, now: NOW + 6 * 3600000 })).enqueued).toBe(false);
+    expect(again.ingested).toEqual([]);
   });
-  it('last completed drill older than 8 days is a stale finding; a recent one resolves it', async () => {
+  it('an ingest that throws leaves the weekly gate open so the next run retries', async () => {
+    await fresh('dr:first-run', WEEKLY_GATE);
+    const h = harness(base, [], NOW - 86400000);
+    const boom: Sink = { ...h.ctx.sink, async ingestMany() { throw new Error('do unavailable'); } };
+    await expect(watchDrDrill({ ...h.ctx, sink: boom })).rejects.toThrow('do unavailable');
+    expect(await env.EVENTS.get(WEEKLY_GATE)).toBeNull();
+    const retry = harness(base, [], NOW - 86400000);
+    expect((await watchDrDrill({ ...retry.ctx, now: NOW + 6 * 3600000 })).enqueued).toBe(true);
+  });
+  it('last PASSED drill older than 8 days is a stale finding; a recent pass resolves it', async () => {
     await fresh('dr:first-run');
+    await env.EVENTS.put(WEEKLY_GATE, String(NOW));
     const stale = harness(base, [], NOW - 9 * 86400000);
-    expect((await watchDrDrill(stale.ctx, false)).stale).toBe(true);
+    expect((await watchDrDrill(stale.ctx)).stale).toBe(true);
     expect(stale.ingested).toMatchObject([{ kind: 'dr-drill-stale', key: 'dr-drill:ebda-store:stale' }]);
     const ok = harness(base, [], NOW - 2 * 86400000);
-    expect((await watchDrDrill(ok.ctx, false)).stale).toBe(false);
+    expect((await watchDrDrill(ok.ctx)).stale).toBe(false);
     expect(ok.reconciled).toMatchObject([{ kind: 'dr-drill-stale', open: [] }]);
   });
-  it('no drill ever finished: age counts from the watcher first run (no instant alarm)', async () => {
+  it('no drill ever passed: age counts from the watcher first run (no instant alarm)', async () => {
     await fresh('dr:first-run');
-    const h = harness(base, [], null);
-    expect((await watchDrDrill(h.ctx, false)).stale).toBe(false);
+    await env.EVENTS.put(WEEKLY_GATE, String(NOW));
+    expect((await watchDrDrill(harness(base, [], null).ctx)).stale).toBe(false);
     await env.EVENTS.put('dr:first-run', String(NOW - 10 * 86400000));
-    expect((await watchDrDrill(harness(base, [], null).ctx, false)).stale).toBe(true);
+    expect((await watchDrDrill(harness(base, [], null).ctx)).stale).toBe(true);
   });
 });
 
@@ -429,7 +480,22 @@ describe('runner + real Durable Object', () => {
     expect(h.ingested.some((f) => f.kind === 'watcher-error' && f.key === 'cf-workers:cloudflare:error')).toBe(true);
     expect(r['world-watch']).toBe('ran');
   });
-  it('brain DO: lastDoneAt is null until a drill job completes', async () => {
-    expect(await brainStub(env).lastDoneAt('watcher', 'dr-drill')).toBeNull();
+  it('a dream-source monitor-unconfigured keeps its nightly lane (only source watcher is question-only)', () => {
+    expect(classifyFinding({ source: 'dream', kind: 'monitor-unconfigured', key: 'k', title: 't' }).lane).toBe('nightly');
+  });
+  it('brain DO: a done drill job without drill:pass (or with drill:fail) is NOT a pass; drill:pass is', async () => {
+    const brain = brainStub(env);
+    const t0 = Date.UTC(2026, 10, 1);
+    const run = async (key: string, o: { status: 'merged' | 'pr_opened'; drill?: 'pass' | 'fail' }, at: number) => {
+      const r = await brain.ingestFinding({ source: 'watcher', kind: 'dr-drill', key, title: 'drill' }, at);
+      await brain.claim('mac-local', 5, at);
+      expect((await brain.recordOutcome(r.jobId!, o, at + 1000)).ok).toBe(true);
+    };
+    await run('dr-drill:ebda-store:2026-W40', { status: 'merged' }, t0);
+    expect(await brain.lastPassAt('watcher', 'dr-drill')).toBeNull();
+    await run('dr-drill:ebda-store:2026-W41', { status: 'merged', drill: 'fail' }, t0 + 1000000);
+    expect(await brain.lastPassAt('watcher', 'dr-drill')).toBeNull();
+    await run('dr-drill:ebda-store:2026-W42', { status: 'pr_opened', drill: 'pass' }, t0 + 2000000);
+    expect(await brain.lastPassAt('watcher', 'dr-drill')).toBe(t0 + 2001000);
   });
 });
