@@ -39,9 +39,10 @@ pr-shepherd (ruling F-I5): a CONFLICTING or failing-checks PR on a same-repo bra
 | `cost-guard` (6 h) | GitHub Actions minutes this month for `COST_GH_ORG` (warn 48000 / stop 49500) and Workers requests this month (warn 8M / stop 10M) | `COST_GH_ORG`, `COST_ACTIONS_WARN_MIN`, `COST_ACTIONS_STOP_MIN`, `CF_REQUESTS_WARN`, `CF_REQUESTS_STOP`, `CF_ACCOUNT_ID`, secrets `GITHUB_TOKEN` (org billing read), `CF_API_TOKEN` | `cost-guard:<counter>:warn|stop` |
 | `sentry-stale` (6 h) | unresolved issues `age:+72h lastSeen:-24h` per project | `SENTRY_ORG`, `SENTRY_PROJECTS`, `SENTRY_BASE_URL`, secret `SENTRY_AUTH_TOKEN` | `sentry-stale:<project>/<id>:stale` |
 | `world-watch` (6 h) | Statuspage incidents (impact major/critical, unresolved) for Cloudflare + GitHub; npm bulk advisories (high/critical) for the pinned runtime deps | `WORLD_STATUS_URLS` (default CF + GitHub), `WORLD_NPM_DEPS` `{"pkg":["x.y.z"]}` | `world-watch:<source>:<incident>`, `world-watch:npm/<pkg>/<id>:open` |
+| `ci-catchup` (hourly) | the newest COMPLETED run per workflow on each hands-mapped repo's default branch (last 48 h), replayed through the webhook's two doors: red -> `ingestCiEvent`, green -> `resolveCi`, both deduped by run id + attempt. Covers a brain outage longer than the webhook's 1 h replay window | `HANDS_CONFIG_JSON` repos, secret `GITHUB_TOKEN` | the existing `ci-failure` keys (`<repo>:<workflow>`) |
 | `dr-drill` (6 h) | the age of the last restore-drill PASS the Mac posted to `POST /drill` (ruling F-I6, the drill needs R2 + age secrets the container must not hold; `os/ops/restore-drill.sh` runs it weekly): no PASS for `DR_DRILL_STALE_DAYS` (8) = a digest note; 14 days = ONE unhealed-P1 message. Never a hands job | `DR_DRILL_REPO` (default `Ebda-AI-Studio/ebda-store`), `DR_DRILL_STALE_DAYS` | `dr-drill:ebda-store:stale`, `dr-drill:ebda-store:overdue` |
 
-Crons (`src/schedule.ts` = `wrangler.jsonc`): `quarter` `2-59/15 * * * *`, `sixhourly` `17 */6 * * *`; `hourly` also runs deploy-drift and pr-shepherd.
+Crons (`src/schedule.ts` = `wrangler.jsonc`): `quarter` `2-59/15 * * * *`, `sixhourly` `17 */6 * * *`; `hourly` also runs deploy-drift, pr-shepherd and ci-catchup.
 Footprint: at most 3 outbound requests per service per 15 min and a few dozen per 6 h; KV writes are one gate key per watcher run; no new paid service.
 
 ## Config gaps and refusals (final review fixes)
@@ -51,6 +52,10 @@ Footprint: at most 3 outbound requests per service per 15 min and a few dozen pe
 - With a real provider (not `stub`) an urgent container never boots on unknown usage; a P1 the hands refuse on usage (they now report the reading) sends one `p1-unhealed` message and stays queued for tonight (ruling F-C1).
 - A run that outlives its cap (+10 min) is timed out: urgent reports could-not-fix; nightly / Mac-claim jobs are requeued once, then end `timed_out`; the digest counts the requeues.
 - `mac-local` claims skip third-party-text jobs (advisories, `pr-stuck`, world-watch): ruling 4b-5, enforced in `claim()`.
+- A watcher that runs WITHOUT a config gap resolves its own `<id>:config:unconfigured` note (N-1), so `--deployed` clears once the watcher is really configured; a gap that comes back reopens at once (no cool-down).
+- The stuck-run cap of a nightly / Mac-claim run is fixed at claim time: max(`HANDS_NIGHTLY_RUN_CAP_MIN`, 45 min x the jobs CLAIMED) + 10 min, not x the jobs still running (N-2).
+- A replayed green is ignored by its signed run id + attempt (`ci:green:seen`), so it cannot close a newer red (M-3).
+- `POST /hands/refused {runId, reason}` (hands token): the container could not lock down egress and exits 3; the brain sends ONE P1 message a day, marks the run failed and requeues its jobs.
 - `GET /api/state` lists `unconfigured` watcher ids; `os/ops/cutover-gate-check.sh --deployed <url>` fails while a ported watcher is unconfigured.
 
 ## Design
