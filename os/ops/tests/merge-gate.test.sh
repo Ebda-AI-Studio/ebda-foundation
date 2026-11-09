@@ -88,4 +88,70 @@ ok "ZERO checks never merges (exit 2 after max wait)" "$(MERGE_GATE_MAX_WAIT_S=1
 ok "  ...merge cmd not run"          "$([ -f "$TMP/merged" ] && echo yes || echo no)" "no"
 ok "no PR workflows => refuse (2)"   "$(mkdir -p "$TMP/empty"; MERGE_GATE_VIEW_CMD="cat $TMP/green.json" bash "$OPS/merge-gate.sh" 7 abcdef1 --workflows "$TMP/empty" >/dev/null 2>&1; echo $?)" "2"
 ok "short sha rejected (64)"         "$(bash "$OPS/merge-gate.sh" 7 abc >/dev/null 2>&1; echo $?)" "64"
+
+# --- I-8: a hands PR (--hands) is refused when a workflow lets PR code reach a secret ---
+WFX="$TMP/wfx"; mkdir -p "$WFX"
+cat > "$WFX/ci.yml" <<'Y'
+name: CI
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  lint:
+    name: Lint
+    runs-on: x
+    steps:
+      - run: echo ${{ secrets.GITHUB_TOKEN }}
+  notify:
+    name: Notify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: x
+    steps:
+      - run: curl -d ${{ secrets.SLACK_WEBHOOK }} x
+Y
+ok "exposure: GITHUB_TOKEN and a push-only notify job are not exposure" "$(python3 -I "$OPS/lib/merge_gate.py" secrets-exposure "$WFX")" "[]"
+cat > "$WFX/deploy.yml" <<'Y'
+on:
+  pull_request_target:
+jobs:
+  preview:
+    runs-on: x
+    steps:
+      - run: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+Y
+ok "exposure: a secret in a PR-triggered job is named" "$(python3 -I "$OPS/lib/merge_gate.py" secrets-exposure "$WFX")" '["deploy.yml:preview:CLOUDFLARE_API_TOKEN"]'
+WFY="$TMP/wfy"; mkdir -p "$WFY"
+cat > "$WFY/ci.yml" <<'Y'
+on:
+  pull_request:
+env:
+  TOKEN: ${{ secrets.NPM_TOKEN }}
+jobs:
+  lint:
+    name: Lint
+    runs-on: x
+Y
+ok "exposure: a workflow-level env secret counts" "$(python3 -I "$OPS/lib/merge_gate.py" secrets-exposure "$WFY")" '["ci.yml:(workflow env):NPM_TOKEN"]'
+# the driver: --hands refuses (exit 2, nothing merged) on exposure; without --hands the same workflows are fine
+printf '%s' "$GREEN" > "$TMP/green.json"; rm -f "$TMP/merged"
+MERGE_GATE_VIEW_CMD="cat $TMP/green.json" MERGE_GATE_MERGE_CMD="echo merged > $TMP/merged" bash "$OPS/merge-gate.sh" 7 abcdef1 --workflows "$WFX" --interval 0 --polls 1 --hands >"$TMP/out" 2>&1; rc=$?
+ok "--hands + exposed secret => refuse (2)" "$rc" "2"
+ok "  ...merge cmd not run"                  "$([ -f "$TMP/merged" ] && echo yes || echo no)" "no"
+ok "  ...names the secret"                   "$(grep -c CLOUDFLARE_API_TOKEN "$TMP/out")" "1"
+cat > "$WFX/ci.yml" <<'Y'
+name: CI
+on:
+  pull_request:
+jobs:
+  lint:
+    name: Lint
+    runs-on: x
+    steps:
+      - run: echo hi
+Y
+rm "$WFX/deploy.yml"; printf '%s' "$(pr "[$(c Lint COMPLETED SUCCESS)]")" > "$TMP/g1.json"
+MERGE_GATE_VIEW_CMD="cat $TMP/g1.json" MERGE_GATE_MERGE_CMD="echo merged > $TMP/merged" bash "$OPS/merge-gate.sh" 7 abcdef1 --workflows "$WFX" --interval 0 --polls 1 --hands >"$TMP/out" 2>&1; rc=$?
+ok "--hands with no exposure still merges (0)" "$rc" "0"
 echo "---"; echo "merge-gate: $pass passed, $fail failed"; [ "$fail" = 0 ]

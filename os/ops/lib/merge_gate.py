@@ -2,6 +2,7 @@
 """merge_gate.py - the pure logic behind ops/merge-gate.sh (no network, fully testable).
 
   merge_gate.py required <workflows-dir>          -> JSON array of check names that must be an explicit SUCCESS
+  merge_gate.py secrets-exposure <workflows-dir>  -> JSON array of "<file>:<job>:<SECRET>" a PR's own code could reach (I-8)
   merge_gate.py evaluate <want-sha> <required-json> < pr.json
                                                     -> one verdict line: ok | wait:<why> | refuse:<why>
 
@@ -88,6 +89,52 @@ def required_checks(wf_dir):
     return sorted(out)
 
 
+# a job gated to push-to-a-branch (or "not a PR") never runs for PR code, so its secrets are not exposed to it
+PUSH_ONLY_IF = re.compile(r"github\.event_name\s*==\s*'push'|github\.event_name\s*!=\s*'pull_request(_target)?'|github\.ref(_name)?\s*==")
+SECRET_REF = re.compile(r"secrets\.([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _triggers_pr(text):
+    """True when the workflow runs on pull_request or pull_request_target (any YAML spelling of the `on:` block)."""
+    return bool(re.search(r"^(on|'on'|\"on\"):.*pull_request", text, re.M)) or bool(
+        re.search(r"^(on|'on'|\"on\"):\s*$(\n(?:[ \t].*|)$)*?\n\s+-?\s*pull_request(_target)?\s*:?\s*$", text, re.M)
+    )
+
+
+def secrets_exposure(wf_dir):
+    """Secrets (other than GITHUB_TOKEN) that code in a PR can reach: referenced at workflow level or in a job that is not
+    gated to push / non-PR events, in a workflow triggered by pull_request or pull_request_target. A hands PR is same-repo,
+    so GitHub hands it these secrets; the gate refuses to auto-merge where the PR's own code could read them."""
+    out = set()
+    for f in sorted(os.listdir(wf_dir)):
+        if not re.search(r"\.ya?ml$", f):
+            continue
+        text = open(os.path.join(wf_dir, f), encoding="utf-8").read()
+        if not _triggers_pr(text):
+            continue
+        head, _, rest = text.partition("\njobs:")
+        for m in SECRET_REF.finditer(head):
+            if m.group(1) != "GITHUB_TOKEN":
+                out.add(f"{f}:(workflow env):{m.group(1)}")
+        blocks, cur, cur_id = {}, [], None
+        for raw in rest.split("\n"):
+            m = re.match(r"^  ([\w-]+):\s*$", raw)
+            if m:
+                cur_id, cur = m.group(1), []
+                blocks[cur_id] = cur
+            elif cur_id is not None:
+                cur.append(raw)
+        for jid, lines in blocks.items():
+            body = "\n".join(lines)
+            cond = re.search(r"^    if:\s*(.+?)\s*$", body, re.M)
+            if cond and PUSH_ONLY_IF.search(cond.group(1)):
+                continue
+            for m in SECRET_REF.finditer(body):
+                if m.group(1) != "GITHUB_TOKEN":
+                    out.add(f"{f}:{jid}:{m.group(1)}")
+    return sorted(out)
+
+
 def _status(c):
     if c.get("__typename") == "StatusContext":
         return "IN_PROGRESS" if c.get("state") in ("PENDING", "EXPECTED") else "COMPLETED"
@@ -134,7 +181,9 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "required":
         print(json.dumps(required_checks(sys.argv[2])))
+    elif cmd == "secrets-exposure":
+        print(json.dumps(secrets_exposure(sys.argv[2])))
     elif cmd == "evaluate":
         print(evaluate(json.load(sys.stdin), sys.argv[2], json.loads(sys.argv[3])))
     else:
-        sys.exit("usage: merge_gate.py required <dir> | evaluate <sha> <required-json> < pr.json")
+        sys.exit("usage: merge_gate.py required <dir> | secrets-exposure <dir> | evaluate <sha> <required-json> < pr.json")

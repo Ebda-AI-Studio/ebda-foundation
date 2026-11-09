@@ -15,17 +15,18 @@
 # --max-wait-min (180); running out of time exits 2 and merges nothing.
 #
 # options: --repo OWNER/NAME (default: this checkout's repo)  --workflows DIR (default <toplevel>/.github/workflows)
+#          --hands  (a PR opened by the Ebda OS hands: refuse, exit 2, when a PR-triggered workflow exposes a secret to PR code)
 #          --polls N (3)  --interval S (30)  --max-wait-min M (180)  --method squash|merge|rebase (squash)  --dry-run
 # test seams: MERGE_GATE_VIEW_CMD (prints the PR json), MERGE_GATE_MERGE_CMD, MERGE_GATE_REQUIRED_JSON, MERGE_GATE_MAX_WAIT_S
 set -uo pipefail
 pr="${1:?usage: merge-gate.sh <pr> <expected-head-sha> [--repo R] [--workflows D] [--polls N] [--interval S] [--max-wait-min M] [--dry-run]}"
 want="${2:?expected head sha required}"; shift 2
-repo=""; wfdir=""; polls=3; interval=30; maxmin=180; dry=0; method=squash
+repo=""; wfdir=""; polls=3; interval=30; maxmin=180; dry=0; method=squash; hands=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --repo) repo="$2"; shift 2 ;; --workflows) wfdir="$2"; shift 2 ;; --polls) polls="$2"; shift 2 ;;
     --interval) interval="$2"; shift 2 ;; --max-wait-min) maxmin="$2"; shift 2 ;; --method) method="$2"; shift 2 ;;
-    --dry-run) dry=1; shift ;;
+    --dry-run) dry=1; shift ;; --hands) hands=1; shift ;;
     *) echo "merge-gate: unknown option $1" >&2; exit 64 ;;
   esac
 done
@@ -41,6 +42,14 @@ else
   [ -n "$wfdir" ] || wfdir="$(git rev-parse --show-toplevel 2>/dev/null)/.github/workflows"
   [ -d "$wfdir" ] || { echo "merge-gate: no workflows dir at $wfdir (run from a checkout of the repo, or pass --workflows); refusing" >&2; exit 2; }
   required="$(python3 -I "$py" required "$wfdir")"
+fi
+if [ "$hands" = 1 ]; then
+  # I-8: a hands PR is same-repo, so GitHub gives its CI the repo secrets. Auto-merge only where no PR-triggered workflow lets PR code reach one.
+  wfx="${wfdir:-}"; [ -n "$wfx" ] || wfx="$(git rev-parse --show-toplevel 2>/dev/null)/.github/workflows"
+  if [ -d "$wfx" ]; then
+    exposed="$(python3 -I "$py" secrets-exposure "$wfx")" || { echo "merge-gate: could not check the workflows for exposed secrets; refusing a hands PR" >&2; exit 2; }
+  else exposed="could-not-read-workflows"; fi
+  case "$exposed" in "[]") ;; *) echo "merge-gate: REFUSED hands PR $pr: PR-triggered workflow(s) expose secrets to PR code: $exposed" >&2; exit 2 ;; esac
 fi
 case "$required" in "[]"|"") echo "merge-gate: the repo has no always-run PR check to require (or the list could not be derived); refusing - never merge on no checks" >&2; exit 2 ;; esac
 
