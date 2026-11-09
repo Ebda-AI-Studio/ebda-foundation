@@ -69,7 +69,7 @@ command -v os_config_load >/dev/null 2>&1 && os_config_load
 OS_JOB_NAME=dream-reflect
 if command -v require_projects_access >/dev/null 2>&1; then require_projects_access || exit 0; fi
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 OPS_DIR="$(pwd)"
 
 # ---------- config ----------
