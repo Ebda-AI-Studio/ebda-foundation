@@ -23,7 +23,8 @@ const OUTAGE_KINDS = new Set(['prod-outage', 'money-path-broken']);
 const EXPOSURE_KINDS = new Set(['data-exposure', 'pii-leak', 'secret-leak']);
 const ADVISORY_KINDS = new Set(['dependency-advisory', 'code-advisory']);
 /** Pre-approved classes: the only ones that may auto-merge (gate green). */
-export const PRE_APPROVED_KINDS = new Set(['dep-bump', 'dependency-advisory', 'cve-bump', 'lockfile-drift', 'docs', 'test', 'tests', 'lint', 'lint-autofix', 'format', 'flaky-test']);
+export const PRE_APPROVED_KINDS = new Set(['dep-bump', 'dependency-advisory', 'cve-bump', 'lockfile-drift', 'docs', 'test', 'tests', 'flaky-test']);
+// M-1: lint / lint-autofix / format are not pre-approved (see os/cloud/hands/lib/policy.mjs)
 
 // Substring matching on purpose (fail-safe, as in ops/remediation/classify.sh): compound labels such as
 // `security-rls` or `payout-migration` must not slip into an autonomous lane. Over-inclusion costs one question.

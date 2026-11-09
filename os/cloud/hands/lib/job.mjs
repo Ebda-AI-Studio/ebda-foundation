@@ -10,7 +10,7 @@
 import { chmod, cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fill } from './config.mjs';
-import { diffAllowsAutoMerge, FORMAT_KINDS, protectedFor, scanSecrets } from './diffcheck.mjs';
+import { diffAllowsAutoMerge, FORMAT_KINDS, PROTECTED, protectedFor, scanSecrets } from './diffcheck.mjs';
 import { asSandbox, cloneUrl, gitEnv, prepareJobSecrets, SAFE_GIT, untrustedEnv } from './git.mjs';
 import { mayAutoMerge, mayWork } from './policy.mjs';
 import { buildPrompt, CANNOT_FIX } from './prompt.mjs';
@@ -54,6 +54,14 @@ export async function runJob(job, ctx) {
   if (!work.ok) return { status: 'could_not_fix', note: `question: ${work.reason}` };
 
   const kind = String(job.finding.kind ?? '').toLowerCase();
+  // Ruling F-I5: a `pr-stuck` job works ON the stuck PR's own same-repo head branch (never a fork, never the default branch) and
+  // pushes to it; it never merges anything. Conflicts are resolved by merging the base into the head (a merge commit).
+  const prMode = kind === 'pr-stuck';
+  const prHead = prMode ? String(job.finding.detail?.head ?? '') : '';
+  const prState = prMode ? String(job.finding.detail?.state ?? '') : '';
+  if (prMode && (!/^[\w][\w./-]{0,200}$/.test(prHead) || prHead.includes('..') || prHead.endsWith('.lock') || ['main', 'master', 'production', 'preview', repoCfg.defaultBranch].includes(prHead) || !['conflicting', 'failed-checks'].includes(prState))) {
+    return { status: 'could_not_fix', note: `question: pr-stuck job has no usable same-repo head branch (${prHead || 'none'}, ${prState || 'no state'}); nothing touched` };
+  }
   const capMs = (ctx.capMin ?? cfg.jobCapMin) * 60_000;
   const deadline = Math.min(now() + capMs, ctx.runDeadline ?? Infinity);
   const left = () => Math.max(0, deadline - now());
@@ -67,10 +75,14 @@ export async function runJob(job, ctx) {
   const branch = `${cfg.branchPrefix}${job.id}`;
   const safe = cfg.allowFileRemote ? SAFE_GIT.map((a) => (a === 'protocol.file.allow=never' ? 'protocol.file.allow=always' : a)) : SAFE_GIT;
   const sandboxHome = cfg.sandboxHome ?? env.HOME;
+  // role 'claude' = Claude Code and the dependency install; role 'tests' = the repo's test / format commands (another uid, F-I8)
+  const testHome = cfg.testUser ? `/home/${cfg.testUser}` : sandboxHome;
   const runUntrusted = (cmd, args, o = {}) => {
-    const [c, a] = asSandbox(cfg, cmd, args);
-    return exec(c, a, { cwd: W, ...o, env: untrustedEnv(env, { HOME: sandboxHome, ...(o.extraEnv ?? {}) }) });
+    const role = o.role ?? 'claude';
+    const [c, a] = asSandbox(cfg, cmd, args, role);
+    return exec(c, a, { cwd: W, ...o, env: untrustedEnv(env, { HOME: role === 'tests' ? testHome : sandboxHome, ...(cfg.proxyEnv ?? {}), ...(o.extraEnv ?? {}) }) });
   };
+  const chownTo = (user) => (cfg.sandboxUser && user ? exec('chown', ['-R', `${user}:${user}`, W], { timeoutMs: step(60_000) }) : null);
 
   try {
     await rm(jobDir, { recursive: true, force: true });
@@ -80,11 +92,23 @@ export async function runJob(job, ctx) {
     const url = cloneUrl(cfg.gitHost ?? 'https://github.com', slug, creds.ghToken);
 
     // 1. work tree + base sha, before Claude touches anything
-    let r = await git(jobDir, ['clone', '--depth', '1', '--single-branch', '--branch', base, url, W], { auth: true });
+    const cloneBranch = prMode ? prHead : base;
+    const depth = prMode ? [] : ['--depth', '1'];
+    // PR mode, conflicting: merge the base into the head WITHOUT committing, so Claude resolves the markers (same in the commit tree)
+    const prPrepare = async (dir) => {
+      if (!prMode || prState !== 'conflicting') return null;
+      let m = await git(dir, ['fetch', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`], { auth: true });
+      if (m.code !== 0) return `fetch of ${base} failed: ${oneLine(m.stderr)}`;
+      m = await git(dir, ['-c', `user.name=${cfg.gitName}`, '-c', `user.email=${cfg.gitEmail}`, 'merge', '--no-commit', '--no-ff', `origin/${base}`]);
+      return m.code === 0 || m.code === 1 ? null : `merge of ${base} failed: ${oneLine(m.stderr || m.stdout)}`;
+    };
+    let r = await git(jobDir, ['clone', ...depth, '--single-branch', '--branch', cloneBranch, url, W], { auth: true });
     if (r.code !== 0) return { status: 'could_not_fix', note: `clone failed: ${oneLine(r.stderr)}` };
     r = await git(W, ['rev-parse', 'HEAD']);
     const baseSha = r.stdout.trim();
     if (r.code !== 0 || !/^[0-9a-f]{7,64}$/.test(baseSha)) return { status: 'could_not_fix', note: 'could not read the base commit' };
+    const prepW = await prPrepare(W);
+    if (prepW) return { status: 'could_not_fix', note: prepW };
     if (cfg.sandboxUser) await exec('chown', ['-R', `${cfg.sandboxUser}:${cfg.sandboxUser}`, W], { timeoutMs: step(60_000) });
 
     // 2. Claude Code, headless, capped; token through fd 3 (not the env); no GitHub credential at all
@@ -112,15 +136,21 @@ export async function runJob(job, ctx) {
     if (r.code !== 0 || result?.is_error) return { status: 'could_not_fix', note: `claude failed: ${oneLine(result?.result ?? r.stderr)}` };
 
     // 3. fresh commit tree at the same base sha; pristine base workflows for the merge gate
-    r = await git(jobDir, ['clone', '--depth', '1', '--single-branch', '--branch', base, url, C], { auth: true });
+    r = await git(jobDir, ['clone', ...depth, '--single-branch', '--branch', cloneBranch, url, C], { auth: true });
     if (r.code !== 0) return { status: 'could_not_fix', note: `commit clone failed: ${oneLine(r.stderr)}` };
     if ((await git(C, ['rev-parse', 'HEAD'])).stdout.trim() !== baseSha) {
+      // PR mode never detaches: the PR branch moved while Claude worked, so the fix would not be a fast-forward
+      if (prMode) return { status: 'could_not_fix', note: `PR branch ${prHead} moved while the fix was being made; try again next run` };
       r = await git(C, ['fetch', '--depth', '1', 'origin', baseSha], { auth: true });
       if (r.code !== 0 || (await git(C, ['checkout', '--detach', baseSha])).code !== 0) return { status: 'could_not_fix', note: 'base branch moved and the base commit could not be fetched' };
     }
     if (await exists(join(C, '.github', 'workflows'))) await cp(join(C, '.github', 'workflows'), BW, { recursive: true, verbatimSymlinks: true });
-    r = await git(C, ['checkout', '-b', branch]);
-    if (r.code !== 0) return { status: 'could_not_fix', note: `branch failed: ${oneLine(r.stderr)}` };
+    const prepC = await prPrepare(C);
+    if (prepC) return { status: 'could_not_fix', note: prepC };
+    if (!prMode) {
+      r = await git(C, ['checkout', '-b', branch]);
+      if (r.code !== 0) return { status: 'could_not_fix', note: `branch failed: ${oneLine(r.stderr)}` };
+    }
 
     // 4. what Claude changed: byte comparison, never git in the edited tree; ignored files dropped by the clean tree's rules
     const diff = await treeDiff(W, C);
@@ -134,6 +164,13 @@ export async function runJob(job, ctx) {
     }
     if (!changes.length) return { status: 'could_not_fix', note: 'claude made no change' };
 
+    if (prMode) {
+      // PROTECTED paths and the repo's own protectedPaths never change on a PR branch either (CI, env, agent instructions, hands config)
+      const extraP = [...protectedFor(repoCfg), ...(cfg.osRepoSlug && slug.toLowerCase() === cfg.osRepoSlug.toLowerCase() ? [/^os\//] : [])];
+      const hit = changes.find((c) => PROTECTED.test(c.path) || extraP.some((re) => re.test(c.path)));
+      if (hit) return { status: 'could_not_fix', note: `question: the fix would touch protected path ${hit.path}; nothing pushed` };
+    }
+
     // 5. the repo's own install + affected tests, in the work tree, no credential
     if (repoCfg.install) {
       const a = fill(repoCfg.install, { dir: W, repo: slug, base });
@@ -141,8 +178,10 @@ export async function runJob(job, ctx) {
       if (r.timedOut) return { status: 'timed_out', note: 'install hit the cap' };
       if (r.code !== 0) return { status: 'could_not_fix', note: `install failed: ${oneLine(r.stderr || r.stdout)}` };
     }
+    // from here on the tree belongs to the tests' uid: that code can no longer touch the Claude uid's files or memory
+    if (cfg.testUser) await chownTo(cfg.testUser);
     const t = fill(repoCfg.test, { dir: W, repo: slug, base });
-    r = await runUntrusted(t[0], t.slice(1), { timeoutMs: left() });
+    r = await runUntrusted(t[0], t.slice(1), { timeoutMs: left(), role: 'tests' });
     if (r.timedOut) return { status: 'timed_out', note: 'tests hit the cap' };
     if (r.code !== 0) return { status: 'could_not_fix', note: `tests failed after the fix: ${oneLine(r.stdout + r.stderr)}` };
 
@@ -167,8 +206,10 @@ export async function runJob(job, ctx) {
     const sha = (await git(C, ['rev-parse', 'HEAD'])).stdout.trim();
     const clean = async () => (await git(C, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])).stdout === '';
     if (!(await clean())) return { status: 'could_not_fix', note: 'commit tree has changes beyond the committed diff; nothing pushed' };
-    r = await git(C, ['push', '-u', 'origin', `HEAD:refs/heads/${branch}`], { auth: true });
+    // PR mode: a plain fast-forward push to the PR's own branch (no force, no -u), then stop: the hands never merge it
+    r = await git(C, ['push', ...(prMode ? [] : ['-u']), 'origin', `HEAD:refs/heads/${prMode ? prHead : branch}`], { auth: true });
     if (r.code !== 0) return { status: 'could_not_fix', note: `push failed: ${oneLine(r.stderr)}` };
+    if (prMode) return { status: 'pr_opened', prUrl: job.finding.url, note: `question: pushed a ${prState === 'conflicting' ? 'conflict resolution' : 'fix for the failing checks'} to ${prHead}; the hands never merge a PR` };
 
     // 9. PR (GH_TOKEN only in this process; cwd is the private dir, --repo explicit)
     const ghEnv = { PATH: env.PATH, HOME: T, GH_CONFIG_DIR: secrets.ghConfigDir, ...(creds.ghToken ? { GH_TOKEN: creds.ghToken } : {}), GH_PROMPT_DISABLED: '1' };
@@ -181,7 +222,7 @@ export async function runJob(job, ctx) {
     const declared = mayAutoMerge(job);
     // the foundation repo itself: nothing under os/ (the OS the hands are part of) ever auto-merges
     const extra = [...protectedFor(repoCfg), ...(cfg.osRepoSlug && slug.toLowerCase() === cfg.osRepoSlug.toLowerCase() ? [/^os\//] : [])];
-    const actual = declared.ok ? diffAllowsAutoMerge(kind, changes, extra) : declared;
+    const actual = declared.ok ? diffAllowsAutoMerge(kind, changes, extra, { pkg: String(job.finding.detail?.pkg ?? job.finding.title ?? '').split(/\s+/)[0] }) : declared;
     const why = !declared.ok
       ? declared.reason
       : !actual.ok
@@ -214,7 +255,7 @@ async function verifyFormattingOnly({ changes, repoCfg, W, cfg, runUntrusted, ex
   for (const c of changes) await writeFile(join(W, c.path), c.base);
   if (cfg.sandboxUser) await exec('chown', [`${cfg.sandboxUser}:${cfg.sandboxUser}`, ...changes.map((c) => join(W, c.path))], { timeoutMs: step(60_000) });
   const a = fill(repoCfg.format, { dir: W }).flatMap((x) => (x === '{files}' ? changes.map((c) => c.path) : [x]));
-  const r = await runUntrusted(a[0], a.slice(1), { timeoutMs: left() });
+  const r = await runUntrusted(a[0], a.slice(1), { timeoutMs: left(), role: 'tests' });
   if (r.code !== 0) return { ok: false, reason: `formatter exit ${r.code}` };
   for (const c of changes) {
     const after = await readFile(join(W, c.path)).catch(() => null);

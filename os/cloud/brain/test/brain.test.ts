@@ -62,7 +62,7 @@ describe('nightly batch', () => {
   it('drains the queue into ONE run through the hands provider; empty queue starts nothing', async () => {
     const h = await harness();
     await h.run((b) => b.ingestFinding(finding({ kind: 'docs' }), T0));
-    await h.run((b) => b.ingestFinding(finding({ kind: 'lint' }), T0));
+    await h.run((b) => b.ingestFinding(finding({ kind: 'test' }), T0));
     const r = await h.run((b) => b.runNightly(T0 + HOUR));
     expect(r).toMatchObject({ started: true, jobs: 2 });
     expect(h.hands.started).toHaveLength(1);

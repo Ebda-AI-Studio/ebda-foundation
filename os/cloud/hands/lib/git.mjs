@@ -44,10 +44,16 @@ export function gitEnv(env, secrets, { token, auth = false } = {}) {
   };
 }
 
-/** Wrap an untrusted command so it runs as the sandbox user (container) or unchanged (Mac). */
-export function asSandbox(cfg, cmd, args) {
+/**
+ * Wrap an untrusted command so it runs as an unprivileged user (container) or unchanged (Mac).
+ * role 'claude' (Claude Code, which holds the OAuth token in its memory) runs as the sandbox user; role 'tests' (the repo's own
+ * test / format commands, i.e. code Claude may have written) runs as a DIFFERENT uid, so it cannot read the Claude process's
+ * memory or /proc. Without HANDS_TEST_USER both use the sandbox user (Mac, older images).
+ */
+export function asSandbox(cfg, cmd, args, role = 'claude') {
   if (!cfg.sandboxUser) return [cmd, args];
-  return ['setpriv', ['--reuid', cfg.sandboxUser, '--regid', cfg.sandboxUser, '--init-groups', '--', cmd, ...args]];
+  const u = role === 'tests' && cfg.testUser ? cfg.testUser : cfg.sandboxUser;
+  return ['setpriv', ['--reuid', u, '--regid', u, '--init-groups', '--', cmd, ...args]];
 }
 
 /** Clone URL. With a token the user is x-access-token and the password comes from askpass (never in the URL). */

@@ -27,6 +27,11 @@ export function buildPrompt(job, repoCfg, slug) {
     '```',
     '',
     'Rules:',
+    ...(f.kind === 'pr-stuck'
+      ? [
+          `- This is a PULL REQUEST branch (${f.detail?.head}): the checkout is that branch${f.detail?.state === 'conflicting' ? ', with the base branch merged in and the conflict markers left for you to resolve (keep both sides\' intent, delete every marker)' : ', and its CI is failing: fix the cause of the failure'}. Change only what the PR needs.`,
+        ]
+      : []),
     '- Make the smallest change that fixes this finding. No refactors, no unrelated edits, no new dependencies unless the finding is a dependency bump.',
     '- Do NOT commit, push, open pull requests, merge, deploy, or call any production system. The hands do that after you finish.',
     '- Do NOT touch secrets, .env files, CI workflow files, deploy configuration, database migrations or billing code unless the finding is exactly about that file.',

@@ -61,6 +61,8 @@ export async function loadConfig(env = process.env) {
   cfg.claudeBin = env.HANDS_CLAUDE_BIN ?? 'claude';
   // container: untrusted commands run as this unprivileged user (setpriv); the hands themselves run as root
   cfg.sandboxUser = env.HANDS_SANDBOX_USER && /^[a-z_][a-z0-9_-]{0,31}$/.test(env.HANDS_SANDBOX_USER) ? env.HANDS_SANDBOX_USER : '';
+  cfg.testUser = env.HANDS_TEST_USER && /^[a-z_][a-z0-9_-]{0,31}$/.test(env.HANDS_TEST_USER) ? env.HANDS_TEST_USER : '';
+  cfg.egressAllow = env.HANDS_EGRESS_ALLOW ?? '';
   cfg.sandboxHome = env.HANDS_SANDBOX_HOME ?? (cfg.sandboxUser ? `/home/${cfg.sandboxUser}` : env.HOME);
   cfg.gitleaks = env.HANDS_GITLEAKS ?? '';
   cfg.osRepoSlug = env.OS_REPO_SLUG ?? '';

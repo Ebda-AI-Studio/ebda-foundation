@@ -8,7 +8,7 @@ import { DESTRUCTIVE, SENSITIVE } from './policy.mjs';
  *  .cursor/, .codex/, ...): an auto-merged edit there would steer every later hands run and developer session on the
  *  repo (re-review N-1). Per-repo extras (protectedPaths, e.g. os/** in the foundation repo) and any file the hands'
  *  own repo commands name are added by protectedFor(). */
-export const PROTECTED = /(^|\/)(\.github\/|\.env|wrangler\.(json|jsonc|toml)$|migrations?\/|prisma\/schema|Dockerfile$|\.gitattributes$|\.gitmodules$|\.npmrc$|\.yarnrc|CODEOWNERS$|\.husky\/|(CLAUDE|AGENTS|GEMINI|COPILOT)\.md$|\.(claude|agents|cursor|codex|windsurf|continue|aider[^/]*)(\/|$)|\.cursorrules$|\.windsurfrules$|\.clinerules)/i;
+export const PROTECTED = /(^|\/)(\.github\/|\.changeset\/|\.env|wrangler\.(json|jsonc|toml)$|migrations?\/|prisma\/schema|Dockerfile$|\.gitattributes$|\.gitmodules$|\.npmrc$|\.yarnrc|CODEOWNERS$|\.husky\/|(CLAUDE|AGENTS|GEMINI|COPILOT)\.md$|\.(claude|agents|cursor|codex|windsurf|continue|aider[^/]*)(\/|$)|\.cursorrules$|\.windsurfrules$|\.clinerules)/i;
 
 /** Simple glob -> RegExp ("**" any depth, "*" one segment). Anchored at the repo root. */
 export function globToRegExp(glob) {
@@ -38,7 +38,8 @@ export function protectedFor(repoCfg = {}) {
 export const TEST_DEFINITION = /(^|\/)(package\.json|(vitest|jest|playwright|cypress|karma|mocha|ava|babel|tsup|vite|webpack|rollup|turbo|nx|lerna)\.config\.[cm]?[jt]s$|jest\.config\.json|\.mocharc[^/]*|pytest\.ini|tox\.ini|setup\.cfg|conftest\.py|pyproject\.toml|Makefile|justfile|turbo\.json|nx\.json|tsconfig[^/]*\.json|\.nvmrc|\.node-version)$/;
 
 const MANIFESTS = /(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|requirements[^/]*\.txt|poetry\.lock|Pipfile\.lock|go\.mod|go\.sum|Cargo\.toml|Cargo\.lock|Gemfile\.lock|composer\.lock)$/;
-const DOCS = /(^|\/)[^/]+\.(md|mdx)$|^docs\//;
+// M-5: markdown only (docs/**/*.md(x) or any *.md(x) outside the protected set); docs/ build code such as .vitepress/config.ts is code
+const DOCS = /\.mdx?$/;
 const TESTS = /(^|\/)(__tests__|tests?|spec|e2e)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$/;
 
 export const KIND_PATHS = {
@@ -87,11 +88,56 @@ export function packageJsonDepsOnly(baseText, newText) {
   return true;
 }
 
+const SEMVER_SPEC = /^(\^|~|>=|<=|>|<)?\s?\d+(\.(\d+|x|\*)){0,2}(-[\w.]+)?(\+[\w.]+)?$/;
+
+/**
+ * I-9: a dependency fix may change the version of a dependency that ALREADY exists, to a plain semver range (no URL, git, file
+ * or tarball spec). A new key is accepted only as an `overrides`/`resolutions` entry for the advisory's own package (`pkg`).
+ * Removing a dependency is not a bump. Everything else (scripts, config) is already covered by packageJsonDepsOnly.
+ */
+export function packageJsonBumpOnly(baseText, newText, pkg = '') {
+  let a;
+  let b;
+  try {
+    a = JSON.parse(baseText);
+    b = JSON.parse(newText);
+  } catch {
+    return false;
+  }
+  const pairs = [];
+  for (const k of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'overrides', 'resolutions']) pairs.push([k, a?.[k] ?? {}, b?.[k] ?? {}]);
+  pairs.push(['pnpm.overrides', a?.pnpm?.overrides ?? {}, b?.pnpm?.overrides ?? {}]);
+  for (const [k, x, y] of pairs) {
+    if (typeof x !== 'object' || typeof y !== 'object') return false;
+    for (const name of Object.keys(x)) if (!(name in y)) return false; // removal
+    for (const [name, v] of Object.entries(y)) {
+      if (name in x && JSON.stringify(x[name]) === JSON.stringify(v)) continue;
+      if (!(name in x) && !(/overrides|resolutions/.test(k) && pkg && name === pkg)) return false; // a NEW package
+      if (typeof v !== 'string' || !SEMVER_SPEC.test(v)) return false; // URL / git / file / alias specs
+    }
+  }
+  return true;
+}
+
+/** Lockfile `resolved` / `tarball` hosts: only the npm registry over https. A swapped host is a supply-chain change, not a bump. */
+export function lockfileHostsOk(text) {
+  for (const m of String(text).matchAll(/(?:"resolved"\s*:\s*"|resolved\s+"|tarball:\s*|resolution:\s*\{[^}]*tarball:\s*)([^"\s,}]+)/g)) {
+    let u;
+    try {
+      u = new URL(m[1]);
+    } catch {
+      return false;
+    }
+    if (u.protocol !== 'https:' || u.hostname !== 'registry.npmjs.org') return false;
+  }
+  return !/"resolved"\s*:\s*"(?:git|file|http:)/.test(String(text));
+}
+
 /**
  * changes: [{ path, type: 'write'|'delete', base?: Buffer|null, buf?: Buffer }]. Returns { ok, reason }.
  * ok = every path is allowed for the kind AND nothing sensitive/destructive/protected/test-defining is touched.
  */
-export function diffAllowsAutoMerge(kind, changes, extraProtected = []) {
+export function diffAllowsAutoMerge(kind, changes, extraProtected = [], opts = {}) {
   const k = String(kind ?? '').toLowerCase();
   const allow = KIND_PATHS[k];
   if (!allow) return { ok: false, reason: `class ${k} has no path allowlist` };
@@ -105,6 +151,10 @@ export function diffAllowsAutoMerge(kind, changes, extraProtected = []) {
     if (TEST_DEFINITION.test(p)) {
       const depsOnly = DEP_KINDS.has(k) && /(^|\/)package\.json$/.test(p) && c.type === 'write' && c.base && packageJsonDepsOnly(c.base.toString('utf8'), c.buf.toString('utf8'));
       if (!depsOnly) return { ok: false, reason: `${p} defines how tests run` };
+      if (!packageJsonBumpOnly(c.base.toString('utf8'), c.buf.toString('utf8'), opts.pkg)) return { ok: false, reason: `${p}: only a version bump of an existing dependency to a plain semver range may auto-merge (no new package, no URL spec)` };
+    }
+    if (DEP_KINDS.has(k) && c.type === 'write' && /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml)$/.test(p) && !lockfileHostsOk(c.buf.toString('utf8'))) {
+      return { ok: false, reason: `${p} resolves a package from a host other than registry.npmjs.org` };
     }
     if (c.type === 'delete' && !FORMAT_KINDS.has(k) && !DOCS.test(p)) return { ok: false, reason: `the fix deletes ${p}` };
   }

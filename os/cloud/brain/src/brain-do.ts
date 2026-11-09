@@ -86,6 +86,8 @@ export interface BrainState {
   usage: { report: UsageReport | null; guard: { allowed: boolean; reason: string }; thresholdPct: number };
   health: { at: number; obs: HealthObservation[] } | null;
   advisories: AdvisoryRunSummary | null;
+  /** watcher ids with an open monitor-unconfigured finding: the post-deploy cutover gate fails while any PORT-BRAIN id is here */
+  unconfigured: string[];
 }
 
 function mappedReposFrom(json: string | undefined): Set<string> | null {
@@ -633,7 +635,10 @@ export class BrainDO extends DurableObject<Env> {
     const guard = this.usage(now);
     if (!guard.allowed) return { refused: guard.reason };
     const n = Math.max(1, Math.min(max, NIGHTLY_MAX_JOBS));
-    const jobs = this.jobsFor(`j.status = 'queued' AND j.lane = 'nightly' ORDER BY j.created_at LIMIT ${n}`);
+    // Ruling 4b-5 (I-10): the Mac runs as Ahmad with his files in reach, so it never claims work whose text comes from third parties
+    // (advisories, PR titles, world-watch pages); those wait for the container
+    const mac = providerName === 'mac-local' ? ` AND f.source != 'advisory' AND f.kind != 'pr-stuck' AND f.key NOT LIKE 'world-watch:%'` : '';
+    const jobs = this.jobsFor(`j.status = 'queued' AND j.lane = 'nightly'${mac} ORDER BY j.created_at LIMIT ${n}`);
     if (!jobs.length) return { refused: 'queue empty' };
     const recorder: HandsProvider = { name: providerName, start: async (b) => ({ runId: b.runId, provider: providerName, startedAt: now }) };
     return (await this.startRun('nightly', jobs, 45, now, recorder)) ?? { refused: 'could not record the run' };
@@ -804,6 +809,7 @@ export class BrainDO extends DurableObject<Env> {
       usage: { report: this.getMeta<UsageReport>('usage'), guard: this.usage(now), thresholdPct: this.policy.usageThresholdPct },
       health: this.getMeta<BrainState['health']>('health:last'),
       advisories: this.getMeta<AdvisoryRunSummary>('advisories:last'),
+      unconfigured: this.rows(`SELECT key FROM findings WHERE kind = 'monitor-unconfigured' AND status NOT IN ('resolved')`).map((r) => String(r.key).split(':')[0]!).sort(),
     };
   }
 

@@ -9,7 +9,9 @@
 //
 // The sets mirror os/cloud/brain/src/classify.ts; test/policy.test.mjs fails when the two drift.
 
-export const PRE_APPROVED_KINDS = new Set(['dep-bump', 'dependency-advisory', 'cve-bump', 'lockfile-drift', 'docs', 'test', 'tests', 'lint', 'lint-autofix', 'format', 'flaky-test']);
+export const PRE_APPROVED_KINDS = new Set(['dep-bump', 'dependency-advisory', 'cve-bump', 'lockfile-drift', 'docs', 'test', 'tests', 'flaky-test']);
+// M-1: lint / lint-autofix / format are NOT pre-approved: the formatting-only proof ran the formatter in the tree Claude edited, so a
+// planted formatter could vouch for any edit. They return when the proof runs in a fresh copy of the base with its own install.
 export const DESTRUCTIVE = /delet|drop-table|truncat|purge|wipe|prod-data|data-write|purchase|buy|secret|credential|billing|payment-method/;
 export const SENSITIVE = /money|payment|payout|checkout|refund|auth|session|rls|polic|migration|env|deploy-config|dns|domain/;
 

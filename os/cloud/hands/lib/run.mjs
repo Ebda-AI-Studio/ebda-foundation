@@ -43,19 +43,7 @@ export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {},
   return results;
 }
 
-/**
- * A restore-drill job proves nothing by finishing: only the drill's own PASS (and no FAIL) in the outcome note marks it
- * fresh in the brain. Other jobs are returned unchanged. No note, or FAIL anywhere, means no 'pass' marker.
- */
-export function withDrillMarker(job, o) {
-  if (job.finding?.kind !== 'dr-drill') return o;
-  const note = o.note ?? '';
-  const ok = ['merged', 'pr_opened', 'fix_deployed'].includes(o.status) && /\bPASS\b/.test(note) && !/\bFAIL/.test(note);
-  return { ...o, drill: ok ? 'pass' : 'fail' };
-}
-
 async function report(brain, job, o, log) {
-  o = withDrillMarker(job, o);
   log(`job ${job.id}: ${o.status}${o.prUrl ? ` ${o.prUrl}` : ''}${o.note ? ` (${o.note})` : ''}`);
   try {
     await brain.outcome(job.id, o);

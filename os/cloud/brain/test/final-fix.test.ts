@@ -257,3 +257,24 @@ describe('M-6 / M-7 / M-10', () => {
     expect(h.sent.at(-1)).not.toMatch(/watcher w0/);
   });
 });
+
+describe('I-10: the Mac hands never claim third-party-text work (ruling 4b-5); /api/state lists unconfigured watchers', () => {
+  it('mac-local claim skips advisory, pr-stuck and world-watch jobs; the container batch still gets them', async () => {
+    const p = realish();
+    const h = await harness(p);
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 10 }, T0));
+    await h.run((b) => b.ingestFinding(docs({ title: 'own docs' }), T0));
+    await h.run((b) => b.ingestFinding({ source: 'advisory', kind: 'dependency-advisory', key: 'o/r#GHSA-1', title: 'lib GHSA-1', repo: 'o/r', cvss: 5, depScope: 'runtime' }, T0));
+    await h.run((b) => b.ingestFinding({ source: 'watcher', kind: 'pr-stuck', key: 'pr:o/r#1:conflicting', title: 'PR conflicts', repo: 'o/r', detail: { head: 'os/fix-x', state: 'conflicting' } }, T0));
+    await h.run((b) => b.ingestFinding({ source: 'watcher', kind: 'docs', key: 'world-watch:npm:x', title: 'dep note', repo: 'o/r' }, T0));
+    const c = (await h.run((b) => b.claim('mac-local', 10, T0 + MIN))) as HandsBatch;
+    expect(c.jobs.map((j) => j.finding.title)).toEqual(['own docs']);
+    const r = await h.run((b) => b.runNightly(T0 + HOUR));
+    expect(r).toMatchObject({ started: true, jobs: 3 });
+  });
+  it('state().unconfigured names the watchers that raised monitor-unconfigured', async () => {
+    const h = await harness(realish());
+    await h.run((b) => b.ingestFinding({ source: 'watcher', kind: 'monitor-unconfigured', key: 'services:config:unconfigured', title: 'x' }, T0));
+    expect((await h.run((b) => b.state(T0))).unconfigured).toEqual(['services']);
+  });
+});

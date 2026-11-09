@@ -178,14 +178,11 @@ describe('runJob: auto-merge bound to the actual diff (I-2 / S2)', () => {
     q((await run(job('test'), { edits: { 'test/a.test.ts': 'x\n', 'vitest.config.ts': 'export default {}\n' } })).out);
     q((await run(job('tests'), { edits: { 'src/a.ts': 'x\n' } })).out);
   });
-  it('lint: merges only when the repo formatter reproduces the diff from the base files; no formatter = question', async () => {
+  it('M-1: a lint job never auto-merges, even when the (possibly planted) formatter "reproduces" the diff', async () => {
     const repo = { format: ['prettier', '--write', '{files}'] };
-    expect((await run(job('lint'), { edits: { 'src/a.ts': 'export const a = 1;\n' }, format: { 'src/a.ts': 'export const a = 1;\n' } }, {}, repo)).out.status).toBe('merged');
-    const sneaky = await run(job('lint'), { edits: { 'src/a.ts': 'export const a = 2;\n' }, format: { 'src/a.ts': 'export const a = 1;\n' } }, {}, repo);
-    q(sneaky.out);
-    expect(sneaky.out.note).toMatch(/differs from what the formatter produces/);
-    const noFmt = await run(job('lint'), { edits: { 'src/a.ts': 'export const a = 1;\n' } });
-    expect(noFmt.out.note).toMatch(/no format command/);
+    const r = await run(job('lint'), { edits: { 'src/a.ts': 'export const a = 1;\n' }, format: { 'src/a.ts': 'export const a = 1;\n' } }, {}, repo);
+    q(r.out);
+    expect(r.calls.some((c) => c.cmd === 'bash')).toBe(false);
   });
   it('protected paths (workflows) are never auto-merged, even in a pre-approved class', async () => {
     q((await run(job('lint'), { edits: { '.github/workflows/ci.yml': 'on: push\n' }, format: {} }, {}, { format: ['prettier', '{files}'] })).out);
@@ -353,5 +350,45 @@ describe('config', () => {
     expect(validateConfig({ repos: { 'o/r': { test: ['t'], mergeGate: ['g', '--workflows', '{dir}/.github/workflows'] } } })).toMatch(/must not read the edited tree/);
     expect(validateConfig({ repos: {}, usageThresholdPct: 101 })).toMatch(/1\.\.100/);
     expect(validateConfig({ repos: { 'o/r': { test: ['npm', 'test'], format: ['prettier', '{files}'] } } })).toBeNull();
+  });
+});
+
+describe('I-5 (ruling F-I5): pr-stuck jobs work on the PR head branch and never merge', () => {
+  const prJob = (state, head = 'os/fix-job_old', mergePolicy = 'pr-and-question') => {
+    const j = job('pr-stuck', { mergePolicy });
+    j.finding = { ...j.finding, url: 'https://github.com/o/r/pull/9', detail: { pr: 9, head, state } };
+    return j;
+  };
+  const clones = (calls) => calls.filter((c) => c.cmd === 'git' && verbOf(c.args) === 'clone');
+  it('failing checks: clones the PR head branch (full history), pushes a fast-forward to it, opens no PR, runs no merge gate', async () => {
+    const { out, calls } = await run(prJob('failed-checks'), { edits: { 'src/a.ts': 'fixed\n' } });
+    expect(out).toMatchObject({ status: 'pr_opened', prUrl: 'https://github.com/o/r/pull/9', note: expect.stringMatching(/^question: pushed a fix for the failing checks to os\/fix-job_old/) });
+    for (const c of clones(calls)) {
+      expect(c.args).toEqual(expect.arrayContaining(['--branch', 'os/fix-job_old']));
+      expect(c.args).not.toContain('--depth');
+    }
+    const push = calls.find((c) => c.cmd === 'git' && verbOf(c.args) === 'push');
+    expect(push.args.slice(push.args.indexOf('push'))).toEqual(['push', 'origin', 'HEAD:refs/heads/os/fix-job_old']);
+    expect(calls.some((c) => c.cmd === 'gh' || c.cmd === 'bash')).toBe(false);
+    expect(calls.some((c) => c.cmd === 'git' && verbOf(c.args) === 'checkout')).toBe(false);
+  });
+  it('conflicting: the base is fetched and merged (no commit) in BOTH trees before the diff', async () => {
+    const { out, calls } = await run(prJob('conflicting'), { edits: { 'src/a.ts': 'resolved\n' } });
+    expect(out.status).toBe('pr_opened');
+    const merges = calls.filter((c) => c.cmd === 'git' && verbOf(c.args) === 'merge');
+    expect(merges).toHaveLength(2);
+    for (const m of merges) expect(m.args).toEqual(expect.arrayContaining(['--no-commit', '--no-ff', 'origin/main']));
+  });
+  it('never touches the default branch, an unusable ref, or an unknown state', async () => {
+    for (const j of [prJob('failed-checks', 'main'), prJob('failed-checks', '../x'), prJob('waiting')]) {
+      const { out, calls } = await run(j);
+      expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/^question:/) });
+      expect(calls).toEqual([]);
+    }
+  });
+  it('a fix that touches a protected path (CI workflow) is not pushed', async () => {
+    const { out, calls } = await run(prJob('failed-checks'), { edits: { '.github/workflows/ci.yml': 'on: push\n' } });
+    expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/protected path \.github/) });
+    expect(calls.some((c) => c.cmd === 'git' && verbOf(c.args) === 'push')).toBe(false);
   });
 });

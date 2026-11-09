@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { brainClient, recordingBrain } from './lib/brain-client.mjs';
 import { loadConfig, parseThreshold } from './lib/config.mjs';
 import { dryRunExec } from './lib/dry-run.mjs';
+import { allowList, proxyEnv, startProxy } from './lib/egress.mjs';
 import { exec as realExec } from './lib/exec.mjs';
 import { asSandbox, untrustedEnv } from './lib/git.mjs';
 import { runBatch } from './lib/run.mjs';
@@ -50,7 +51,7 @@ function cliProbe(cfg, exec, env, creds) {
     const events = [];
     const [c, a] = asSandbox(cfg, cfg.claudeBin, ['-p', 'Reply with the single word ok.', '--model', 'haiku', '--max-turns', '1', '--output-format', 'stream-json', '--verbose', '--tools', '']);
     const r = await exec(c, a, {
-      env: untrustedEnv(env, { HOME: cfg.sandboxHome, DISABLE_AUTOUPDATER: '1', ...(creds.claudeToken ? { CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR: '3' } : {}) }),
+      env: untrustedEnv(env, { HOME: cfg.sandboxHome, ...(cfg.proxyEnv ?? {}), DISABLE_AUTOUPDATER: '1', ...(creds.claudeToken ? { CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR: '3' } : {}) }),
       ...(creds.claudeToken ? { fd3: creds.claudeToken } : {}),
       timeoutMs: 120_000,
       onLine: (l) => {
@@ -144,6 +145,14 @@ export async function main(argv = process.argv.slice(2), env = process.env, out 
   };
   if (!args.dryRun) for (const s of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.once(s, onSignal);
 
+  // F-I8: in the container every untrusted command reaches the network only through the allowlist proxy (entrypoint.sh blocks the rest)
+  let proxy = null;
+  if (cfg.sandboxed && !args.dryRun) {
+    proxy = await startProxy({ allow: allowList(cfg.egressAllow), log });
+    cfg.proxyEnv = proxyEnv(proxy.port);
+    log(`egress allowlist proxy on 127.0.0.1:${proxy.port}`);
+  }
+
   // I-1: a threshold that is not a finite 1..100 number fails CLOSED (every job refused and reported)
   const parsed = parseThreshold(env.HANDS_USAGE_THRESHOLD_PCT);
   const thresholdPct = parsed === undefined ? cfg.usageThresholdPct : parsed === null ? Number.NaN : parsed;
@@ -157,6 +166,10 @@ export async function main(argv = process.argv.slice(2), env = process.env, out 
   });
   log(`run ${batch.runId} (${batch.kind}): ${batch.jobs.length} job(s), per-job cap ${batch.perJobCapMin} min, usage threshold ${thresholdPct}% (brain ${batch.usageThresholdPct ?? 'n/a'}%)`);
   const results = await runBatch(batch, { brain, cfg, exec, usage, log, keepWorkdir: false, env: childEnv, creds });
+  if (proxy) {
+    if (proxy.denied.size) log(`egress denied during the run: ${[...proxy.denied].join(', ')}`);
+    await proxy.close();
+  }
   const counts = results.reduce((m, r) => ((m[r.status] = (m[r.status] ?? 0) + 1), m), {});
   log(`run ${batch.runId} done: ${JSON.stringify(counts)}`);
   if (args.dryRun) await rm(cfg.workdir, { recursive: true, force: true }).catch(() => {});

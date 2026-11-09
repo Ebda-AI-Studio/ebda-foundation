@@ -18,6 +18,15 @@ const GRACE_MS = 5 * 60_000;
 /** Values the container needs at start; checked by name, never logged. */
 export const CONTAINER_ENV_KEYS = ['HANDS_BRAIN_URL', 'HANDS_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'HANDS_GH_TOKEN', 'HANDS_CONFIG_JSON', 'HANDS_GIT_NAME', 'HANDS_GIT_EMAIL'] as const;
 
+/** The brain's own host joins the container's egress allowlist (ruling F-I8); the fixed hosts live in hands/lib/egress.mjs. */
+export function egressHost(url: string | undefined): string {
+  try {
+    return new URL(String(url)).hostname;
+  } catch {
+    return '';
+  }
+}
+
 export function missingContainerEnv(env: Partial<Env>): string[] {
   return CONTAINER_ENV_KEYS.filter((k) => isPlaceholder(env[k] as string | undefined));
 }
@@ -56,6 +65,7 @@ export class HandsContainer extends DurableObject<Env> {
         HANDS_CONFIG_JSON: this.env.HANDS_CONFIG_JSON!,
         HANDS_GIT_NAME: this.env.HANDS_GIT_NAME!,
         HANDS_GIT_EMAIL: this.env.HANDS_GIT_EMAIL!,
+        HANDS_EGRESS_ALLOW: egressHost(this.env.HANDS_BRAIN_URL),
         HANDS_USAGE_THRESHOLD_PCT: String(this.env.USAGE_WEEKLY_THRESHOLD_PCT ?? '80'),
       },
     });

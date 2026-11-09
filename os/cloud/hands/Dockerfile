@@ -6,6 +6,8 @@
 # NO credentials in the image: CLAUDE_CODE_OAUTH_TOKEN, GH_TOKEN, HANDS_TOKEN arrive as env at container start
 # (HandsContainer DO, from brain Worker secrets).
 #
+# Privilege split (security S1; F-I8): Claude Code runs as `node`, the repo's own test/format commands as `tester` (another uid, so
+# they cannot read Claude's memory or /proc), and entrypoint.sh lets both reach only loopback, where the hands' allowlist proxy sits.
 # Privilege split (security S1): the hands (run-batch.mjs) run as root and hold the tokens; everything untrusted
 # (Claude Code, the repo's install/test/format commands) runs as the unprivileged `node` user through setpriv
 # (HANDS_SANDBOX_USER), so it cannot read the hands' /proc environ, the private askpass dir or the commit tree.
@@ -48,8 +50,9 @@ FROM ${NODE_IMAGE}
 # git for clone/push; python3-minimal for ops/merge-gate.sh (lib/merge_gate.py, stdlib only); ca-certificates for TLS.
 # setpriv comes with util-linux (essential in Debian).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates python3-minimal \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-install-recommends git ca-certificates python3-minimal iptables \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --create-home --shell /usr/sbin/nologin tester
 COPY --from=build /opt/gh /usr/local/bin/gh
 COPY --from=build /opt/gitleaks /usr/local/bin/gitleaks
 COPY --from=build /opt/claude-cli /opt/claude-cli
@@ -63,6 +66,8 @@ COPY cloud/hands/lib /opt/ebda-os/cloud/hands/lib
 ENV HANDS_SANDBOXED=1 \
     HANDS_SANDBOX_USER=node \
     HANDS_SANDBOX_HOME=/home/node \
+    HANDS_TEST_USER=tester \
+    HANDS_EGRESS_REQUIRE_KERNEL=1 \
     HANDS_GITLEAKS=/usr/local/bin/gitleaks \
     HANDS_OS_HOME=/opt/ebda-os \
     HANDS_WORKDIR=/work \

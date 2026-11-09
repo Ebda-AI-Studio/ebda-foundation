@@ -88,7 +88,7 @@ describe('classifyFinding: question lane (destructive / sensitive)', () => {
 });
 
 describe('classifyFinding: nightly lane', () => {
-  for (const kind of ['docs', 'test', 'lint', 'flaky-test', 'dep-bump', 'lockfile-drift', 'format']) {
+  for (const kind of ['docs', 'test', 'flaky-test', 'dep-bump', 'lockfile-drift']) {
     it(`pre-approved ${kind} -> nightly, auto-merge when gate green`, () => {
       expect(classifyFinding(f({ kind }))).toMatchObject({ lane: 'nightly', mergePolicy: 'auto-when-gate-green' });
     });
@@ -112,6 +112,12 @@ describe('classifyFinding: dreaming-cycle kinds become jobs (never dropped, neve
     expect(classifyFinding(f({ source: 'dream', kind: 'lockfile-drift' }))).toMatchObject({ lane: 'nightly', mergePolicy: 'auto-when-gate-green' });
     expect(classifyFinding(f({ source: 'dream', kind: 'test' }))).toMatchObject({ lane: 'nightly', mergePolicy: 'auto-when-gate-green' });
     expect(classifyFinding(f({ source: 'dream', kind: 'dependency-advisory', severity: 'P2' }))).toMatchObject({ lane: 'nightly', mergePolicy: 'auto-when-gate-green' });
+  });
+});
+
+describe('M-1: lint / format are not pre-approved (their proof was forgeable)', () => {
+  it.each(['lint', 'lint-autofix', 'format'])('%s -> nightly, PR plus one question', (kind) => {
+    expect(classifyFinding(f({ kind }))).toMatchObject({ lane: 'nightly', mergePolicy: 'pr-and-question' });
   });
 });
 

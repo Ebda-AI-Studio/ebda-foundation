@@ -8,7 +8,10 @@ const job = (kind, x = {}) => ({ id: 'job_1', mergePolicy: 'auto-when-gate-green
 
 describe('mayAutoMerge', () => {
   it('allows every pre-approved class with the auto policy', () => {
-    for (const k of ['dep-bump', 'dependency-advisory', 'cve-bump', 'docs', 'test', 'tests', 'lint', 'flaky-test']) expect(mayAutoMerge(job(k)).ok).toBe(true);
+    for (const k of ['dep-bump', 'dependency-advisory', 'cve-bump', 'docs', 'test', 'tests', 'flaky-test']) expect(mayAutoMerge(job(k)).ok).toBe(true);
+  });
+  it('M-1: lint / lint-autofix / format are no longer pre-approved', () => {
+    for (const k of ['lint', 'lint-autofix', 'format']) expect(mayAutoMerge(job(k)).ok).toBe(false);
   });
   it('refuses any other class, the pr-and-question policy, and destructive/sensitive touches', () => {
     expect(mayAutoMerge(job('ci-failure')).ok).toBe(false);
