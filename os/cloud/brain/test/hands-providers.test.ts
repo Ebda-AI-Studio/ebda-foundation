@@ -62,8 +62,8 @@ describe('provider selection (HANDS_PROVIDER)', () => {
     expect(await p.start(batch('urgent'))).toMatchObject({ provider: 'cloudflare-sandbox', externalId: 'x:hands-urgent' });
     await p.start(batch('nightly'));
     expect(calls).toEqual([
-      { name: 'hands-urgent', body: { runId: 'run_urgent', kind: 'urgent', capMin: 30 } },
-      { name: 'hands-nightly', body: { runId: 'run_nightly', kind: 'nightly', capMin: 60 } },
+      { name: 'hands-urgent', body: { runId: 'run_urgent', kind: 'urgent', capMin: 30, repos: [] } },
+      { name: 'hands-nightly', body: { runId: 'run_nightly', kind: 'nightly', capMin: 60, repos: [] } },
     ]);
     const busy = providerFor('cloudflare-sandbox', { HANDS_CONTAINER: { idFromName: (n: string) => n, get: () => ({ fetch: async () => new Response('busy', { status: 409 }) }) } as unknown as DurableObjectNamespace });
     await expect(busy.start(batch('nightly'))).rejects.toThrow(/409/);
@@ -102,6 +102,7 @@ describe('pull-only mac-local', () => {
     await h.run((b) => b.ingestFinding(outage('m'), T0));
     await h.run((b) => b.tick(T0 + HOUR));
     expect(h.sent.filter((t) => /pull-only/.test(t))).toHaveLength(1);
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 10 }, T0 + MIN)); // a known usage lifts the one-job bootstrap limit
     const claim = await h.run((b) => b.claim('mac-local', 5, T0 + 2 * HOUR));
     expect((claim as HandsBatch).jobs).toHaveLength(2);
   });
@@ -123,8 +124,14 @@ describe('PR the hands may not merge = one question', () => {
 });
 
 describe('HandsContainer required env', () => {
-  it('names every missing container secret/var (never values); placeholders count as missing', () => {
-    expect(missingContainerEnv({})).toEqual(['HANDS_BRAIN_URL', 'HANDS_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'HANDS_GH_TOKEN', 'HANDS_CONFIG_JSON', 'HANDS_GIT_NAME', 'HANDS_GIT_EMAIL']);
-    expect(missingContainerEnv({ HANDS_BRAIN_URL: '__HANDS_BRAIN_URL__', HANDS_TOKEN: 't', CLAUDE_CODE_OAUTH_TOKEN: 'c', HANDS_GH_TOKEN: 'g', HANDS_CONFIG_JSON: '{}', HANDS_GIT_NAME: 'n', HANDS_GIT_EMAIL: 'e' })).toEqual(['HANDS_BRAIN_URL']);
+  const full = { HANDS_BRAIN_URL: 'https://b.test', HANDS_TOKEN: 't', HANDS_GH_TOKEN: 'g', HANDS_CONFIG_JSON: '{}', HANDS_GIT_NAME: 'n', HANDS_GIT_EMAIL: 'e' };
+  it('api mode (the default): names every missing container secret/var, never values; placeholders count as missing; a spend limit marker is required', () => {
+    expect(missingContainerEnv({})).toEqual(['HANDS_BRAIN_URL', 'HANDS_TOKEN', 'HANDS_ANTHROPIC_API_KEY', 'HANDS_API_SPEND_LIMIT_USD', 'HANDS_GH_TOKEN', 'HANDS_CONFIG_JSON', 'HANDS_GIT_NAME', 'HANDS_GIT_EMAIL']);
+    expect(missingContainerEnv({ ...full, HANDS_BRAIN_URL: '__HANDS_BRAIN_URL__', HANDS_ANTHROPIC_API_KEY: 'k', HANDS_API_SPEND_LIMIT_USD: '150' })).toEqual(['HANDS_BRAIN_URL']);
+    expect(missingContainerEnv({ ...full, HANDS_ANTHROPIC_API_KEY: 'k', HANDS_API_SPEND_LIMIT_USD: '0' })).toEqual(['HANDS_API_SPEND_LIMIT_USD (a positive USD number)']);
+  });
+  it('max mode: the OAuth token instead of the key; no spend marker needed', () => {
+    expect(missingContainerEnv({ HANDS_CLAUDE_AUTH: 'max' })).toEqual(['HANDS_BRAIN_URL', 'HANDS_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'HANDS_GH_TOKEN', 'HANDS_CONFIG_JSON', 'HANDS_GIT_NAME', 'HANDS_GIT_EMAIL']);
+    expect(missingContainerEnv({ ...full, HANDS_CLAUDE_AUTH: 'max', CLAUDE_CODE_OAUTH_TOKEN: 'c' })).toEqual([]);
   });
 });

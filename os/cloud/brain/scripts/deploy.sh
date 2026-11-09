@@ -17,6 +17,8 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 . "$HERE/../../ops/lib/os-config.sh" && os_config_load
 DRY=0
 [ "${1:-}" = "--dry-run" ] && DRY=1
+# F-12: --check = the default-branch rulesets of every repo in the hands config (no deploy, nothing rendered)
+[ "${1:-}" = "--check" ] && exec bash "$HERE/scripts/check-rulesets.sh" "${@:2}"
 missing=""
 for k in OS_CF_ACCOUNT_ID OS_BRAIN_KV_ID OS_BRAIN_HOST; do [ -n "${!k:-}" ] || missing="$missing $k"; done
 if [ -n "$missing" ] && [ "$DRY" -eq 0 ]; then echo "deploy: missing$missing (set them in ~/.ebda-os.local.env)" >&2; exit 2; fi
@@ -33,6 +35,7 @@ sub = {
     "__DEPLOYED_REPOS__": os.environ.get("OS_BRAIN_DEPLOYED_REPOS") or "__DEPLOYED_REPOS__",
     "__ACCESS_TEAM_DOMAIN__": os.environ.get("OS_BRAIN_ACCESS_TEAM_DOMAIN") or "__ACCESS_TEAM_DOMAIN__",
     "__ACCESS_AUD__": os.environ.get("OS_BRAIN_ACCESS_AUD") or "__ACCESS_AUD__",
+    "__HANDS_API_SPEND_LIMIT_USD__": os.environ.get("OS_BRAIN_API_SPEND_LIMIT_USD") or "__HANDS_API_SPEND_LIMIT_USD__",
     "__HANDS_BRAIN_URL__": ("https://" + os.environ["OS_BRAIN_HOST"].strip()) if os.environ.get("OS_BRAIN_HOST", "").strip() else "__HANDS_BRAIN_URL__",
 }
 for k, v in sub.items():
@@ -68,6 +71,16 @@ for name in WATCHER_VARS:
     extra += "    %s: %s,\n" % (json.dumps(name), json.dumps(val))
 if extra:
     t = t.replace('"vars": {\n', '"vars": {\n' + extra, 1)
+# Task 7: merge the containers fragment (max_instances 2, instance_type standard-1, the HandsContainer DO + migration) only when asked
+if os.environ.get("OS_BRAIN_CONTAINERS") == "1":
+    import re as _re
+    frag = _re.sub(r"^\s*//.*$", "", open(os.path.join(os.path.dirname(src), "wrangler.containers.jsonc"), encoding="utf-8").read(), flags=_re.M)
+    frag = json.loads(_re.sub(r",(\s*[}\]])", r"\1", frag))
+    base = json.loads(_re.sub(r",(\s*[}\]])", r"\1", _re.sub(r"^\s*//.*$", "", t, flags=_re.M)))
+    base["containers"] = frag["containers"]
+    base["durable_objects"] = frag["durable_objects"]
+    base["migrations"] = frag["migrations"]
+    t = json.dumps(base, indent=2)
 open(out, "w", encoding="utf-8").write(t)
 PY
 grep -q '__ACCESS_AUD__' "$OUT" && echo "deploy: Access not configured yet: /api/* will answer 503 until OS_BRAIN_ACCESS_* are set" >&2

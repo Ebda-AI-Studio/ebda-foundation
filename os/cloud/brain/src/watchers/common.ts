@@ -21,6 +21,8 @@ export interface Sink {
   reconcile(source: string, kind: string, keyPrefix: string, openKeys: string[], now?: number): Promise<number>;
   /** newest PASS of the weekly restore drill the Mac posted (POST /drill), or null */
   lastPassAt(source: string, kind: string): Promise<number | null>;
+  /** F-05: the footprint reading for the digest (optional: test sinks omit it) */
+  recordFootprint?(f: Record<string, unknown>): Promise<void> | void;
 }
 
 export interface WatchCtx {

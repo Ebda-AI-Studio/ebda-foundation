@@ -99,17 +99,23 @@ describe('nightly batch', () => {
   });
 });
 
-describe('usage-starved alert (ruling 4b-6)', () => {
+describe('usage-starved (ruling 4b-6, moved to the digest by the final review)', () => {
   const DAY = 24 * HOUR;
-  it('alerts once after 3 consecutive nightly batches refused by the usage guard, not before', async () => {
+  const starvedIn = (h: Awaited<ReturnType<typeof harness>>) => h.sent.filter((m) => /nightly batches did no work/.test(m.text));
+  it('after 3 consecutive nightly batches refused by the usage guard, not before, the digest lists it; no message of its own', async () => {
     const h = await harness();
     await h.run((b) => b.ingestFinding(finding(), T0));
     await h.run((b) => b.reportUsage({ weeklyUsedPct: 90 }, T0));
     for (let i = 1; i <= 2; i++) await h.run((b) => b.runNightly(T0 + i * DAY));
-    expect(h.sent.filter((m) => /nightly batches did no work/.test(m.text))).toHaveLength(0);
+    await h.run((b) => b.digest(T0 + 2 * DAY + HOUR));
+    expect(starvedIn(h)).toHaveLength(0);
+    const before = h.sent.length;
     await h.run((b) => b.runNightly(T0 + 3 * DAY));
-    const alerts = h.sent.filter((m) => /last 3 nightly batches did no work/.test(m.text));
+    expect(h.sent).toHaveLength(before); // nothing of its own: it waits for the digest
+    await h.run((b) => b.digest(T0 + 3 * DAY + HOUR));
+    const alerts = starvedIn(h);
     expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.text).toMatch(/last 3 nightly batches did no work/);
     expect(alerts[0]!.text).toMatch(/threshold 80%/);
   });
   it('a nightly batch that made progress resets the streak', async () => {
@@ -127,7 +133,8 @@ describe('usage-starved alert (ruling 4b-6)', () => {
     await h.run((b) => b.ingestFinding(finding(), T0 + 4 * DAY));
     await h.run((b) => b.runNightly(T0 + 4 * DAY));
     await h.run((b) => b.runNightly(T0 + 5 * DAY));
-    expect(h.sent.filter((m) => /nightly batches did no work/.test(m.text))).toHaveLength(0);
+    await h.run((b) => b.digest(T0 + 5 * DAY + HOUR));
+    expect(starvedIn(h)).toHaveLength(0);
   });
   it('a started run whose every job comes back skipped_usage counts as a starved batch', async () => {
     const h = await harness();
@@ -137,7 +144,8 @@ describe('usage-starved alert (ruling 4b-6)', () => {
       expect(r.started).toBe(true);
       for (const j of h.hands.started[i]!.jobs) await h.run((b) => b.recordOutcome(j.id, { status: 'skipped_usage' }, T0 + i * DAY + 2 * HOUR));
     }
-    expect(h.sent.filter((m) => /last 3 nightly batches did no work/.test(m.text))).toHaveLength(1);
+    await h.run((b) => b.digest(T0 + 3 * DAY));
+    expect(starvedIn(h)).toHaveLength(1);
   });
 });
 

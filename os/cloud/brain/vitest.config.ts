@@ -12,6 +12,9 @@ export default defineConfig({
           GH_WEBHOOK_SECRET: 'test-gh-secret',
           RELAY_SECRET: 'test-relay-secret',
           HANDS_TOKEN: 'test-hands-token',
+          HANDS_MAC_TOKEN: 'test-mac-token',
+          // the legacy tests exercise the weekly-plan (max) guard; the api-mode tests set their own env
+          HANDS_CLAUDE_AUTH: 'max',
           INGEST_TOKEN: 'test-ingest-token',
           TELEGRAM_WEBHOOK_SECRET: 'test-tg-secret',
           TELEGRAM_CHAT_ID: '4242',

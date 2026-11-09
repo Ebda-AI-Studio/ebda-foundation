@@ -69,7 +69,8 @@ export interface RelayEvent {
 export function mapEvent(ghEvent: string, payload: any): { kind: string; target: { slug: string; sha: string } } | null {
   if (ghEvent !== 'workflow_run') return null;
   const run = payload?.workflow_run;
-  if (!run || run.conclusion !== 'failure') return null;
+  // timed_out is a failed run too (a hung pipeline is not green); ci-catchup treats it the same way. cancelled is infra, not a verdict.
+  if (!run || (run.conclusion !== 'failure' && run.conclusion !== 'timed_out')) return null;
   return { kind: 'ci-failure', target: { slug: payload?.repository?.full_name, sha: run.head_sha } };
 }
 

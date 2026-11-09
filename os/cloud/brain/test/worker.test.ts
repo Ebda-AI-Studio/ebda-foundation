@@ -2,6 +2,7 @@
 import { env } from 'cloudflare:workers';
 import { createExecutionContext, createScheduledController, SELF, waitOnExecutionContext } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { runToken } from '../src/runtoken';
 import worker, { brainStub } from '../src/index';
 import { signEvent } from '../src/relay';
 import { CRONS } from '../src/schedule';
@@ -69,20 +70,28 @@ describe('machine endpoints', () => {
     expect(await ok.json()).toEqual({ raised: 1, deduped: 0 });
   });
 
-  it('hands endpoints need HANDS_TOKEN; usage + claim + outcome round-trip', async () => {
-    const call = (path: string, body?: unknown, token = 'test-hands-token') =>
-      SELF.fetch(`https://brain.test${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}` }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  it('hands endpoints are scoped (F-06b): the Mac token claims and reports; a per-run token only touches its own run; HANDS_TOKEN is no bearer', async () => {
+    const call = (path: string, body?: unknown, token = 'test-mac-token', extra: Record<string, string> = {}) =>
+      SELF.fetch(`https://brain.test${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, ...extra }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     expect((await call('/hands/usage', { weeklyUsedPct: 10 }, 'nope')).status).toBe(401);
+    expect((await call('/hands/usage', { weeklyUsedPct: 10 }, 'test-hands-token')).status).toBe(401); // the HMAC key is not a bearer
     expect((await call('/hands/usage', { weeklyUsedPct: 'x' })).status).toBe(400);
     expect((await call('/hands/usage', { weeklyUsedPct: 10 })).status).toBe(200);
-    await SELF.fetch('https://brain.test/findings', { method: 'POST', headers: { Authorization: 'Bearer test-ingest-token' }, body: JSON.stringify({ source: 'dream', kind: 'test', key: 'claim-1', title: 'add a test', repo: 'o/r' }) });
-    const batch = (await (await call('/hands/claim', { provider: 'mac-local', max: 1 })).json()) as { runId: string; jobs: Array<{ id: string }> };
+    await SELF.fetch('https://brain.test/findings', { method: 'POST', headers: { Authorization: 'Bearer test-ingest-token' }, body: JSON.stringify({ source: 'dream', kind: 'test', key: 'claim-1', title: 't', repo: 'o/r' }) });
+    // a Mac token cannot choose the provider: whatever the body says, the run is a mac-local run
+    const batch = (await (await call('/hands/claim', { provider: 'cloudflare-sandbox', max: 1 })).json()) as { runId: string; jobs: Array<{ id: string }> };
     expect(batch.jobs).toHaveLength(1);
+    expect((await brainStub(env).runInfo(batch.runId))?.provider).toBe('mac-local');
     const got = (await (await call(`/hands/runs/${batch.runId}`)).json()) as { jobs: unknown[] };
     expect(got.jobs).toHaveLength(1);
+    // a per-run token for ANOTHER run cannot touch this run's job
+    const other = await runToken('test-hands-token', 'run_other');
+    expect((await call(`/hands/jobs/${batch.jobs[0]!.id}/outcome`, { status: 'pr_opened' }, other)).status).toBe(401);
     expect((await call(`/hands/jobs/${batch.jobs[0]!.id}/outcome`, { status: 'nope' })).status).toBe(400);
     expect((await call(`/hands/jobs/${batch.jobs[0]!.id}/outcome`, { status: 'pr_opened', prUrl: 'https://pr/2' })).status).toBe(200);
     expect((await call(`/hands/jobs/${batch.jobs[0]!.id}/outcome`, { status: 'pr_opened' })).status).toBe(409);
+    // the Mac token cannot read a container run
+    await brainStub(env).ingestFinding({ source: 'health', kind: 'docs', key: 'c1', title: 'c', repo: 'o/r' });
   });
 
   it('the Telegram webhook needs its secret and only accepts answers from the configured chat', async () => {

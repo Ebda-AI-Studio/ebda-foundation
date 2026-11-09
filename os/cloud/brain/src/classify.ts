@@ -16,9 +16,11 @@ import type { Classification, Finding } from './findings';
 export const URGENT_CVSS = 9.0;
 
 /** Config / access self-reports of any source (watchers, dream-scan, heal-watch): ops problems, digest only. */
-const DIGEST_KINDS = new Set(['monitor-unconfigured', 'watcher-error', 'scan-target-missing', 'dream-scan-failed', 'dr-drill-stale', 'pr-needs-you']);
+const DIGEST_KINDS = new Set(['monitor-unconfigured', 'watcher-error', 'scan-target-missing', 'dream-scan-failed', 'dr-drill-stale', 'pr-needs-you', 'usage-starved', 'budget-warn', 'cf-usage-warn', 'cost-warn', 'footprint-unknown']);
 /** Ruling F-I6: a restore drill with no PASS for 14+ days is a P1 decision for Ahmad (run it on the Mac), never a hands job. */
-const ALERT_KINDS = new Set(['dr-drill-overdue']);
+const ALERT_KINDS = new Set(['dr-drill-overdue', 'cost-stop', 'cf-usage-stop', 'budget-stop']);
+/** F-01: a finding of one of these kinds halts the hands (one flag, checked before every container start). */
+export const HALT_KINDS: ReadonlySet<string> = new Set(['cost-stop', 'cf-usage-stop', 'budget-stop']);
 const OUTAGE_KINDS = new Set(['prod-outage', 'money-path-broken']);
 const EXPOSURE_KINDS = new Set(['data-exposure', 'pii-leak', 'secret-leak']);
 const ADVISORY_KINDS = new Set(['dependency-advisory', 'code-advisory']);

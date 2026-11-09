@@ -18,6 +18,8 @@ export interface HandsJob {
   finding: Finding;
   /** set when the job came out of an answered question */
   answer?: string;
+  /** model alias the hands pass to `claude --model` (routing, final decision): haiku | sonnet | opus */
+  model?: 'haiku' | 'sonnet' | 'opus';
 }
 
 export interface HandsBatch {
@@ -29,6 +31,8 @@ export interface HandsBatch {
   /** the usage threshold the hands must also enforce between jobs */
   usageThresholdPct: number;
   createdAt: number;
+  /** dollars the run may still spend today / this month (the smaller one); the hands stop between jobs past it */
+  budgetUsd?: number;
 }
 
 export interface RunRef {
@@ -45,6 +49,9 @@ export interface HandsProvider {
   readonly pullOnly?: boolean;
   /** a throw is recorded as a failed run (the jobs stay queued); it never aborts the brain tick */
   start(batch: HandsBatch): Promise<RunRef>;
+  /** F-04 / F-01: stop the lane's container now; halt:true also refuses later starts until resume(). Never throws. */
+  stop?(kind: RunKind, opts?: { halt?: boolean }): Promise<{ ok: boolean; note?: string }>;
+  resume?(kind: RunKind): Promise<{ ok: boolean }>;
 }
 
 /** Outcome a hands run writes back per job. */
@@ -52,6 +59,17 @@ export interface JobOutcome {
   status: 'merged' | 'pr_opened' | 'fix_deployed' | 'could_not_fix' | 'skipped_usage' | 'timed_out';
   prUrl?: string;
   note?: string;
+  /** what the job cost, computed by the hands from the API response usage x the price table */
+  usage?: JobUsage;
+}
+
+export interface JobUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costUsd: number;
 }
 
 export const OUTCOME_STATUSES: ReadonlyArray<JobOutcome['status']> = ['merged', 'pr_opened', 'fix_deployed', 'could_not_fix', 'skipped_usage', 'timed_out'];

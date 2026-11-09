@@ -62,6 +62,30 @@ export interface Env {
   HANDS_NIGHTLY_RUN_CAP_MIN?: string;
   /** cloudflare-sandbox: the HandsContainer Durable Object (Container-enabled). Absent until Task 7 configures it. */
   HANDS_CONTAINER?: DurableObjectNamespace;
+  /** model routing: the default model alias (never opus), and how many explicitly flagged opus jobs a day */
+  HANDS_DEFAULT_MODEL?: string;
+  HANDS_OPUS_JOBS_PER_DAY?: string;
+  /** dollar budgets: monthly (default 150, must stay under the $200 credit) and daily (default 10) */
+  HANDS_MONTHLY_BUDGET_USD?: string;
+  HANDS_DAILY_BUDGET_USD?: string;
+  /** F-01: '1' halts every container start (second line of defence; the DO `halt` key is the first) */
+  HANDS_HALT?: string;
+  /** F-06: 'max' (default, Claude Max OAuth) or 'api' (a Console API key with a hard spend limit; REQUIRES HANDS_API_SPEND_LIMIT_USD) */
+  HANDS_CLAUDE_AUTH?: string;
+  /** F-06: the Console spend limit (USD) Ahmad set for the API key; api mode refuses to start without it */
+  HANDS_API_SPEND_LIMIT_USD?: string;
+  /** F-07: Mac claims per day (default 5 jobs) */
+  HANDS_MAC_JOBS_PER_DAY?: string;
+  /** F-14: findings accepted from /findings per day (default 1000) */
+  INGEST_PER_DAY?: string;
+  /** F-05 thresholds (per day) for the footprint watcher */
+  CF_CONTAINER_VCPU_MIN_DAY?: string;
+  CF_DO_REQUESTS_DAY?: string;
+  CF_KV_WRITES_DAY?: string;
+  /** F-12: GitHub App (preferred over the PAT): app id, PKCS#8 key, {"owner": installationId} */
+  GH_APP_ID?: string;
+  GH_APP_PRIVATE_KEY?: string;
+  GH_APP_INSTALLATIONS?: string;
   /** github-actions provider: disabled unless 'true' AND repo/workflow/token are set (Actions minutes are CI only) */
   HANDS_GITHUB_ACTIONS_ENABLED?: string;
   HANDS_GITHUB_ACTIONS_REPO?: string;
@@ -82,7 +106,13 @@ export interface Env {
   TELEGRAM_OWNER_ID?: string;
   /** shared secret the tg-relay sends (X-Telegram-Bot-Api-Secret-Token) when it forwards a button answer to POST /telegram/webhook; NOT a Telegram webhook secret */
   TELEGRAM_WEBHOOK_SECRET?: string;
+  /** F-06b: the HMAC KEY for per-run container tokens (never itself a bearer) */
   HANDS_TOKEN?: string;
+  /** F-06b: the Mac's own bearer; it can only claim as mac-local and report on its own runs */
+  HANDS_MAC_TOKEN?: string;
+  /** F-06: the hands' Console API key (api mode). Named HANDS_* because ONLY the HandsContainer DO reads it, to pass it to the container as
+   *  ANTHROPIC_API_KEY; no brain code path, watcher or the Mac ever sees it. */
+  HANDS_ANTHROPIC_API_KEY?: string;
   INGEST_TOKEN?: string;
   /** passed into the hands container at start, never baked into the image */
   CLAUDE_CODE_OAUTH_TOKEN?: string;
@@ -91,6 +121,12 @@ export interface Env {
   HANDS_GIT_NAME?: string;
   HANDS_GIT_EMAIL?: string;
   HANDS_GITHUB_ACTIONS_TOKEN?: string;
+}
+
+/** Positive number var with a fallback. */
+export function numberVar(v: string | undefined, fallback: number): number {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 /** Integer var with a fallback; a malformed value never becomes NaN or 0 silently. */

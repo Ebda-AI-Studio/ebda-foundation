@@ -7,7 +7,7 @@
 // bucket rolls into the next digest.
 // Credentials: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID Worker secrets only.
 
-export type MsgKind = 'urgent-outcome' | 'p1-unhealed' | 'usage-starved' | 'question' | 'digest';
+export type MsgKind = 'urgent-outcome' | 'p1-unhealed' | 'question' | 'digest';
 
 export interface Outgoing {
   dedupeKey: string;
@@ -18,7 +18,7 @@ export interface Outgoing {
 
 export type Admission = 'send' | 'duplicate' | 'defer';
 
-export const URGENT_KINDS: ReadonlySet<MsgKind> = new Set(['urgent-outcome', 'p1-unhealed', 'usage-starved']);
+export const URGENT_KINDS: ReadonlySet<MsgKind> = new Set(['urgent-outcome', 'p1-unhealed']);
 
 export interface DayCounts {
   /** normal (non-urgent, non-digest) messages already sent today */
@@ -50,6 +50,10 @@ export function clip(s: string, n = MAX_TEXT): string {
 export interface SendResult {
   ok: boolean;
   reason?: string;
+  /** HTTP status when Telegram answered (401/403 = the token or chat is gone, 429 = slow down) */
+  status?: number;
+  /** Telegram's parameters.retry_after on a 429, in ms */
+  retryAfterMs?: number;
 }
 
 /** Send one plain-text message (no parse_mode, so finding text can never inject markup). */
@@ -63,7 +67,11 @@ export async function sendTelegram(token: string | undefined, chatId: string | u
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!r.ok) return { ok: false, reason: `telegram HTTP ${r.status}` };
+    if (!r.ok) {
+      const j = (await r.json().catch(() => null)) as { parameters?: { retry_after?: number } } | null;
+      const ra = Number(j?.parameters?.retry_after);
+      return { ok: false, status: r.status, reason: `telegram HTTP ${r.status}`, ...(r.status === 429 && Number.isFinite(ra) && ra > 0 ? { retryAfterMs: Math.min(ra, 3600) * 1000 } : {}) };
+    }
     const j = (await r.json().catch(() => null)) as { ok?: boolean } | null;
     return j?.ok === false ? { ok: false, reason: 'telegram ok=false' } : { ok: true };
   } catch (e) {
@@ -101,6 +109,12 @@ export interface DigestInput {
   rolledUp: Array<{ text: string; failed: boolean }>;
   osBugs: number;
   usageNote: string | null;
+  /** F-01: why the hands are halted (a halt leads the digest) */
+  halted?: string | null;
+  /** F-05: one footprint line (Cloudflare usage, last 24 h), or 'unknown' text when the read failed */
+  footprint?: string | null;
+  /** budget line: month-to-date spend vs the budget */
+  budget?: string | null;
   /** digest-lane findings not shown before: monitors that are unconfigured or cannot read their source */
   monitorNotes?: string[];
   /** digest-lane findings beyond the ones rendered; they stay unshown and lead the next digest */
@@ -114,6 +128,9 @@ export const MONITOR_NOTES_PER_DIGEST = 10;
 
 export function digestMessage(d: DigestInput): Outgoing {
   const lines: string[] = [`Ebda OS daily digest ${d.day}`];
+  if (d.halted) lines.push(`HANDS HALTED: ${d.halted}`);
+  if (d.budget) lines.push(d.budget);
+  if (d.footprint) lines.push(d.footprint);
   if (d.outcomes.length) {
     lines.push('', 'Done:');
     for (const o of d.outcomes.slice(0, 20)) lines.push(`- ${o.status}: ${o.title}${o.prUrl ? ` ${o.prUrl}` : ''}`);

@@ -7,6 +7,7 @@ import type { Env } from '../src/env';
 import type { Finding } from '../src/findings';
 import type { HandsBatch, HandsProvider } from '../src/hands';
 import { brainStub } from '../src/index';
+import { runToken } from '../src/runtoken';
 import { watchCiCatchup } from '../src/watchers/ci-catchup';
 import type { WatchCtx } from '../src/watchers/common';
 import { runWatchers } from '../src/watchers/run';
@@ -175,9 +176,79 @@ describe('minor: a container that refuses to run (exit 3, egress lock) raises a 
   it('the route needs the hands bearer token and a run id', async () => {
     const no = await SELF.fetch('https://brain.test/hands/refused', { method: 'POST', body: '{}' });
     expect(no.status).toBe(401);
-    const bad = await SELF.fetch('https://brain.test/hands/refused', { method: 'POST', headers: { authorization: 'Bearer test-hands-token' }, body: JSON.stringify({ reason: 'x' }) });
+    const tok = await runToken('test-hands-token', 'run_unknown');
+    const bad = await SELF.fetch('https://brain.test/hands/refused', { method: 'POST', headers: { authorization: `Bearer ${tok}` }, body: JSON.stringify({ reason: 'x' }) });
     expect(bad.status).toBe(400);
-    const good = await SELF.fetch('https://brain.test/hands/refused', { method: 'POST', headers: { authorization: 'Bearer test-hands-token' }, body: JSON.stringify({ runId: 'run_unknown', reason: 'egress' }) });
+    // F-06b: the bearer is the per-run token for exactly that run id; the shared secret and another run's token are refused
+    const shared = await SELF.fetch('https://brain.test/hands/refused', { method: 'POST', headers: { authorization: 'Bearer test-hands-token' }, body: JSON.stringify({ runId: 'run_unknown', reason: 'egress' }) });
+    expect(shared.status).toBe(401);
+    const good = await SELF.fetch('https://brain.test/hands/refused', { method: 'POST', headers: { authorization: `Bearer ${tok}` }, body: JSON.stringify({ runId: 'run_unknown', reason: 'egress' }) });
     expect(good.status).toBe(200);
+  });
+});
+
+describe('final review 3: a container run is swept at the container lifetime, not 45 min x the jobs', () => {
+  it('25 nightly jobs in a container that dies at its 90-min cap: swept at +101 min and requeued the same night (not at 1135 min)', async () => {
+    const h = await harness();
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 10 }, T0));
+    for (let i = 0; i < 25; i++) await h.run((b) => b.ingestFinding(docs({ key: `c${i}` }), T0 + i));
+    const r = (await h.run((b) => b.runNightly(T0 + HOUR))) as { started: boolean; jobs: number };
+    expect(r).toMatchObject({ started: true, jobs: 25 });
+    expect(await h.run((b) => b.sweepStuckRuns(T0 + HOUR + 99 * MIN))).toBe(0);
+    expect(await h.run((b) => b.sweepStuckRuns(T0 + HOUR + 101 * MIN))).toBe(1);
+    expect((await h.run((b) => b.state(T0 + 4 * HOUR))).jobs).toMatchObject({ queuedNightly: 25, running: 0 });
+  });
+});
+
+describe('final review 4: claim() and runNightly treat an unknown usage like dispatchUrgent', () => {
+  it('no usage report yet + a real provider: a Mac claim gets ONE job (the bootstrap), not the batch; a report lifts the limit', async () => {
+    const h = await harness();
+    for (let i = 0; i < 3; i++) await h.run((b) => b.ingestFinding(docs({ key: `u${i}` }), T0 + i));
+    const one = (await h.run((b) => b.claim('mac-local', 5, T0 + MIN))) as HandsBatch;
+    expect(one.jobs).toHaveLength(1);
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 10 }, T0 + 2 * MIN));
+    const rest = (await h.run((b) => b.claim('mac-local', 5, T0 + 3 * MIN))) as HandsBatch;
+    expect(rest.jobs).toHaveLength(2);
+  });
+  it('the nightly container with unknown usage starts with ONE job', async () => {
+    const h = await harness();
+    for (let i = 0; i < 3; i++) await h.run((b) => b.ingestFinding(docs({ key: `n${i}` }), T0 + i));
+    expect(await h.run((b) => b.runNightly(T0 + HOUR))).toMatchObject({ started: true, jobs: 1 });
+  });
+});
+
+describe('final review 4: usage-starved is a digest item, outside the urgent 3/day budget', () => {
+  it('3 starved nightly batches: no Telegram message of its own; the next digest lists it; progress resolves it', async () => {
+    const h = await harness();
+    await h.run((b) => b.ingestFinding(docs(), T0));
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 90 }, T0));
+    for (let i = 1; i <= 3; i++) await h.run((b) => b.runNightly(T0 + i * DAY));
+    expect(h.sent).toHaveLength(0);
+    await h.run((b) => b.digest(T0 + 3 * DAY + HOUR));
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]).toMatch(/last 3 nightly batches did no work/);
+    const s = await h.run((b) => b.state(T0 + 4 * DAY));
+    expect(s.messages.sentToday).toBe(0); // the digest is not part of the 6/day budget
+  });
+});
+
+describe('final review 10: timed_out is a failed CI run on both paths', () => {
+  it('relay: a timed_out default-branch run maps to a ci-failure event; success and cancelled do not', async () => {
+    const { mapEvent } = await import('../src/relay');
+    const p = (conclusion: string) => ({ repository: { full_name: 'o/r' }, workflow_run: { conclusion, head_sha: 's1' } });
+    expect(mapEvent('workflow_run', p('timed_out'))).toMatchObject({ kind: 'ci-failure' });
+    expect(mapEvent('workflow_run', p('failure'))).toMatchObject({ kind: 'ci-failure' });
+    expect(mapEvent('workflow_run', p('success'))).toBeNull();
+    expect(mapEvent('workflow_run', p('cancelled'))).toBeNull();
+  });
+  it('ci-catchup: a timed_out latest run is red, same as failure; cancelled is ignored', async () => {
+    const h = await harness();
+    const runs = [
+      { id: 70, name: 'A', conclusion: 'timed_out', run_attempt: 1, head_sha: 'a', html_url: 'https://github.com/o/r/actions/runs/70', updated_at: '2026-11-05T09:00:00Z' },
+      { id: 71, name: 'B', conclusion: 'cancelled', run_attempt: 1, head_sha: 'b', html_url: 'https://github.com/o/r/actions/runs/71', updated_at: '2026-11-05T09:00:00Z' },
+    ];
+    const fetchImpl = (async (u: RequestInfo | URL) => (String(u).endsWith('/repos/o/r') ? Response.json({ default_branch: 'main' }) : Response.json({ workflow_runs: runs }))) as unknown as typeof fetch;
+    const ctx: WatchCtx = { env: { ...env, GITHUB_TOKEN: 'x', HANDS_CONFIG_JSON: JSON.stringify({ repos: { 'o/r': {} } }) } as Env, sink: h.stub as unknown as WatchCtx['sink'], now: Date.parse('2026-11-05T10:00:00Z'), fetchImpl };
+    expect(await watchCiCatchup(ctx)).toMatchObject({ red: 1, green: 0 });
   });
 });

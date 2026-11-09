@@ -7,11 +7,12 @@
 //   acted / raised; a finding still unacted 24 h after it was raised is an OS bug (self-check), shown on the dashboard
 //   and in the digest, never a separate message.
 import { DurableObject } from 'cloudflare:workers';
-import { classifyFinding } from './classify';
+import { classifyFinding, HALT_KINDS } from './classify';
+import { authMode } from './hands-container';
 import type { Env, Policy } from './env';
-import { intVar, policyFrom } from './env';
+import { intVar, numberVar, policyFrom } from './env';
 import { evidenceOf, fingerprint, type Finding, type Lane, type MergePolicy } from './findings';
-import { providerFor, type HandsBatch, type HandsJob, type HandsProvider, type JobOutcome, type RunKind, type UsageReport } from './hands';
+import { providerFor, type JobUsage, type HandsBatch, type HandsJob, type HandsProvider, type JobOutcome, type RunKind, type UsageReport } from './hands';
 import { admit, dayKey, digestMessage, MONITOR_NOTES_PER_DIGEST, questionMessage, sendTelegram, URGENT_KINDS, type MsgKind, type Outgoing } from './telegram';
 import { usageGuard } from './usage';
 import type { AdvisoryRunSummary } from './watchers/advisories';
@@ -33,6 +34,18 @@ export const COOLDOWN_MS = 24 * HOUR;
 export const URGENT_COOLDOWN_MS = 6 * HOUR;
 /** Failed urgent-class sends: tries at t, t+5 min, t+15 min, then "undelivered" and rolled into the digest. */
 export const RETRY_BACKOFF_MS = [5 * 60000, 10 * 60000];
+
+/** Model routing (final decision, LEAN mode): haiku for triage / classification / summaries / digest text, sonnet for everything that
+ *  writes code, opus ONLY for a job explicitly flagged security-design or money-design, capped per day. Nothing routes to opus by default. */
+export const HAIKU_KINDS: ReadonlySet<string> = new Set(['triage', 'classification', 'classify', 'summary', 'summarize', 'digest-text']);
+export const OPUS_FLAGS: ReadonlySet<string> = new Set(['security-design', 'money-design']);
+export type ModelAlias = 'haiku' | 'sonnet' | 'opus';
+export function modelFor(f: Finding, defaultModel: string | undefined): ModelAlias {
+  if ((f.touches ?? []).some((t) => OPUS_FLAGS.has(String(t).toLowerCase()))) return 'opus';
+  if (HAIKU_KINDS.has(f.kind.toLowerCase())) return 'haiku';
+  return defaultModel === 'haiku' ? 'haiku' : 'sonnet'; // the default can be lowered, never raised to opus
+}
+const monthKey = (now: number) => new Date(now).toISOString().slice(0, 7);
 
 type Row = Record<string, SqlStorageValue>;
 
@@ -88,6 +101,23 @@ export interface BrainState {
   advisories: AdvisoryRunSummary | null;
   /** watcher ids with an open monitor-unconfigured finding: the post-deploy cutover gate fails while any PORT-BRAIN id is here */
   unconfigured: string[];
+  /** F-01: why the hands are halted, or null */
+  halt: string | null;
+  /** dollars spent today / this month vs the budgets, and the model mix this month */
+  spend: { day: number; month: number; dailyBudget: number; monthlyBudget: number; byModel: Record<string, number> };
+  /** F-05: last Cloudflare footprint reading (null = never read) */
+  footprint: Footprint | null;
+}
+
+export interface Footprint {
+  at: number;
+  unknown: boolean;
+  containerMin?: number;
+  doRequests?: number;
+  doRowsWritten?: number;
+  kvWrites?: number;
+  workersRequests?: number;
+  note?: string;
 }
 
 function mappedReposFrom(json: string | undefined): Set<string> | null {
@@ -180,6 +210,7 @@ export class BrainDO extends DurableObject<Env> {
       unmappedUrgent = c.lane === 'urgent';
       c = { lane: 'digest', reason: `${f.repo ? `repo ${f.repo} is not in the hands config` : 'no repo mapped'}: cannot auto-fix, digest only (was ${c.lane})`, mergePolicy: 'pr-and-question' };
     }
+    if (HALT_KINDS.has(f.kind.toLowerCase())) await this.setHalt(f.title, now, false); // F-01: the alert is the finding's own p1 message below
     const existing = this.row('SELECT status, lane, reason, evidence, closed_at FROM findings WHERE fp = ?', fp);
     const data = JSON.stringify(f);
     if (existing) {
@@ -410,8 +441,8 @@ export class BrainDO extends DurableObject<Env> {
   // ---------- messages ----------
   private dayCounts(day: string) {
     const r = this.row(
-      `SELECT SUM(CASE WHEN kind IN ('urgent-outcome','p1-unhealed','usage-starved') THEN 1 ELSE 0 END) AS urgent,
-              SUM(CASE WHEN kind NOT IN ('urgent-outcome','p1-unhealed','usage-starved','digest') THEN 1 ELSE 0 END) AS normal,
+      `SELECT SUM(CASE WHEN kind IN ('urgent-outcome','p1-unhealed') THEN 1 ELSE 0 END) AS urgent,
+              SUM(CASE WHEN kind NOT IN ('urgent-outcome','p1-unhealed','digest') THEN 1 ELSE 0 END) AS normal,
               SUM(CASE WHEN kind = 'digest' THEN 1 ELSE 0 END) AS digest
        FROM messages WHERE day = ? AND status = 'sent'`,
       day,
@@ -422,11 +453,10 @@ export class BrainDO extends DurableObject<Env> {
   private async emit(msg: Outgoing, now: number): Promise<'sent' | 'duplicate' | 'deferred' | 'failed'> {
     const day = dayKey(now);
     const urgent = URGENT_KINDS.has(msg.kind);
-    // a failed urgent-class send is owned by the retry path; a failed question is simply tried again on the next tick
-    const already = !!this.row(
-      `SELECT 1 FROM messages WHERE dedupe_key = ? AND (status IN ('sent', 'deferred', 'rolled', 'undelivered') OR (status = 'failed' AND ?))`,
-      msg.dedupeKey, urgent ? 1 : 0,
-    );
+    // F-09: a failed send of ANY kind (urgent or a question) is owned by the bounded retry path (3 tries, honouring retry_after),
+    // never re-sent by the next tick. A revoked token (401/403) stops every send for the day.
+    if (this.getMeta(`tg:blocked:${day}`)) return 'failed';
+    const already = !!this.row(`SELECT 1 FROM messages WHERE dedupe_key = ? AND status IN ('sent', 'deferred', 'rolled', 'undelivered', 'failed')`, msg.dedupeKey);
     const a = admit(msg.kind, already, this.dayCounts(day), this.policy.messageBudgetPerDay, this.policy.urgentMessageBudgetPerDay);
     if (a === 'duplicate') return 'duplicate';
     const upsert = `INSERT INTO messages (dedupe_key, kind, day, status, text, at, reason, attempts, next_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -437,13 +467,16 @@ export class BrainDO extends DurableObject<Env> {
       return 'deferred';
     }
     const res = await sendTelegram(this.env.TELEGRAM_BOT_TOKEN, this.env.TELEGRAM_CHAT_ID, msg, this.fetchImpl);
-    const nextAt = !res.ok && urgent ? now + RETRY_BACKOFF_MS[0]! : null;
+    if (!res.ok && (res.status === 401 || res.status === 403)) this.setMeta(`tg:blocked:${day}`, { at: now, status: res.status });
+    const nextAt = !res.ok && res.status !== 401 && res.status !== 403 ? now + (res.retryAfterMs ?? RETRY_BACKOFF_MS[0]!) : null;
     this.sql.exec(upsert, msg.dedupeKey, msg.kind, day, res.ok ? 'sent' : 'failed', msg.text, now, res.reason ?? null, 1, nextAt);
     if (nextAt !== null) await this.scheduleRetry(nextAt);
     return res.ok ? 'sent' : 'failed';
   }
 
   private async scheduleRetry(at: number): Promise<void> {
+    // F-11: never sooner than a minute from now, whatever a row says
+    at = Math.max(at, Date.now() + 60_000);
     const cur = await this.ctx.storage.getAlarm();
     if (cur === null || cur > at) await this.ctx.storage.setAlarm(at);
   }
@@ -452,17 +485,26 @@ export class BrainDO extends DurableObject<Env> {
   async retryFailed(now: number = Date.now()): Promise<{ sent: number; undelivered: number }> {
     let sent = 0;
     let undelivered = 0;
-    for (const m of this.rows(`SELECT * FROM messages WHERE status = 'failed' AND kind IN ('urgent-outcome','p1-unhealed','usage-starved') AND next_at IS NOT NULL AND next_at <= ?`, now)) {
-      const res = await sendTelegram(this.env.TELEGRAM_BOT_TOKEN, this.env.TELEGRAM_CHAT_ID, { dedupeKey: String(m.dedupe_key), kind: m.kind as MsgKind, text: String(m.text) }, this.fetchImpl);
+    if (this.getMeta(`tg:blocked:${dayKey(now)}`)) return { sent: 0, undelivered: 0 };
+    for (const m of this.rows(`SELECT * FROM messages WHERE status = 'failed' AND kind IN ('urgent-outcome','p1-unhealed','question') AND next_at IS NOT NULL AND next_at <= ?`, now)) {
+      const q = String(m.kind) === 'question' ? this.questionForKey(String(m.dedupe_key)) : null;
+      const res = await sendTelegram(this.env.TELEGRAM_BOT_TOKEN, this.env.TELEGRAM_CHAT_ID, { dedupeKey: String(m.dedupe_key), kind: m.kind as MsgKind, text: String(m.text), ...(q ? { buttons: q.buttons } : {}) }, this.fetchImpl);
       const attempts = Number(m.attempts) + 1;
+      if (!res.ok && (res.status === 401 || res.status === 403)) {
+        this.setMeta(`tg:blocked:${dayKey(now)}`, { at: now, status: res.status });
+        this.sql.exec(`UPDATE messages SET attempts = ?, next_at = NULL, status = 'undelivered', reason = ? WHERE dedupe_key = ?`, attempts, res.reason ?? 'telegram refused the bot', m.dedupe_key);
+        undelivered++;
+        break;
+      }
       if (res.ok) {
         this.sql.exec(`UPDATE messages SET status = 'sent', day = ?, at = ?, attempts = ?, next_at = NULL, reason = NULL WHERE dedupe_key = ?`, dayKey(now), now, attempts, m.dedupe_key);
+        if (q) this.sql.exec(`UPDATE questions SET status = 'sent', sent_at = ?, deadline = ? WHERE id = ? AND status = 'pending'`, now, now + this.policy.questionDeadlineHours * HOUR, q.id);
         sent++;
       } else if (attempts >= RETRY_BACKOFF_MS.length + 1) {
         this.sql.exec(`UPDATE messages SET status = 'undelivered', attempts = ?, next_at = NULL, reason = ? WHERE dedupe_key = ?`, attempts, res.reason ?? 'send failed', m.dedupe_key);
         undelivered++;
       } else {
-        const nextAt = now + RETRY_BACKOFF_MS[attempts - 1]!;
+        const nextAt = now + (res.retryAfterMs ?? RETRY_BACKOFF_MS[attempts - 1]!);
         this.sql.exec(`UPDATE messages SET attempts = ?, next_at = ?, reason = ? WHERE dedupe_key = ?`, attempts, nextAt, res.reason ?? 'send failed', m.dedupe_key);
         await this.scheduleRetry(nextAt);
       }
@@ -470,10 +512,27 @@ export class BrainDO extends DurableObject<Env> {
     return { sent, undelivered };
   }
 
+  /** The buttons of a question message, rebuilt from its row (retry of a failed question send). */
+  private questionForKey(key: string): { id: string; buttons: Array<{ text: string; data: string }> } | null {
+    const id = key.startsWith('q:') ? key.slice(2) : '';
+    const q = id ? this.row('SELECT id, options, default_opt FROM questions WHERE id = ?', id) : null;
+    if (!q) return null;
+    const msg = questionMessage({ id: String(q.id), text: '', options: JSON.parse(String(q.options)), defaultOption: String(q.default_opt), deadline: 0, reversible: true });
+    return { id: String(q.id), buttons: msg.buttons ?? [] };
+  }
+
   async alarm(): Promise<void> {
-    await this.retryFailed(Date.now());
+    const now = Date.now();
+    try {
+      await this.retryFailed(now);
+    } catch (e) {
+      // F-11: a throw mid-loop must not leave a past `next_at` that re-fires at once; try again in 5 minutes
+      console.error('retryFailed threw', (e as Error).message);
+      await this.ctx.storage.setAlarm(now + 5 * 60_000);
+      return;
+    }
     const next = this.row(`SELECT MIN(next_at) AS t FROM messages WHERE status = 'failed' AND next_at IS NOT NULL`);
-    if (next?.t !== null && next?.t !== undefined) await this.ctx.storage.setAlarm(Number(next.t));
+    if (next?.t !== null && next?.t !== undefined) await this.ctx.storage.setAlarm(Math.max(Number(next.t), now + 60_000));
   }
 
   // ---------- questions ----------
@@ -525,7 +584,84 @@ export class BrainDO extends DurableObject<Env> {
     }));
   }
 
-  private usage(now: number) {
+  /** Unknown usage + a real provider: at most one job per run. Known usage, or the stub provider: the limit asked for. */
+  /** An open major/critical incident of GitHub or Anthropic (world-watch `vendor-incident`), or null. */
+  private vendorOutage(): string | null {
+    const r = this.row(`SELECT title FROM findings WHERE kind = 'vendor-incident' AND status != 'resolved' AND (key LIKE 'world-watch:github%' OR key LIKE 'world-watch:anthropic%' OR lower(title) LIKE 'github%' OR lower(title) LIKE 'anthropic%') LIMIT 1`);
+    return r ? String(r.title) : null;
+  }
+
+  private unknownUsageLimit(guard: { unknown?: boolean }, limit: number): number {
+    return guard.unknown === true && this.hands.name !== 'stub' ? 1 : limit;
+  }
+
+  // ---------- F-01 halt, dollar budgets ----------
+  /** Why the hands may not start anything, or null. The var is the second line of defence, the DO key the first. */
+  halted(): string | null {
+    const v = String(this.env.HANDS_HALT ?? '0').toLowerCase();
+    if (v === '1' || v === 'true') return 'HANDS_HALT is set on the Worker';
+    const h = this.getMeta<{ reason: string; at: number }>('halt');
+    return h ? `halted: ${h.reason}` : null;
+  }
+
+  /** Turn the halt on (idempotent): every start refuses, both containers are destroyed now. `alert` sends ONE p1 message per reason per day. */
+  async setHalt(reason: string, now: number = Date.now(), alert = true): Promise<boolean> {
+    const fresh = !this.getMeta('halt');
+    if (fresh) this.setMeta('halt', { reason: reason.slice(0, 300), at: now });
+    await this.stopContainers(true);
+    if (alert && fresh) await this.emit({ dedupeKey: `halt:${dayKey(now)}:${reason.slice(0, 60)}`, kind: 'p1-unhealed', text: `Ebda OS: HANDS HALTED: ${reason.slice(0, 300)}\nNo container starts until you clear it (dashboard or POST /api/halt {"on":false}).` }, now);
+    return fresh;
+  }
+
+  async clearHalt(now: number = Date.now()): Promise<void> {
+    this.sql.exec(`DELETE FROM meta WHERE k = 'halt'`);
+    for (const kind of ['nightly', 'urgent'] as const) await this.hands.resume?.(kind);
+    this.setMeta('halt:cleared', { at: now });
+  }
+
+  private async stopContainers(halt: boolean): Promise<void> {
+    for (const kind of ['nightly', 'urgent'] as const) await this.hands.stop?.(kind, { halt }).catch(() => undefined);
+  }
+
+  /** Budgets in USD. Monthly default 150 (headroom under the $200 API credit); daily default 10. */
+  budgets() {
+    return { monthly: numberVar(this.env.HANDS_MONTHLY_BUDGET_USD, 150), daily: numberVar(this.env.HANDS_DAILY_BUDGET_USD, 10) };
+  }
+
+  spent(now: number): { day: number; month: number } {
+    return { day: this.getMeta<number>(`spend:d:${dayKey(now)}`) ?? 0, month: this.getMeta<number>(`spend:m:${monthKey(now)}`) ?? 0 };
+  }
+
+  /** Add one job's cost. 80 % of the month -> a digest warning; 100 % -> the halt and ONE p1 message. */
+  async addSpend(u: JobUsage, now: number): Promise<void> {
+    const cost = Number.isFinite(u.costUsd) && u.costUsd > 0 ? u.costUsd : 0;
+    const cur = this.spent(now);
+    this.setMeta(`spend:d:${dayKey(now)}`, cur.day + cost);
+    this.setMeta(`spend:m:${monthKey(now)}`, cur.month + cost);
+    const byModel = this.getMeta<Record<string, number>>(`spend:model:${monthKey(now)}`) ?? {};
+    byModel[u.model] = (byModel[u.model] ?? 0) + cost;
+    this.setMeta(`spend:model:${monthKey(now)}`, byModel);
+    const { monthly } = this.budgets();
+    const month = cur.month + cost;
+    if (month >= monthly) {
+      await this.ingestFinding({ source: 'brain', kind: 'budget-stop', key: `budget:${monthKey(now)}`, title: `monthly hands budget reached: $${month.toFixed(2)} of $${monthly}`, severity: 'P1' }, now);
+    } else if (month >= 0.8 * monthly) {
+      await this.ingestFinding({ source: 'brain', kind: 'budget-warn', key: `budget-80:${monthKey(now)}`, title: `hands spend is at ${Math.round((month / monthly) * 100)}% of the monthly budget ($${month.toFixed(2)} of $${monthly})`, severity: 'P3' }, now);
+    }
+  }
+
+  /** The reason no new run may start on budget grounds (daily, or the month), or null. Auto-clears with the day / month. */
+  budgetBlock(now: number): string | null {
+    const b = this.budgets();
+    const s = this.spent(now);
+    if (s.month >= b.monthly) return `monthly budget $${b.monthly} reached ($${s.month.toFixed(2)})`;
+    if (s.day >= b.daily) return `daily budget $${b.daily} reached ($${s.day.toFixed(2)})`;
+    return null;
+  }
+
+  private usage(now: number, forMac = false) {
+    // API-key containers have no weekly plan window: the dollar budget is their guard. The Mac runs on Ahmad's login and keeps the weekly guard.
+    if (!forMac && authMode(this.env) === 'api') return { allowed: true, reason: 'api key: dollar budget guard' } as ReturnType<typeof usageGuard>;
     return usageGuard(this.getMeta<UsageReport>('usage'), this.policy.usageThresholdPct, now);
   }
 
@@ -535,8 +671,27 @@ export class BrainDO extends DurableObject<Env> {
    * most URGENT_RUNS_PER_DAY times a day), the jobs stay queued, and null is returned.
    */
   private async startRun(kind: RunKind, jobs: HandsJob[], capMin: number, now: number, provider: HandsProvider = this.hands): Promise<HandsBatch | null> {
+    // F-01 backstop: whatever path got here (urgent, nightly, Mac claim), a halted or over-budget brain starts nothing
+    if (this.halted() || this.budgetBlock(now)) return null;
     const runId = uid('run');
-    const batch: HandsBatch = { runId, kind, jobs, perJobCapMin: capMin, usageThresholdPct: this.policy.usageThresholdPct, createdAt: now };
+    // model routing: one alias per job; opus only when flagged AND under the daily cap (otherwise sonnet). Recorded per run.
+    let opusToday = this.getMeta<number>(`opus:${dayKey(now)}`) ?? 0;
+    const opusCap = intVar(this.env.HANDS_OPUS_JOBS_PER_DAY, 2);
+    const models: Record<string, number> = {};
+    for (const j of jobs) {
+      let m = modelFor(j.finding, this.env.HANDS_DEFAULT_MODEL);
+      if (m === 'opus') {
+        if (opusToday >= opusCap) m = 'sonnet';
+        else opusToday++;
+      }
+      j.model = m;
+      models[m] = (models[m] ?? 0) + 1;
+    }
+    this.setMeta(`opus:${dayKey(now)}`, opusToday);
+    this.setMeta(`run:models:${runId}`, models);
+    const s = this.spent(now);
+    const b = this.budgets();
+    const batch: HandsBatch = { runId, kind, jobs, perJobCapMin: capMin, usageThresholdPct: this.policy.usageThresholdPct, createdAt: now, budgetUsd: Math.max(0, Math.min(b.daily - s.day, b.monthly - s.month)) };
     // M-7: the run row and the jobs' claim are written BEFORE the outbound start call. The call yields the DO, and another tick
     // interleaving there must already see "a run is in flight" (urgent) and "these jobs are taken" (nightly), not start a second one.
     this.sql.exec(
@@ -580,10 +735,15 @@ export class BrainDO extends DurableObject<Env> {
       const urgent = run.kind === 'urgent';
       const jobs = this.rows(`SELECT id FROM jobs WHERE run_id = ? AND status = 'running'`, run.id);
       // the nightly container's run cap, or 45 min per claimed job (the Mac), whichever is longer
-      const capMin = urgent ? this.policy.urgentRunCapMin : Math.max(nightlyCap, Number(run.cap_min) * (this.getMeta<number>(`run:jobs:${run.id}`) ?? jobs.length));
+      const claimed = this.getMeta<number>(`run:jobs:${run.id}`) ?? jobs.length;
+      // a container is destroyed at its run cap, so its run cannot outlive min(45 x jobs, cap): jobs it never reached requeue the same night.
+      // A Mac claim has no such cap (the Mac runs as long as its jobs need): 45 min per job CLAIMED, fixed at claim time (N-2).
+      const capMin = urgent ? this.policy.urgentRunCapMin : String(run.provider).startsWith('mac') ? Math.max(nightlyCap, Number(run.cap_min) * claimed) : Math.min(Number(run.cap_min) * claimed, nightlyCap);
       if (Number(run.started_at) >= now - (capMin + 10) * 60000) continue;
       this.sql.exec(`UPDATE runs SET status = 'timed_out', finished_at = ? WHERE id = ? AND status = 'running'`, now, run.id);
       swept++;
+      // F-04: a swept run's CONTAINER is stopped too, not just its row (a brain that thinks the run is over while it keeps billing)
+      if (String(run.provider) === 'cloudflare-sandbox') await this.hands.stop?.(run.kind as RunKind, { halt: false }).catch(() => undefined);
       for (const j of jobs) {
         const id = String(j.id);
         if (urgent) {
@@ -610,6 +770,7 @@ export class BrainDO extends DurableObject<Env> {
     await this.sweepStuckRuns(now);
     const queued = this.jobsFor(`j.status = 'queued' AND j.lane = 'urgent' ORDER BY j.created_at`);
     if (!queued.length) return;
+    if (this.halted() || this.budgetBlock(now)) return; // F-01: halted -> nothing starts; the findings stay queued
     if (this.row(`SELECT 1 FROM runs WHERE kind = 'urgent' AND status = 'running'`)) return; // one at a time; the rest wait
     const today = Number(this.row(`SELECT COUNT(*) AS n FROM runs WHERE kind = 'urgent' AND day = ?`, dayKey(now))?.n ?? 0);
     const guard = this.usage(now);
@@ -630,7 +791,18 @@ export class BrainDO extends DurableObject<Env> {
 
   /** Nightly lane: the one batched run at the end of the day (cron 30 21 * * * UTC = 23:30 Cairo in winter). */
   async runNightly(now: number = Date.now()): Promise<{ started: boolean; jobs: number; reason: string; runId?: string }> {
-    const jobs = this.jobsFor(`j.status = 'queued' AND j.lane = 'nightly' ORDER BY j.created_at LIMIT ${NIGHTLY_MAX_JOBS}`);
+    // final review 4: with a real provider an unknown usage (no report yet) starts ONE job, the bootstrap that produces the first report
+    // (urgent refuses outright; here a hard refusal would deadlock, since only a hands run reports usage)
+    const stop = this.halted() ?? this.budgetBlock(now);
+    if (stop) return { started: false, jobs: 0, reason: stop };
+    // F-13: no nightly batch while GitHub or Anthropic has an open major/critical incident (jobs stay queued; the digest says so)
+    const outage = this.vendorOutage();
+    if (outage) {
+      this.setMeta('nightly:skipped-outage', { at: now, reason: outage });
+      return { started: false, jobs: 0, reason: `vendor outage: ${outage}` };
+    }
+    const limit = this.unknownUsageLimit(this.usage(now), NIGHTLY_MAX_JOBS);
+    const jobs = this.jobsFor(`j.status = 'queued' AND j.lane = 'nightly' ORDER BY j.created_at LIMIT ${limit}`);
     if (!jobs.length) return { started: false, jobs: 0, reason: 'queue empty: no container started' };
     if (this.hands.pullOnly) return { started: false, jobs: jobs.length, reason: `hands provider ${this.hands.name} is pull-only: the Mac claims the queue` };
     const guard = this.usage(now);
@@ -654,16 +826,27 @@ export class BrainDO extends DurableObject<Env> {
     const streak = starved ? prev + 1 : 0;
     this.setMeta('nightly:starved', { streak, at: now });
     const n = this.policy.usageStarvedAlertAfter;
+    const ident = { source: 'brain', kind: 'usage-starved', key: 'nightly:usage-starved' };
     if (starved && n > 0 && streak % n === 0) {
-      await this.emit({ dedupeKey: `usage-starved:${streak}`, kind: 'usage-starved', text: `Ebda OS: the last ${streak} nightly batches did no work, every job was skipped by the usage guard.\n${why}\nQueued findings are waiting; check Claude usage.` }, now);
+      // a digest item, not a message: it is not an outage, and it must not spend the urgent 3/day budget (final review)
+      await this.ingestFinding({ ...ident, title: `the last ${streak} nightly batches did no work, every job was skipped by the usage guard. ${why}. Queued findings are waiting; check Claude usage.`, severity: 'P3', detail: { streak } }, now);
+    } else if (!starved) {
+      await this.resolveFinding(ident, 'a nightly batch made progress', now);
     }
   }
 
   /** Mac fallback: the mac-local hands claim queued nightly work themselves when awake. */
   async claim(providerName: string, max: number, now: number = Date.now()): Promise<HandsBatch | { refused: string }> {
-    const guard = this.usage(now);
+    const stop = this.halted();
+    if (stop) return { refused: stop };
+    // F-07: the Mac has a daily job cap too (it spends Ahmad's own plan quota); counted from the jobs claimed today
+    const macCap = intVar(this.env.HANDS_MAC_JOBS_PER_DAY, 5);
+    const claimedToday = this.rows(`SELECT id FROM runs WHERE provider LIKE 'mac%' AND day = ?`, dayKey(now)).reduce((a, r) => a + (this.getMeta<number>(`run:jobs:${r.id}`) ?? 1), 0);
+    if (claimedToday >= macCap) return { refused: `mac claim cap ${macCap}/day reached` };
+    max = Math.min(max, macCap - claimedToday);
+    const guard = this.usage(now, true);
     if (!guard.allowed) return { refused: guard.reason };
-    const n = Math.max(1, Math.min(max, NIGHTLY_MAX_JOBS));
+    const n = this.unknownUsageLimit(guard, Math.max(1, Math.min(max, NIGHTLY_MAX_JOBS)));
     // Ruling 4b-5 (I-10): the Mac runs as Ahmad with his files in reach, so it never claims work whose text comes from third parties
     // (advisories, PR titles, world-watch pages); those wait for the container
     const mac = providerName === 'mac-local' ? ` AND f.source != 'advisory' AND f.kind != 'pr-stuck' AND f.key NOT LIKE 'world-watch:%'` : '';
@@ -671,6 +854,17 @@ export class BrainDO extends DurableObject<Env> {
     if (!jobs.length) return { refused: 'queue empty' };
     const recorder: HandsProvider = { name: providerName, start: async (b) => ({ runId: b.runId, provider: providerName, startedAt: now }) };
     return (await this.startRun('nightly', jobs, 45, now, recorder)) ?? { refused: 'could not record the run' };
+  }
+
+  /** Which run (and provider) a job belongs to: the hands routes use it to scope a per-run token to its own jobs (F-06b). */
+  runOfJob(jobId: string): { runId: string; provider: string } | null {
+    const r = this.row(`SELECT r.id, r.provider FROM jobs j JOIN runs r ON r.id = j.run_id WHERE j.id = ?`, jobId);
+    return r ? { runId: String(r.id), provider: String(r.provider) } : null;
+  }
+
+  runInfo(runId: string): { provider: string } | null {
+    const r = this.row('SELECT provider FROM runs WHERE id = ?', runId);
+    return r ? { provider: String(r.provider) } : null;
   }
 
   getRun(runId: string): HandsBatch | null {
@@ -690,6 +884,7 @@ export class BrainDO extends DurableObject<Env> {
     const j = this.row(`SELECT j.*, f.title FROM jobs j JOIN findings f ON f.fp = j.fp WHERE j.id = ?`, jobId);
     if (!j) return { ok: false, reason: 'no such job' };
     if (j.status !== 'running') return { ok: false, reason: `job is ${j.status}, not running` };
+    if (o.usage) await this.addSpend(o.usage, now);
     if (o.status === 'skipped_usage') {
       // the hands stopped at the usage threshold before this job: back to the queue, not a failure
       if (j.lane === 'urgent') {
@@ -724,6 +919,10 @@ export class BrainDO extends DurableObject<Env> {
   }
 
   reportUsage(u: Omit<UsageReport, 'reportedAt'>, now: number = Date.now()): void {
+    // F-06b: inside one weekly window a report LOWER than the last one is ignored (usage only grows until the window resets), so a forged
+    // 0 % cannot re-open dispatch. A moved `resetsAt` (or an expired window) starts a new window.
+    const last = this.getMeta<UsageReport>('usage');
+    if (last && u.weeklyUsedPct < last.weeklyUsedPct && last.resetsAt !== undefined && now < last.resetsAt && (u.resetsAt === undefined || u.resetsAt === last.resetsAt)) return;
     this.setMeta('usage', { ...u, reportedAt: now } satisfies UsageReport);
   }
 
@@ -795,6 +994,9 @@ export class BrainDO extends DurableObject<Env> {
       monitorMore: watchRows.length - rendered.length,
       osBugs: this.selfCheck(now).length,
       usageNote: refused && now - refused.at < DAY ? refused.reason : null,
+      halted: this.halted(),
+      budget: (() => { const sp = this.spent(now); const b = this.budgets(); return `Hands spend: $${sp.month.toFixed(2)} of $${b.monthly} this month ($${sp.day.toFixed(2)} today of $${b.daily}).`; })(),
+      footprint: (() => { const f = this.getMeta<Footprint>('footprint:last'); if (!f) return null; if (f.unknown) return `Footprint (24 h): unknown (${f.note ?? 'read failed'}).`; return `Footprint (24 h): containers ${Math.round(f.containerMin ?? 0)} min, DO requests ${f.doRequests ?? 0}, DO rows written ${f.doRowsWritten ?? 0}, KV writes ${f.kvWrites ?? 0}.`; })(),
       requeued: (() => { const q = this.getMeta<{ at: number; n: number }>('sweep:requeued'); return q && now - q.at < DAY ? q.n : 0; })(),
     });
     const r = await this.emit(msg, now);
@@ -839,7 +1041,28 @@ export class BrainDO extends DurableObject<Env> {
       health: this.getMeta<BrainState['health']>('health:last'),
       advisories: this.getMeta<AdvisoryRunSummary>('advisories:last'),
       unconfigured: this.rows(`SELECT key FROM findings WHERE kind = 'monitor-unconfigured' AND status NOT IN ('resolved')`).map((r) => String(r.key).split(':')[0]!).sort(),
+      halt: this.halted(),
+      spend: { ...this.spent(now), dailyBudget: this.budgets().daily, monthlyBudget: this.budgets().monthly, byModel: this.getMeta<Record<string, number>>(`spend:model:${monthKey(now)}`) ?? {} },
+      footprint: this.getMeta<Footprint>('footprint:last'),
     };
+  }
+
+  /** F-14: INGEST_TOKEN has a per-day ceiling (default 1000 findings); false = refuse the request. */
+  admitIngest(n: number, now: number = Date.now()): boolean {
+    const key = `ingest:${dayKey(now)}`;
+    const used = this.getMeta<number>(key) ?? 0;
+    if (used + n > intVar(this.env.INGEST_PER_DAY, 1000)) return false;
+    this.setMeta(key, used + n);
+    return true;
+  }
+
+  /** F-05: the footprint watcher stores its last reading (an unreadable one is `unknown`, never zero). */
+  recordFootprint(f: Footprint | Record<string, unknown>): void {
+    this.setMeta('footprint:last', f);
+  }
+
+  getMetaPublic(k: string): unknown {
+    return this.getMeta(k);
   }
 
   setMetaPublic(k: string, v: unknown): void {

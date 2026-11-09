@@ -12,6 +12,7 @@ export const INTERVAL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_STATUS = [
   { name: 'cloudflare', url: 'https://www.cloudflarestatus.com/api/v2/summary.json' },
   { name: 'github', url: 'https://www.githubstatus.com/api/v2/summary.json' },
+  { name: 'anthropic', url: 'https://status.anthropic.com/api/v2/summary.json' },
 ];
 interface StatusSrc {
   name: string;

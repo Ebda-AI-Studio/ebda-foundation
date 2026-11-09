@@ -15,7 +15,8 @@ import type { BrainDO } from './brain-do';
 import { verifyAccessJwt } from './access';
 import { type Env } from './env';
 import { validateFinding, type Finding } from './findings';
-import { OUTCOME_STATUSES, type JobOutcome } from './hands';
+import { OUTCOME_STATUSES, type JobOutcome, type JobUsage } from './hands';
+import { runTokenValid } from './runtoken';
 import { checkBearerAuth, mapEvent, mapRunDetail, signEvent, timingSafeEqualStr, verifyGitHubSig, type RelayEvent } from './relay';
 import { cronName } from './schedule';
 import { validateUsage } from './usage';
@@ -134,11 +135,30 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
   return new Response(null, { status: 200 });
 }
 
+/**
+ * F-06b: hands routes are scoped. A container's bearer is HMAC(HANDS_TOKEN, runId): good for THAT run (its batch, its jobs' outcomes,
+ * its refusal). The Mac's bearer is HANDS_MAC_TOKEN: it claims as `mac-local` (the provider comes from the token, never the body, so the
+ * Mac's third-party-text filter cannot be skipped) and may read / report only Mac runs. HANDS_TOKEN itself is never a bearer.
+ */
+async function handsScope(request: Request, env: Env, runId: string | null, brain: DurableObjectStub<BrainDO>): Promise<'mac' | 'run' | null> {
+  const h = request.headers.get('Authorization') ?? '';
+  const presented = h.startsWith('Bearer ') ? h.slice(7) : '';
+  if (!presented) return null;
+  if (env.HANDS_MAC_TOKEN && timingSafeEqualStr(presented, env.HANDS_MAC_TOKEN)) {
+    if (runId === null) return 'mac';
+    const info = await brain.runInfo(runId);
+    return info && info.provider.startsWith('mac') ? 'mac' : null;
+  }
+  if (runId && (await runTokenValid(env.HANDS_TOKEN, runId, presented))) return 'run';
+  return null;
+}
+
 async function handleHands(request: Request, env: Env, path: string): Promise<Response> {
-  if (!checkBearerAuth(request, env.HANDS_TOKEN)) return new Response('unauthorized', { status: 401 });
   const brain = brainStub(env);
   let m: RegExpMatchArray | null;
+  const denied = () => new Response('unauthorized', { status: 401 });
   if (request.method === 'GET' && (m = path.match(/^\/hands\/runs\/([\w-]+)$/))) {
+    if (!(await handsScope(request, env, m[1]!, brain))) return denied();
     const run = await brain.getRun(m[1]!);
     return run ? json(run) : json({ error: 'no such run' }, 404);
   }
@@ -150,27 +170,43 @@ async function handleHands(request: Request, env: Env, path: string): Promise<Re
     return json({ error: 'bad json' }, 400);
   }
   if ((m = path.match(/^\/hands\/jobs\/([\w-]+)\/outcome$/))) {
+    const owner = await brain.runOfJob(m[1]!);
+    if (!owner || !(await handsScope(request, env, owner.runId, brain))) return denied();
     if (!OUTCOME_STATUSES.includes(body?.status)) return json({ error: `status must be one of ${OUTCOME_STATUSES.join('|')}` }, 400);
-    const o: JobOutcome = { status: body.status, ...(typeof body.prUrl === 'string' ? { prUrl: body.prUrl.slice(0, 500) } : {}), ...(typeof body.note === 'string' ? { note: body.note.slice(0, 1000) } : {}) };
+    const usage = validateJobUsage(body?.usage);
+    if (body?.usage !== undefined && !usage) return json({ error: 'usage must be {model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd} (finite numbers >= 0)' }, 400);
+    const o: JobOutcome = { status: body.status, ...(typeof body.prUrl === 'string' ? { prUrl: body.prUrl.slice(0, 500) } : {}), ...(typeof body.note === 'string' ? { note: body.note.slice(0, 1000) } : {}), ...(usage ? { usage } : {}) };
     const r = await brain.recordOutcome(m[1]!, o);
     return json(r, r.ok ? 200 : 409);
   }
   if (path === '/hands/refused') {
+    if (!request.headers.get('Authorization')) return denied();
     if (typeof body?.runId !== 'string' || !/^[\w-]{1,64}$/.test(body.runId)) return json({ error: 'runId required' }, 400);
+    if (!(await handsScope(request, env, body.runId, brain))) return denied();
     return json(await brain.handsRefused(body.runId, typeof body?.reason === 'string' ? body.reason : 'unknown reason'));
   }
   if (path === '/hands/usage') {
+    const claimed = request.headers.get('X-Hands-Run');
+    if (!(await handsScope(request, env, claimed && /^[\w-]{1,64}$/.test(claimed) ? claimed : null, brain))) return denied();
     const err = validateUsage(body);
     if (err) return json({ error: err }, 400);
     await brain.reportUsage({ weeklyUsedPct: body.weeklyUsedPct, ...(typeof body.resetsAt === 'number' ? { resetsAt: body.resetsAt } : {}) });
     return json({ ok: true });
   }
   if (path === '/hands/claim') {
-    const provider = typeof body?.provider === 'string' && /^[\w-]{1,40}$/.test(body.provider) ? body.provider : 'mac-local';
+    if ((await handsScope(request, env, null, brain)) !== 'mac') return denied();
     const max = Number.isInteger(body?.max) ? body.max : 5;
-    return json(await brain.claim(provider, max));
+    return json(await brain.claim('mac-local', max)); // the provider name is the token's, never the body's
   }
   return json({ error: 'not found' }, 404);
+}
+
+/** The usage block of an outcome: finite non-negative numbers, a short model alias. */
+export function validateJobUsage(u: any): JobUsage | null {
+  if (!u || typeof u !== 'object' || typeof u.model !== 'string' || !/^[\w.-]{1,40}$/.test(u.model)) return null;
+  const nums = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'costUsd'] as const;
+  for (const k of nums) if (typeof u[k] !== 'number' || !Number.isFinite(u[k]) || u[k] < 0 || u[k] > 1e9) return null;
+  return { model: u.model, inputTokens: u.inputTokens, outputTokens: u.outputTokens, cacheReadTokens: u.cacheReadTokens, cacheWriteTokens: u.cacheWriteTokens, costUsd: u.costUsd };
 }
 
 async function handleApi(request: Request, env: Env, path: string): Promise<Response> {
@@ -178,6 +214,20 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
   if (!auth.ok) return json({ error: 'forbidden', reason: auth.reason }, auth.reason === 'access not configured' ? 503 : 403);
   const brain = brainStub(env);
   if (request.method === 'GET' && path === '/api/state') return json(await brain.state());
+  // F-01: the global kill switch. POST /api/halt {on: boolean, reason?: string}; same-origin like the question answers. Clearing is manual only.
+  if (request.method === 'POST' && path === '/api/halt') {
+    if (request.headers.get('Origin') !== new URL(request.url).origin) return json({ error: 'cross-origin' }, 403);
+    let body: any;
+    try {
+      body = await readJson(request);
+    } catch {
+      return json({ error: 'bad json' }, 400);
+    }
+    if (typeof body?.on !== 'boolean') return json({ error: 'on (boolean) required' }, 400);
+    if (body.on) await brain.setHalt(typeof body.reason === 'string' && body.reason ? body.reason.slice(0, 200) : 'halted from the dashboard');
+    else await brain.clearHalt();
+    return json({ ok: true, halt: await brain.state().then((s) => s.halt) });
+  }
   const m = path.match(/^\/api\/questions\/([\w-]+)\/answer$/);
   if (request.method === 'POST' && m) {
     // same-origin only (defence in depth on top of Access + SameSite cookies)
@@ -215,6 +265,7 @@ export default {
         }
         const list = Array.isArray(body) ? body : [body];
         if (list.length > 100) return json({ error: 'at most 100 findings per request' }, 400);
+        if (!(await brainStub(env).admitIngest(list.length))) return json({ error: 'daily ingest limit reached' }, 429);
         for (const f of list) {
           const err = validateFinding(f);
           if (err) return json({ error: err }, 400);

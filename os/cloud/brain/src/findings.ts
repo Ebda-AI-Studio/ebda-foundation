@@ -60,6 +60,7 @@ export function validateFinding(x: unknown): string | null {
   for (const k of ['source', 'kind', 'key', 'title'] as const) {
     if (typeof f[k] !== 'string' || !(f[k] as string).trim() || (f[k] as string).length > 500) return `${k} must be a non-empty string <= 500 chars`;
   }
+  if (f.detail !== undefined && JSON.stringify(f.detail).length > 8192) return 'detail must be <= 8 KiB when serialised';
   if (f.cvss !== undefined && (typeof f.cvss !== 'number' || f.cvss < 0 || f.cvss > 10)) return 'cvss must be a number 0..10';
   if (f.touches !== undefined && (!Array.isArray(f.touches) || f.touches.some((t) => typeof t !== 'string'))) return 'touches must be string[]';
   if (f.severity !== undefined && !['P1', 'P2', 'P3'].includes(f.severity as string)) return 'severity must be P1|P2|P3';

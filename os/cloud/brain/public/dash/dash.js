@@ -13,7 +13,7 @@
       queueNote: (u, n, q) => `${u} urgent · ${n} tonight · ${q} awaiting an answer`, msgsNote: (d) => (d ? `${d} rolled into the digest` : 'within budget'),
       allowed: 'Running', paused: 'Paused', deadline: 'Deadline', silence: (o) => `If you do not answer, the OS goes with "${o}".`,
       irreversible: 'Irreversible: nothing happens until you answer.', noRuns: 'No hands runs yet.', noHealth: 'No health check yet.',
-      noFindings: 'No findings yet.', up: 'Up', down: 'Down', answered: 'Recorded.', failed: 'Could not load the dashboard. Check your Access session and try again.',
+      halted: (r) => `Hands HALTED: ${r}`, spend: (m, mb, d, db) => `Spend: $${m.toFixed(2)} of $${mb} this month · $${d.toFixed(2)} of $${db} today`, noFindings: 'No findings yet.', up: 'Up', down: 'Down', answered: 'Recorded.', failed: 'Could not load the dashboard. Check your Access session and try again.',
       lanes: { urgent: 'Urgent', nightly: 'Tonight', question: 'Needs you' }, opt: { proceed: 'Go ahead', hold: 'Hold' },
       status: { open: 'Open', queued: 'Queued', question: 'Asked you', dispatched: 'Being fixed', waiting: 'PR open', done: 'Done', failed: 'Not fixed', held: 'On hold', resolved: 'Resolved', running: 'Running', timed_out: 'Timed out' },
     },
@@ -27,7 +27,7 @@
       queueNote: (u, n, q) => `${u} عاجل · ${n} الليلة · ${q} مستني رد`, msgsNote: (d) => (d ? `${d} اتضموا للملخص اليومي` : 'جوه الحد المسموح'),
       allowed: 'شغال', paused: 'متوقف', deadline: 'آخر ميعاد', silence: (o) => `لو مردتش، النظام هيمشي على "${o}".`,
       irreversible: 'ده قرار مينفعش يترجع فيه، فمش هيحصل أي حاجة غير لما ترد.', noRuns: 'لسه مفيش تشغيلات.', noHealth: 'لسه مفيش فحص صحة.',
-      noFindings: 'لسه مفيش ملاحظات.', up: 'شغال', down: 'واقع', answered: 'اتسجل ردك.', failed: 'معرفناش نحمّل اللوحة. اتأكد من جلسة الدخول وجرب تاني.',
+      halted: (r) => `الأيدي واقفة: ${r}`, spend: (m, mb, d, db) => `المصروف: $${m.toFixed(2)} من $${mb} الشهر ده · $${d.toFixed(2)} من $${db} النهارده`, noFindings: 'لسه مفيش ملاحظات.', up: 'شغال', down: 'واقع', answered: 'اتسجل ردك.', failed: 'معرفناش نحمّل اللوحة. اتأكد من جلسة الدخول وجرب تاني.',
       lanes: { urgent: 'عاجل', nightly: 'الليلة', question: 'محتاجك' }, opt: { proceed: 'كمّل', hold: 'استنى' },
       status: { open: 'مفتوحة', queued: 'في الطابور', question: 'اتسألت فيها', dispatched: 'بتتصلح', waiting: 'الـPR مفتوح', done: 'خلصت', failed: 'متصلحتش', held: 'متوقفة', resolved: 'اتحلت', running: 'شغال', timed_out: 'الوقت خلص' },
     },
@@ -70,6 +70,10 @@
     $('bugsTile').classList.toggle('warn', s.osBugs > 0);
     $('usage').textContent = s.usage.guard.allowed ? L.allowed : L.paused;
     $('usageNote').textContent = s.usage.report ? `${s.usage.report.weeklyUsedPct}% / ${s.usage.thresholdPct}%` : `– / ${s.usage.thresholdPct}%`;
+    const haltEl = $('halt');
+    haltEl.hidden = !s.halt;
+    if (s.halt) haltEl.textContent = L.halted(s.halt);
+    if (s.spend) $('usageNote').textContent += ` · ${L.spend(s.spend.month, s.spend.monthlyBudget, s.spend.day, s.spend.dailyBudget)}`;
 
     const qs = $('questions');
     qs.replaceChildren();

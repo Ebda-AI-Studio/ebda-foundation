@@ -6,6 +6,7 @@ import type { Env } from '../env';
 import { due, reportError, unconfiguredIdent, type Sink, type WatchCtx } from './common';
 import * as ciCatchup from './ci-catchup';
 import * as cfWorkers from './cf-workers';
+import * as cfUsage from './cf-usage';
 import * as costGuard from './cost-guard';
 import * as deployDrift from './deploy-drift';
 import * as drDrill from './dr-drill';
@@ -38,6 +39,7 @@ export const GROUPS: Record<WatcherGroup, Entry[]> = {
   sixhourly: [
     { id: cfWorkers.ID, intervalMs: cfWorkers.INTERVAL_MS, run: cfWorkers.watchCfWorkers },
     { id: sentryStale.ID, intervalMs: sentryStale.INTERVAL_MS, run: sentryStale.watchSentryStale },
+    { id: cfUsage.ID, intervalMs: cfUsage.INTERVAL_MS, run: cfUsage.watchCfUsage },
     { id: costGuard.ID, intervalMs: costGuard.INTERVAL_MS, run: costGuard.watchCostGuard },
     { id: world.ID, intervalMs: world.INTERVAL_MS, run: world.watchWorld },
     // the freshness check runs every time, the weekly enqueue only when its own weekly KV gate (written after the ingest) opens

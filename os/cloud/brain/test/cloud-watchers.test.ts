@@ -376,6 +376,7 @@ describe('world-watch', () => {
   const routes = (cfInc: unknown[] = [], npm: unknown = {}): Route[] => [
     ['cloudflarestatus.com', () => json({ incidents: cfInc })],
     ['githubstatus.com', () => json({ incidents: [] })],
+    ['status.anthropic.com', () => json({ incidents: [] })],
     ['registry.npmjs.org', () => json(npm)],
   ];
   it('npm half unconfigured is visible; the status half still runs', async () => {
@@ -397,7 +398,7 @@ describe('world-watch', () => {
     expect(h.kinds()).toEqual(['world-advisory|world-watch:npm/hono/111:open']);
   });
   it('a failing status source and an npm 500 are watcher-errors', async () => {
-    const h = harness({ WORLD_NPM_DEPS: '{"hono":["4.6.0"]}' }, [['cloudflarestatus.com', () => new Response('x', { status: 503 })], ['githubstatus.com', () => new Response('not json')], ['registry.npmjs.org', () => new Response('x', { status: 500 })]]);
+    const h = harness({ WORLD_NPM_DEPS: '{"hono":["4.6.0"]}' }, [['cloudflarestatus.com', () => new Response('x', { status: 503 })], ['githubstatus.com', () => new Response('not json')], ['status.anthropic.com', () => json({ incidents: [] })], ['registry.npmjs.org', () => new Response('x', { status: 500 })]]);
     await watchWorld(h.ctx);
     expect(h.kinds().sort()).toEqual(['watcher-error|world-watch:cloudflare:error', 'watcher-error|world-watch:github:error', 'watcher-error|world-watch:npm:error']);
     expect(h.reconciled).toEqual([]);
@@ -452,7 +453,7 @@ describe('runner + real Durable Object', () => {
   it('every group member exists and ids are unique', () => {
     const ids = Object.values(GROUPS).flat().map((w) => w.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.sort()).toEqual(['cf-workers', 'ci-catchup', 'cost-guard', 'deploy-drift', 'dr-drill', 'journey-monitor', 'page-load', 'pr-shepherd', 'sentry-stale', 'services', 'world-watch']);
+    expect(ids.sort()).toEqual(['cf-usage', 'cf-workers', 'ci-catchup', 'cost-guard', 'deploy-drift', 'dr-drill', 'journey-monitor', 'page-load', 'pr-shepherd', 'sentry-stale', 'services', 'world-watch']);
   });
   it('a quarter run with nothing configured raises the three monitor-unconfigured findings in the brain, and does not rerun within its cadence', async () => {
     await fresh('wd:last:services', 'wd:last:page-load', 'wd:last:journey-monitor');
