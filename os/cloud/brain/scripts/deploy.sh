@@ -44,7 +44,14 @@ if host:
     import re
     if not re.fullmatch(r"[a-z0-9.-]+", host):
         sys.exit("deploy: OS_BRAIN_HOST must be a bare hostname")
-    t = t.replace('"workers_dev": false,', '"workers_dev": false,\n  "routes": [{ "pattern": "%s", "custom_domain": true }],' % host, 1)
+    routes = [{"pattern": host, "custom_domain": True}]
+    # optional extra Worker route on a zone where a wildcard route would beat a custom domain (e.g. os.ebda.app/* on ebda.app)
+    rh, rz = os.environ.get("OS_BRAIN_ROUTE_HOST", "").strip(), os.environ.get("OS_BRAIN_ROUTE_ZONE", "").strip()
+    if rh and rz:
+        if not re.fullmatch(r"[a-z0-9.-]+", rh) or not re.fullmatch(r"[a-z0-9.-]+", rz):
+            sys.exit("deploy: OS_BRAIN_ROUTE_HOST / OS_BRAIN_ROUTE_ZONE must be bare hostnames")
+        routes.append({"pattern": rh + "/*", "zone_name": rz})
+    t = t.replace('"workers_dev": false,', '"workers_dev": false,\n  "routes": ' + json.dumps(routes) + ',', 1)
 # the declared Console spend limit: the committed default (200) unless HANDS_API_SPEND_LIMIT_USD is set in the environment
 lim = os.environ.get("HANDS_API_SPEND_LIMIT_USD")
 if lim:
