@@ -6,10 +6,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { authModeOf, billableKeyTripwire, expectedApiKeySource } from '../lib/auth.mjs';
-import { startAnthropicForwarder } from '../lib/egress.mjs';
+import { newRunKey, startAnthropicForwarder, usageFromResponse } from '../lib/egress.mjs';
 import { CLAUDE_ISOLATION, jobUsage, runJob } from '../lib/job.mjs';
 import { buildPrompt, newNonce, stripHidden } from '../lib/prompt.mjs';
-import { costOf, DEFAULT_PRICES, priceTable } from '../lib/prices.mjs';
+import { costOf, DEFAULT_PRICES, MODEL_IDS, priceTable, ROUTED_ALIASES } from '../lib/prices.mjs';
 import { overageSeen, readingFromStreamEvent } from '../lib/usage-guard.mjs';
 import { runBatch } from '../lib/run.mjs';
 import { recordingBrain } from '../lib/brain-client.mjs';
@@ -59,46 +59,121 @@ describe('F-06: the billable-key tripwire', () => {
   });
 });
 
-describe('F-03: the model-API forwarder', () => {
-  async function upstream() {
+describe('F-03 / C1 / C2 / I2: the model-API forwarder authenticates, clamps, caps and METERS', () => {
+  const MODEL = 'claude-sonnet-5-5';
+  const RUN_KEY = 'sk-ant-api03-hands-runkey-0123456789';
+  async function upstream(reply) {
     const seen = [];
     const server = createServer((req, res) => {
       let b = '';
       req.on('data', (c) => (b += c));
-      req.on('end', () => (seen.push({ method: req.method, url: req.url, key: req.headers['x-api-key'], auth: req.headers.authorization, body: b }), res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}')));
+      req.on('end', () => {
+        seen.push({ method: req.method, url: req.url, key: req.headers['x-api-key'], auth: req.headers.authorization, enc: req.headers['accept-encoding'], body: b ? JSON.parse(b) : null });
+        const r = reply ? reply(req) : { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: MODEL, usage: { input_tokens: 1000, output_tokens: 500 } }) };
+        res.writeHead(r.status, r.headers).end(r.body);
+      });
     });
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
     return { seen, port: server.address().port, close: () => new Promise((r) => server.close(r)) };
   }
-  const post = (port, path, headers = {}, method = 'POST') => fetch(`http://127.0.0.1:${port}${path}`, { method, headers, body: method === 'POST' ? '{"m":1}' : undefined });
+  async function make(up, over = {}) {
+    const meters = [];
+    const f = await startAnthropicForwarder({ mode: 'api', secret: 'sk-ours', runKey: RUN_KEY, upstream: { host: '127.0.0.1', port: up.port, tls: false }, maxTokensCeiling: 8000, onMeter: (m) => meters.push(m), ...over });
+    f.begin({ id: 'job_1', model: MODEL, budgetUsd: over.budget });
+    return { f, meters };
+  }
+  const post = (port, path, body, headers = { 'x-api-key': RUN_KEY }, method = 'POST') => fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { 'content-type': 'application/json', ...headers }, body: method === 'POST' ? JSON.stringify(body) : undefined });
 
-  it('api mode: POST /v1/messages passes with OUR key injected (a placeholder or an attacker key is overwritten, never forwarded)', async () => {
+  it('C2: a request without the per-run key (the tests uid, a postinstall) is 401 and never reaches the upstream; the right key passes with OUR key injected', async () => {
     const up = await upstream();
-    const f = await startAnthropicForwarder({ mode: 'api', secret: 'sk-ours', upstream: { host: '127.0.0.1', port: up.port, tls: false } });
-    expect((await post(f.port, '/v1/messages?beta=true', { 'x-api-key': 'sk-attacker', 'content-type': 'application/json' })).status).toBe(200);
-    expect((await post(f.port, '/v1/messages/count_tokens', { 'x-api-key': 'placeholder' })).status).toBe(200);
-    expect(up.seen.map((s) => [s.url, s.key])).toEqual([['/v1/messages?beta=true', 'sk-ours'], ['/v1/messages/count_tokens', 'sk-ours']]);
-    await f.close();
-    await up.close();
-  });
-  it('the Files API, other paths and non-POST verbs are refused and never reach the upstream', async () => {
-    const up = await upstream();
-    const f = await startAnthropicForwarder({ mode: 'api', secret: 'sk-ours', upstream: { host: '127.0.0.1', port: up.port, tls: false } });
-    for (const [path, method] of [['/v1/files', 'POST'], ['/v1/files/abc/content', 'POST'], ['/v1/organizations/x', 'POST'], ['/v1/messages', 'GET'], ['/v1/messages/batches', 'POST']]) expect((await post(f.port, path, {}, method)).status).toBeGreaterThanOrEqual(403);
+    const { f } = await make(up);
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 10 }, {})).status).toBe(401);
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 10 }, { 'x-api-key': 'sk-ant-placeholder' })).status).toBe(401);
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 10 }, { 'x-api-key': 'sk-attacker', authorization: `Bearer ${RUN_KEY}` })).status).toBe(401);
     expect(up.seen).toEqual([]);
-    expect([...f.denied].length).toBe(5);
+    expect((await post(f.port, '/v1/messages?beta=true', { model: MODEL, max_tokens: 10 })).status).toBe(200);
+    expect(up.seen.map((s) => [s.url, s.key, s.enc])).toEqual([['/v1/messages?beta=true', 'sk-ours', 'identity']]);
     await f.close();
     await up.close();
   });
-  it('max mode: only our bearer; any x-api-key is refused', async () => {
+  it('C2: opus requested on a sonnet run is refused; max_tokens is clamped to the ceiling; inference_geo and non-JSON bodies are refused', async () => {
+    const up = await upstream();
+    const { f } = await make(up);
+    expect((await post(f.port, '/v1/messages', { model: 'claude-opus-5-5', max_tokens: 10 })).status).toBe(403);
+    expect((await post(f.port, '/v1/messages', { model: 'claude-haiku-5-5', max_tokens: 10 })).status).toBe(403);
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 10, inference_geo: 'us' })).status).toBe(403);
+    expect((await fetch(`http://127.0.0.1:${f.port}/v1/messages`, { method: 'POST', headers: { 'x-api-key': RUN_KEY }, body: 'not json' })).status).toBe(400);
+    expect(up.seen).toEqual([]);
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 64000, messages: [] })).status).toBe(200);
+    expect(up.seen[0].body.max_tokens).toBe(8000);
+    await f.close();
+    await up.close();
+  });
+  it('the Files API, other paths, non-POST verbs and a call with no active job are refused and never reach the upstream', async () => {
+    const up = await upstream();
+    const { f } = await make(up);
+    for (const [path, method] of [['/v1/files', 'POST'], ['/v1/files/abc/content', 'POST'], ['/v1/organizations/x', 'POST'], ['/v1/messages', 'GET'], ['/v1/messages/batches', 'POST']]) expect((await post(f.port, path, { model: MODEL }, { 'x-api-key': RUN_KEY }, method)).status).toBeGreaterThanOrEqual(403);
+    f.end('job_1');
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 5 })).status).toBe(409);
+    expect(up.seen).toEqual([]);
+    await f.close();
+    await up.close();
+  });
+  it('C1: every response is metered from its REAL usage and reported as it happens (JSON, and SSE with 5m / 1h cache writes), priced per request', async () => {
+    const sse = [
+      `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { model: MODEL, usage: { input_tokens: 100, cache_creation_input_tokens: 3000, cache_creation: { ephemeral_5m_input_tokens: 1000, ephemeral_1h_input_tokens: 2000 }, cache_read_input_tokens: 500, output_tokens: 1 } } })}`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', usage: { output_tokens: 400 } })}`,
+      '',
+    ].join('\n');
+    let n = 0;
+    const up = await upstream(() => (++n === 1 ? { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: MODEL, usage: { input_tokens: 1_000_000, output_tokens: 100_000 } }) } : { status: 200, headers: { 'content-type': 'text/event-stream' }, body: sse }));
+    const { f, meters } = await make(up);
+    await (await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 10 })).text();
+    await (await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 10, stream: true })).text();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(meters).toHaveLength(2);
+    expect(meters[0]).toMatchObject({ jobId: 'job_1', model: MODEL, inputTokens: 1_000_000, outputTokens: 100_000 });
+    expect(meters[0].costUsd).toBeCloseTo(2 + 1, 6); // $2/MTok in, $10/MTok out
+    // 100 x $2 + 400 x $10 + 500 read x $0.10 + 1000 x 5m (1.25 x $2) + 2000 x 1h (2 x $2), per million
+    expect(meters[1].costUsd).toBeCloseTo((100 * 2 + 400 * 10 + 500 * 0.1 + 1000 * 2.5 + 2000 * 4) / 1e6, 8);
+    const done = f.end('job_1');
+    expect(done.calls).toBe(2);
+    expect(done.usd).toBeCloseTo(meters[0].costUsd + meters[1].costUsd, 8);
+    expect(done.outputTokens).toBe(100_400);
+    await f.close();
+    await up.close();
+  });
+  it('I2: once a job\'s metered spend reaches its budget, further calls are refused (429); another job starts clean', async () => {
+    const up = await upstream(() => ({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: MODEL, usage: { input_tokens: 1_000_000, output_tokens: 0 } }) })); // $2 per call
+    const { f } = await make(up, { budget: 3 });
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 5 })).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 5 })).status).toBe(200); // $2 < $3 still allowed; this one reaches $4
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 5 })).status).toBe(429);
+    f.begin({ id: 'job_2', model: MODEL, budgetUsd: 3 });
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 5 })).status).toBe(200);
+    await f.close();
+    await up.close();
+  });
+  it('max mode: only our bearer; any x-api-key is refused (401)', async () => {
     const up = await upstream();
     const f = await startAnthropicForwarder({ mode: 'max', secret: 'oat', upstream: { host: '127.0.0.1', port: up.port, tls: false } });
-    expect((await post(f.port, '/v1/messages', { authorization: 'Bearer oat' })).status).toBe(200);
-    expect((await post(f.port, '/v1/messages', { authorization: 'Bearer nope' })).status).toBe(403);
-    expect((await post(f.port, '/v1/messages', { authorization: 'Bearer oat', 'x-api-key': 'k' })).status).toBe(403);
+    f.begin({ id: 'j', model: MODEL });
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 5 }, { authorization: 'Bearer oat' })).status).toBe(200);
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 5 }, { authorization: 'Bearer nope' })).status).toBe(401);
+    expect((await post(f.port, '/v1/messages', { model: MODEL, max_tokens: 5 }, { authorization: 'Bearer oat', 'x-api-key': 'k' })).status).toBe(401);
     expect(up.seen).toHaveLength(1);
     await f.close();
     await up.close();
+  });
+  it('newRunKey is random per run', () => {
+    expect(newRunKey()).not.toBe(newRunKey());
+    expect(newRunKey()).toMatch(/^sk-ant-api03-hands-[0-9a-f]{48}$/);
+  });
+  it('usageFromResponse reads JSON and SSE and returns null when there is no usage', () => {
+    expect(usageFromResponse('{"model":"m","usage":{"input_tokens":3}}')).toEqual({ model: 'm', usage: { input_tokens: 3 } });
+    expect(usageFromResponse('not json at all')).toBeNull();
   });
 });
 
@@ -136,24 +211,47 @@ describe('F-08: an overage reading is a refusal', () => {
   });
 });
 
-describe('RR-hands-api-auth: prices and cost', () => {
-  it('cost = tokens x the table; cache reads cost 0.1 x input, cache writes 1.25 x input; an unknown model is priced as the dearest', () => {
-    const t = priceTable({});
-    expect(costOf({ input_tokens: 1_000_000, output_tokens: 1_000_000 }, 'claude-sonnet-x', t).costUsd).toBe(DEFAULT_PRICES.sonnet.in + DEFAULT_PRICES.sonnet.out);
-    expect(costOf({ cache_read_input_tokens: 1_000_000 }, 'sonnet', t).costUsd).toBeCloseTo(DEFAULT_PRICES.sonnet.in * 0.1, 6);
-    expect(costOf({ cache_creation_input_tokens: 1_000_000 }, 'sonnet', t).costUsd).toBeCloseTo(DEFAULT_PRICES.sonnet.in * 1.25, 6);
-    expect(costOf({ output_tokens: 1_000_000 }, 'mystery-model', t).costUsd).toBe(DEFAULT_PRICES.opus.out);
-    expect(costOf({ input_tokens: -5, output_tokens: NaN }, 'haiku', t).costUsd).toBe(0);
+describe('RR-hands-api-auth: pinned model ids and the price table', () => {
+  const t = priceTable({});
+  it('the table has EVERY routed model, by pinned id (aliases are not prices)', () => {
+    expect(MODEL_IDS).toEqual({ haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' });
+    for (const alias of ROUTED_ALIASES) expect(t[MODEL_IDS[alias]], alias).toBeDefined();
+    for (const [k, p] of Object.entries(t)) expect(p.in > 0 && p.out > 0 && p.cacheRead > 0, k).toBe(true);
   });
-  it('the table is configurable and a bad override is ignored', () => {
-    expect(priceTable({ HANDS_PRICES_JSON: '{"sonnet":{"in":1,"out":2}}' }).sonnet).toEqual({ in: 1, out: 2 });
-    expect(priceTable({ HANDS_PRICES_JSON: 'not json' }).sonnet).toEqual(DEFAULT_PRICES.sonnet);
+  it('current rates: opus 4/20/0.20, sonnet 2/10/0.10, haiku 0.10/0.50/0.01 up to 100k context', () => {
+    const u = { input_tokens: 1_000_000, output_tokens: 1_000_000, cache_read_input_tokens: 1_000_000 };
+    expect(costOf(u, 'claude-opus-5-5', t).costUsd).toBeCloseTo(4 + 20 + 0.2, 6);
+    expect(costOf(u, 'claude-sonnet-5-5', t).costUsd).toBeCloseTo(2 + 10 + 0.1, 6);
+    // 100k tokens of context total: still the cheap tier
+    expect(costOf({ input_tokens: 50_000, output_tokens: 1_000_000, cache_read_input_tokens: 50_000 }, 'claude-haiku-5-5', t).costUsd).toBeCloseTo((50_000 * 0.1 + 1_000_000 * 0.5 + 50_000 * 0.01) / 1e6, 8);
   });
-  it('jobUsage prefers the per-model breakdown of the result event', () => {
-    const u = jobUsage({ modelUsage: { 'claude-sonnet-4': { inputTokens: 1_000_000, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }, 'claude-haiku-4': { inputTokens: 1_000_000, outputTokens: 0 } } }, 'sonnet', priceTable({}));
-    expect(u.costUsd).toBeCloseTo(DEFAULT_PRICES.sonnet.in + DEFAULT_PRICES.haiku.in, 6);
-    expect(u.model).toBe('sonnet');
-    expect(jobUsage(null, 'sonnet', priceTable({}))).toBeNull();
+  it('haiku over 100k tokens of context is priced at 0.50 / 2.50 (read 0.05)', () => {
+    const over = costOf({ input_tokens: 100_001, output_tokens: 1_000_000 }, 'claude-haiku-5-5', t);
+    expect(over.costUsd).toBeCloseTo((100_001 * 0.5 + 1_000_000 * 2.5) / 1e6, 6);
+    expect(costOf({ input_tokens: 10, cache_read_input_tokens: 200_000 }, 'claude-haiku-5-5', t).costUsd).toBeCloseTo((10 * 0.5 + 200_000 * 0.05) / 1e6, 8);
+  });
+  it('cache writes: 5-minute = 1.25 x input, 1-hour = 2 x input; an unsplit total is priced as 1-hour (the dearer one)', () => {
+    expect(costOf({ cache_creation: { ephemeral_5m_input_tokens: 1_000_000, ephemeral_1h_input_tokens: 0 } }, 'claude-sonnet-5-5', t).costUsd).toBeCloseTo(2 * 1.25, 6);
+    expect(costOf({ cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 1_000_000 } }, 'claude-sonnet-5-5', t).costUsd).toBeCloseTo(2 * 2, 6);
+    expect(costOf({ cache_creation_input_tokens: 1_000_000 }, 'claude-sonnet-5-5', t).costUsd).toBeCloseTo(2 * 2, 6);
+  });
+  it('an unknown model is priced as the dearest, never as free; a bad usage block costs 0 only because it has no tokens; overrides work', () => {
+    expect(costOf({ output_tokens: 1_000_000 }, 'mystery-model', t).costUsd).toBe(20);
+    expect(costOf({ input_tokens: -5, output_tokens: NaN }, 'claude-haiku-5-5', t).costUsd).toBe(0);
+    expect(priceTable({ HANDS_PRICES_JSON: '{"claude-sonnet-5-5":{"in":1,"out":2}}' })['claude-sonnet-5-5']).toMatchObject({ in: 1, out: 2 });
+    expect(priceTable({ HANDS_PRICES_JSON: 'not json' })['claude-sonnet-5-5']).toEqual(DEFAULT_PRICES['claude-sonnet-5-5']);
+  });
+  it('the pricing source is cited in lib/prices.mjs (URL + date)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const text = readFileSync(join(import.meta.dirname, '..', 'lib', 'prices.mjs'), 'utf8');
+    expect(text).toMatch(/https:\/\/www\.anthropic\.com\/pricing/);
+    expect(text).toMatch(/2026-11-09/);
+  });
+  it('jobUsage (the result-event fallback) prefers the per-model breakdown', () => {
+    const u = jobUsage({ modelUsage: { 'claude-sonnet-5-5': { inputTokens: 1_000_000, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }, 'claude-haiku-5-5': { inputTokens: 1_000_000, outputTokens: 0 } } }, 'claude-sonnet-5-5', t);
+    expect(u.costUsd).toBeCloseTo(2 + 0.5, 6); // 1M haiku input tokens is above the 100k tier
+    expect(u.model).toBe('claude-sonnet-5-5'); // the dearest part names the job
+    expect(jobUsage(null, 'claude-sonnet-5-5', t)).toBeNull();
   });
 });
 
@@ -201,34 +299,65 @@ function fake({ result = {}, init = null, edits = { 'README.md': 'new\n' }, file
 const job = (x = {}) => ({ id: 'job_cost1', fingerprint: 'f', lane: 'nightly', mergePolicy: 'pr-and-question', finding: { source: 'w', kind: 'docs', key: 'k', title: 't', repo: 'o/r' }, ...x });
 
 describe('RR-hands-api-auth: the job passes the routed model, caps output, keeps caching on and reports its cost', () => {
-  it('--model is the brain\'s per-job choice; api mode hands Claude a PLACEHOLDER key and the loopback base URL, never the real key', async () => {
+  const metered = (usd = 0.4, calls = 2) => ({ begins: [], ends: 0, begin(j) { this.begins.push(j); }, end() { this.ends++; return { usd, calls, inputTokens: 1000, outputTokens: 500, cacheReadTokens: 10, cacheWriteTokens: 20 }; } });
+  it('--model is the pinned id of the brain\'s choice; api mode hands Claude the run key and the loopback URL, never the real key; the job has a hard budget', async () => {
     const f = fake();
-    const cfg = await cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:5555', anthropicPlaceholderKey: 'sk-ant-placeholder' });
-    const out = await runJob(job({ model: 'haiku' }), { cfg, exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'sk-REAL', ghToken: 'g' } });
+    const meter = metered();
+    const cfg = await cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:5555', anthropicPlaceholderKey: 'sk-ant-run-key' });
+    const out = await runJob(job({ model: 'haiku' }), { cfg, exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'sk-REAL', ghToken: 'g' }, meter, jobBudgetUsd: 3 });
     const claude = f.calls.find((c) => c.cmd === 'claude');
-    expect(claude.args[claude.args.indexOf('--model') + 1]).toBe('haiku');
+    expect(claude.args[claude.args.indexOf('--model') + 1]).toBe('claude-haiku-5-5');
+    expect(claude.args[claude.args.indexOf('--max-budget-usd') + 1]).toBe('3.00'); // I2: the CLI's own cap, as a second line (the forwarder is the real one)
     for (const flag of CLAUDE_ISOLATION) expect(claude.args).toContain(flag);
-    expect(claude.args).not.toContain('--max-budget-usd'); // F-17: a client estimate that does not cap a subscription: turns + wall time are the caps
-    expect(claude.env).toMatchObject({ ANTHROPIC_BASE_URL: 'http://127.0.0.1:5555', ANTHROPIC_API_KEY: 'sk-ant-placeholder', CLAUDE_CODE_MAX_OUTPUT_TOKENS: '16000' });
+    expect(claude.env).toMatchObject({ ANTHROPIC_BASE_URL: 'http://127.0.0.1:5555', ANTHROPIC_API_KEY: 'sk-ant-run-key', CLAUDE_CODE_MAX_OUTPUT_TOKENS: '16000', ANTHROPIC_SMALL_FAST_MODEL: 'claude-haiku-5-5', CLAUDE_CODE_SUBAGENT_MODEL: 'claude-haiku-5-5' });
     expect(JSON.stringify(claude.env)).not.toContain('sk-REAL');
     expect(Object.keys(claude.env)).not.toContain('DISABLE_PROMPT_CACHING'); // Claude Code's prompt caching stays on
-    expect(out.usage).toMatchObject({ model: 'haiku', inputTokens: 2000, outputTokens: 1000 });
-    expect(out.usage.costUsd).toBeCloseTo((2000 * DEFAULT_PRICES.haiku.in + 1000 * DEFAULT_PRICES.haiku.out) / 1e6, 8);
+    expect(meter.begins).toEqual([{ id: 'job_cost1', model: 'claude-haiku-5-5', budgetUsd: 3 }]);
+    // C1: the cost is the forwarder's meter, not the result event
+    expect(out).toMatchObject({ claudeRan: true, metered: true, usage: { model: 'claude-haiku-5-5', costUsd: 0.4, inputTokens: 1000, outputTokens: 500 } });
   });
-  it('an unrouted job runs on the configured default; an invalid model name is ignored', async () => {
+  it('C1: a job that ran Claude and was killed with NO meter reading says so (claudeRan, not metered): the brain charges the pessimistic amount', async () => {
+    const f = fake({ result: { usage: undefined } });
+    const out = await runJob(job(), { cfg: await cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:1', anthropicPlaceholderKey: 'p' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' }, meter: metered(0, 0) });
+    expect(out).toMatchObject({ claudeRan: true, metered: false });
+    expect(out.usage).toBeUndefined();
+  });
+  it('the meter is closed even when the job throws', async () => {
+    const meter = metered();
+    const exec = async (cmd, args, opts) => {
+      if (cmd === 'git' && args.includes('rev-parse')) return { code: 0, stdout: 'abcdef1234567\n', stderr: '', timedOut: false };
+      if (cmd === 'git' && args.includes('clone')) { await writeTree(args.at(-1), BASE); return { code: 0, stdout: '', stderr: '', timedOut: false }; }
+      throw new Error('boom');
+    };
+    await expect(runJob(job(), { cfg: await cfgOf(), exec, env: { PATH: '/bin', HOME: '/h' }, creds: {}, meter })).rejects.toThrow('boom');
+    expect(meter.ends).toBeGreaterThan(0);
+  });
+  it('an unrouted job runs on the configured default alias (as its pinned id); an invalid model name is ignored', async () => {
     const f = fake();
     await runJob(job({ model: 'gpt-9' }), { cfg: await cfgOf({ claudeModel: 'sonnet' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
     const claude = f.calls.find((c) => c.cmd === 'claude');
-    expect(claude.args[claude.args.indexOf('--model') + 1]).toBe('sonnet');
+    expect(claude.args[claude.args.indexOf('--model') + 1]).toBe('claude-sonnet-5-5');
+  });
+  it('no job budget (the Mac): no --max-budget-usd', async () => {
+    const f = fake();
+    await runJob(job(), { cfg: await cfgOf({ claudeAuth: 'login' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
+    expect(f.calls.find((c) => c.cmd === 'claude').args).not.toContain('--max-budget-usd');
+  });
+  it('fallback (forwarder off): the cost comes from the result event, priced with the pinned table', async () => {
+    const f = fake({ result: { usage: { input_tokens: 1_000_000, output_tokens: 0 } } });
+    const out = await runJob(job({ model: 'sonnet' }), { cfg: await cfgOf({ claudeAuth: 'api', anthropicPlaceholderKey: 'p' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
+    expect(out.usage).toMatchObject({ model: 'claude-sonnet-5-5' });
+    expect(out.usage.costUsd).toBeCloseTo(2, 6);
+    expect(out.metered).toBe(false);
   });
   it('apiKeySource from the init event: a different source aborts the job (billable-credential tripwire); the expected one passes', async () => {
-    const cfg = await cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:1', anthropicPlaceholderKey: 'p' });
-    const bad = await runJob(job(), { cfg, exec: fake({ init: { apiKeySource: 'ANTHROPIC_AUTH_TOKEN' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
+    const mk = async () => cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:1', anthropicPlaceholderKey: 'p' });
+    const bad = await runJob(job(), { cfg: await mk(), exec: fake({ init: { apiKeySource: 'ANTHROPIC_AUTH_TOKEN' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
     expect(bad).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/ANTHROPIC_AUTH_TOKEN.*expected 'ANTHROPIC_API_KEY'/) });
-    const good = await runJob(job(), { cfg: await cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:1', anthropicPlaceholderKey: 'p' }), exec: fake({ init: { apiKeySource: 'ANTHROPIC_API_KEY' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
+    const good = await runJob(job(), { cfg: await mk(), exec: fake({ init: { apiKeySource: 'ANTHROPIC_API_KEY' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
     expect(good.status).not.toBe('could_not_fix');
     const mac = await runJob(job(), { cfg: await cfgOf({ claudeAuth: 'login' }), exec: fake({ init: { apiKeySource: 'ANTHROPIC_API_KEY' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
-    expect(mac.status).toBe('could_not_fix'); // on the Mac a key source of ANY kind is wrong: the CLI must use the login ('none')
+    expect(mac.status).toBe('could_not_fix');
   });
   it('F-14: more than 200 changed files, or more than 1 MiB, is "not a targeted fix"; nothing is pushed', async () => {
     const many = Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`docs/f${i}.md`, 'x\n']));
@@ -250,9 +379,9 @@ describe('RR-hands-api-auth: the run budget stops the batch between jobs', () =>
     const guard = { thresholdPct: 100, cli: null, observe() {}, check: async () => ({ allowed: true, reason: 'api' }) };
     // each job costs 1M sonnet input tokens = $3 > the $0.50 budget: the first runs, the other two are not attempted
     const f = fake({ result: { usage: { input_tokens: 1_000_000, output_tokens: 0 } } });
-    const res = await runBatch(batch, { brain, cfg: await cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:1', anthropicPlaceholderKey: 'p' }), exec: f.exec, usage: guard, log: () => {}, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k', ghToken: 'g' } });
+    const res = await runBatch(batch, { brain, cfg: await cfgOf({ claudeAuth: 'api', anthropicPlaceholderKey: 'p' }), exec: f.exec, usage: guard, log: () => {}, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k', ghToken: 'g' } });
     expect(res.map((r) => r.status)).toEqual([expect.stringMatching(/merged|pr_opened|could_not_fix/), 'skipped_usage', 'skipped_usage']);
-    expect(res[0].usage.costUsd).toBeCloseTo(3, 4);
+    expect(res[0].usage.costUsd).toBeCloseTo(2, 4); // 1M sonnet input tokens = $2
     expect(res[1].note).toMatch(/run budget \$0\.50 spent/);
     expect(f.calls.filter((c) => c.cmd === 'claude')).toHaveLength(1);
   });

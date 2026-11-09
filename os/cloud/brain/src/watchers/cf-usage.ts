@@ -13,7 +13,31 @@ export const INTERVAL_MS = 24 * 60 * 60 * 1000;
 const GQL = 'https://api.cloudflare.com/client/v4/graphql';
 
 /** Included Workers Paid amounts, pro-rated per day (estimate; tune with the CF_* vars). */
-export const DEFAULTS = { containerVcpuMin: 12.5, doRequests: 33_000, kvWrites: 33_000 };
+export const DEFAULTS = { containerVcpuMin: 12.5, doRequests: 33_000, kvWrites: 33_000, warnUsd: 10, stopUsd: 20 };
+
+/**
+ * Estimated monthly overage in USD from one day's footprint (x30), at Cloudflare's published rates above the Workers Paid included amounts:
+ * DO requests $0.15/M over 1M, KV writes $5/M over 1M, Workers requests $0.30/M over 10M, container vCPU $0.000020/s over 375 vCPU-min,
+ * memory $0.0000025/GiB-s over 25 GiB-h (standard-1: 4 GiB, half a vCPU), disk $0.00000007/GB-s over 200 GB-h (8 GB). ESTIMATE (ruling RR-cf-usage).
+ * Ahmad's Cloudflare budget alerts are $10 (warn) and $20 (stop); the brain's own dollar thresholds default to the same two numbers, so the
+ * halt trips at or before the alert, not after it.
+ */
+export function estimateMonthlyUsd(d: { doRequests?: number | null; kvWrites?: number | null; workersRequests?: number | null; containerVcpuSec?: number | null }): number {
+  const over = (v: number, included: number) => Math.max(0, v - included);
+  const doReq = (d.doRequests ?? 0) * 30;
+  const kv = (d.kvWrites ?? 0) * 30;
+  const wk = (d.workersRequests ?? 0) * 30;
+  const vcpuSec = (d.containerVcpuSec ?? 0) * 30;
+  const containerSec = vcpuSec * 2; // standard-1 = half a vCPU
+  return (
+    (over(doReq, 1_000_000) / 1e6) * 0.15 +
+    (over(kv, 1_000_000) / 1e6) * 5 +
+    (over(wk, 10_000_000) / 1e6) * 0.3 +
+    over(vcpuSec, 375 * 60) * 0.00002 +
+    over(containerSec * 4, 25 * 3600) * 0.0000025 +
+    over(containerSec * 8, 200 * 3600) * 0.00000007
+  );
+}
 
 const q = (dataset: string, sum: string, extraFilter = '') => `query($acc:String!,$since:Time!,$until:Time!){viewer{accounts(filter:{accountTag:$acc}){${dataset}(limit:1000,filter:{datetime_geq:$since,datetime_leq:$until${extraFilter}}){sum{${sum}}}}}}`;
 
@@ -52,7 +76,7 @@ export async function watchCfUsage(ctx: WatchCtx): Promise<{ footprint: Record<s
   if (failed.length) {
     await sink.recordFootprint?.({ at: ctx.now, unknown: true, note: `could not read ${failed.join(', ')}` });
   } else {
-    await sink.recordFootprint?.({ at: ctx.now, unknown: false, containerMin: (got.containerVcpuSec ?? 0) / 30 /* vCPU-s -> container-min at 1/2 vCPU */, doRequests: got.doRequests, doRowsWritten: got.doRowsWritten, kvWrites: got.kvWrites, workersRequests: got.workersRequests });
+    await sink.recordFootprint?.({ at: ctx.now, unknown: false, estUsd: estimateMonthlyUsd(got), containerMin: (got.containerVcpuSec ?? 0) / 30 /* vCPU-s -> container-min at 1/2 vCPU */, doRequests: got.doRequests, doRowsWritten: got.doRowsWritten, kvWrites: got.kvWrites, workersRequests: got.workersRequests });
   }
   const limits: Array<[string, number | null, number, string]> = [
     ['do-requests', got.doRequests ?? null, numVar(ctx.env.CF_DO_REQUESTS_DAY, DEFAULTS.doRequests), 'Durable Object requests'],
@@ -64,6 +88,14 @@ export async function watchCfUsage(ctx: WatchCtx): Promise<{ footprint: Record<s
     if (value === null) continue; // unknown is a watcher-error, never "under the limit"
     const lv = value >= limit ? 'stop' : value >= 0.5 * limit ? 'warn' : null;
     if (lv) current.push(finding(ID, `cf-usage-${lv}`, key, lv, `Cloudflare ${label}: ${Math.round(value)} in 24 h (${lv} at ${lv === 'stop' ? limit : Math.round(limit / 2)})`, { severity: lv === 'stop' ? 'P1' : 'P3' }));
+  }
+  // the dollar view: the estimated month at today's rate against Ahmad's own $10 / $20 Cloudflare alerts
+  if (!failed.length) {
+    const est = estimateMonthlyUsd(got);
+    const stopUsd = numVar(ctx.env.CF_STOP_USD, DEFAULTS.stopUsd);
+    const warnUsd = Math.min(numVar(ctx.env.CF_WARN_USD, DEFAULTS.warnUsd), stopUsd);
+    const lv = est >= stopUsd ? 'stop' : est >= warnUsd ? 'warn' : null;
+    if (lv) current.push(finding(ID, `cf-usage-${lv}`, 'est-usd', lv, `Cloudflare estimated spend $${est.toFixed(2)}/month at today's rate (${lv} at $${lv === 'stop' ? stopUsd : warnUsd})`, { severity: lv === 'stop' ? 'P1' : 'P3' }));
   }
   const complete = failed.length === 0;
   for (const kind of ['cf-usage-warn', 'cf-usage-stop']) await settle(ctx, ID, kind, current.filter((f) => f.kind === kind), complete);

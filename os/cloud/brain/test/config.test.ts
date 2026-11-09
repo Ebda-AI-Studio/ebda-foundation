@@ -57,10 +57,23 @@ describe('cost and abuse limits in the deploy config', () => {
     expect(cfg.limits.cpu_ms).toBeLessThanOrEqual(30000);
     expect(cfg.limits.subrequests).toBeLessThanOrEqual(500);
   });
-  it('the hands start un-halted, on the API key, and api mode cannot start without the rendered spend limit marker', () => {
+  it('the hands start un-halted, on the API key, with the declared Console spend limit ($200) under which the monthly budget sits', () => {
     expect(vars.HANDS_HALT).toBe('0');
     expect(vars.HANDS_CLAUDE_AUTH).toBe('api');
-    expect(vars.HANDS_API_SPEND_LIMIT_USD).toBe('__HANDS_API_SPEND_LIMIT_USD__');
+    expect(Number(vars.HANDS_API_SPEND_LIMIT_USD)).toBe(200);
+    expect(Number(vars.HANDS_MONTHLY_BUDGET_USD)).toBeLessThan(Number(vars.HANDS_API_SPEND_LIMIT_USD));
+    expect(Object.keys(vars).filter((k) => /API_SPEND_LIMIT/.test(k))).toEqual(['HANDS_API_SPEND_LIMIT_USD']); // one env name
+  });
+  it('the brain\'s own Cloudflare stop is at or below Ahmad\'s $20 alert (and its warn at or below $10)', () => {
+    expect(Number(vars.CF_STOP_USD)).toBeLessThanOrEqual(20);
+    expect(Number(vars.CF_WARN_USD)).toBeLessThanOrEqual(10);
+    expect(Number(vars.CF_WARN_USD)).toBeLessThanOrEqual(Number(vars.CF_STOP_USD));
+  });
+  it('the per-job budget and the pessimistic charge are set, ordered, and fit the daily budget', () => {
+    const pess = Number(vars.HANDS_JOB_PESSIMISTIC_USD);
+    const job = Number(vars.HANDS_JOB_BUDGET_USD);
+    expect(pess > 0 && pess <= job).toBe(true);
+    expect(job).toBeLessThanOrEqual(Number(vars.HANDS_DAILY_BUDGET_USD));
   });
   it('the monthly dollar budget is set and stays under the $200 credit (<= $190); the daily budget is set and below the monthly', () => {
     const monthly = Number(vars.HANDS_MONTHLY_BUDGET_USD);

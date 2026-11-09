@@ -28,6 +28,8 @@ export function brainClient({ url, token, runId, fetchImpl = fetch }) {
     claim: (provider, max) => call('POST', '/hands/claim', { provider, max }),
     outcome: (jobId, o) => call('POST', `/hands/jobs/${encodeURIComponent(jobId)}/outcome`, o),
     usage: (u) => call('POST', '/hands/usage', u),
+    /** the forwarder's meter: one API response's usage, or {jobId, started: true} when a job begins */
+    meter: (m) => call('POST', '/hands/meter', m),
   };
 }
 
@@ -46,6 +48,11 @@ export function recordingBrain(batch) {
     },
     usage: async (u) => {
       usageReports.push(u);
+      return { ok: true };
+    },
+    meters: [],
+    meter: async function (m) {
+      this.meters.push(m);
       return { ok: true };
     },
   };

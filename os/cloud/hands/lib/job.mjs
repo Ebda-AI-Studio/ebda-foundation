@@ -16,7 +16,7 @@ import { mayAutoMerge, mayWork } from './policy.mjs';
 import { buildPrompt, CANNOT_FIX } from './prompt.mjs';
 import { applyChanges, treeDiff } from './tree.mjs';
 import { expectedApiKeySource } from './auth.mjs';
-import { costOf, priceTable } from './prices.mjs';
+import { costOf, MODEL_IDS, priceTable } from './prices.mjs';
 
 export { PROTECTED } from './diffcheck.mjs';
 
@@ -99,9 +99,19 @@ export function jobUsage(result, model, table) {
 
 export async function runJob(job, ctx) {
   const acc = {};
-  const out = await runJobCore(job, ctx, acc);
-  // every outcome after a Claude run carries what that run cost (the brain keeps the daily / monthly totals and halts at the budget)
-  return acc.usage ? { ...out, usage: acc.usage } : out;
+  let out;
+  try {
+    out = await runJobCore(job, ctx, acc);
+  } finally {
+    // the meter is closed whatever happened (a thrown error must not leave the forwarder accepting calls for a finished job)
+    if (acc.metered === undefined) acc.metered = ctx.meter?.end(job.id) ?? null;
+  }
+  // every outcome after a Claude run says it ran and what it cost: from the forwarder's meter when it saw any call (the real usage of every
+  // response), else from the result event (forwarder off). A job that ran Claude with NO reading at all is flagged so the brain charges the
+  // pessimistic per-job amount, never $0 (money re-review C1).
+  const metered = acc.metered && acc.metered.calls > 0 ? acc.metered : null;
+  const usage = metered ? { model: acc.model, inputTokens: metered.inputTokens, outputTokens: metered.outputTokens, cacheReadTokens: metered.cacheReadTokens, cacheWriteTokens: metered.cacheWriteTokens, costUsd: metered.usd } : acc.usage;
+  return { ...out, ...(acc.claudeRan ? { claudeRan: true, metered: !!metered } : {}), ...(usage ? { usage } : {}) };
 }
 
 const MODELS = new Set(['haiku', 'sonnet', 'opus']);
@@ -184,17 +194,21 @@ async function runJobCore(job, ctx, acc) {
     let result = null;
     let badAuthSource = null;
     // model routing: the brain's per-job choice (haiku | sonnet | opus), else the configured default; recorded with the cost
-    const model = MODELS.has(job.model) ? job.model : cfg.claudeModel;
+    const alias = MODELS.has(job.model) ? job.model : cfg.claudeModel;
+    const model = MODEL_IDS[alias] ?? alias; // the pinned model id, so the price table matches what is billed
+    acc.model = model;
+    acc.claudeRan = true;
+    ctx.meter?.begin({ id: job.id, model, budgetUsd: ctx.jobBudgetUsd });
     const table = priceTable(env);
     const mode = cfg.claudeAuth ?? (creds.claudeToken ? 'max' : 'login');
     log(`job ${job.id}: claude (${model}, auth ${mode}, cap ${Math.round(left() / 60000)} min)`);
     // credential: api -> the placeholder + the loopback forwarder (it holds the real key), or the key itself when the forwarder is off;
     // max -> the OAuth token on fd 3; login (Mac) -> nothing, the CLI's own login
     const authEnv = mode === 'api' ? (cfg.anthropicBaseUrl ? { ANTHROPIC_BASE_URL: cfg.anthropicBaseUrl, ANTHROPIC_API_KEY: cfg.anthropicPlaceholderKey } : { ANTHROPIC_API_KEY: creds.apiKey }) : creds.claudeToken ? { CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR: '3' } : {};
-    r = await runUntrusted(cfg.claudeBin, ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--model', model, '--max-turns', String(cfg.maxTurns), ...claudePermissionArgs(cfg, repoCfg, kind)], {
+    r = await runUntrusted(cfg.claudeBin, ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--model', model, '--max-turns', String(cfg.maxTurns), ...(mode === 'api' && ctx.jobBudgetUsd ? ['--max-budget-usd', ctx.jobBudgetUsd.toFixed(2)] : []), ...claudePermissionArgs(cfg, repoCfg, kind)], {
       timeoutMs: left(),
       ...(mode === 'max' && creds.claudeToken ? { fd3: creds.claudeToken } : {}),
-      extraEnv: { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(cfg.maxOutputTokens ?? 16000), ...authEnv },
+      extraEnv: { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(cfg.maxOutputTokens ?? 16000), ANTHROPIC_SMALL_FAST_MODEL: model, CLAUDE_CODE_SUBAGENT_MODEL: model, ...authEnv },
       onLine: (line) => {
         let ev;
         try {
@@ -209,6 +223,7 @@ async function runJobCore(job, ctx, acc) {
       },
     });
     acc.usage = jobUsage(result, model, table);
+    acc.metered = ctx.meter?.end(job.id) ?? null;
     if (badAuthSource) return { status: 'could_not_fix', note: `claude authenticated from '${badAuthSource}', expected '${expectedApiKeySource(mode)}'; aborted (billable-credential tripwire)` };
     if (r.timedOut || left() === 0) return { status: 'timed_out', note: `no fix within the ${Math.round(capMs / 60000)}-minute cap` };
     const text = String(result?.result ?? '');

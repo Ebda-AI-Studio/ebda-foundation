@@ -12,19 +12,20 @@
 // HANDS_OS_HOME (where ops/merge-gate.sh lives); HANDS_USAGE_THRESHOLD_PCT (1..100, else every job is refused);
 // HANDS_GITLEAKS (gitleaks binary, optional); USAGE_STATE / USAGE_SNAPSHOT (Mac usage sources).
 // Exit: 0 = ran (outcomes reported, whatever they were); 2 = could not start (config, brain unreachable); 64 = usage.
-import { readdirSync, rmSync } from 'node:fs';
+import { appendFileSync, readdirSync, rmSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { brainClient, recordingBrain } from './lib/brain-client.mjs';
 import { loadConfig, parseThreshold } from './lib/config.mjs';
 import { dryRunExec } from './lib/dry-run.mjs';
-import { ANTHROPIC_PLACEHOLDER_KEY, claudeAllowList, proxyEnv, startAnthropicForwarder, startProxy, startRegistryMirror, testsEnv } from './lib/egress.mjs';
+import { claudeAllowList, newRunKey, proxyEnv, startAnthropicForwarder, startProxy, startRegistryMirror, testsEnv } from './lib/egress.mjs';
 import { authModeOf, billableKeyTripwire } from './lib/auth.mjs';
 import { CLAUDE_ISOLATION } from './lib/job.mjs';
 import { exec as realExec } from './lib/exec.mjs';
 import { asSandbox, untrustedEnv } from './lib/git.mjs';
 import { runBatch } from './lib/run.mjs';
 import { BudgetOnlyGuard, UsageGuard } from './lib/usage-guard.mjs';
+import { priceTable } from './lib/prices.mjs';
 
 /** Credentials the hands hold in memory; no child process inherits them from the hands' env. */
 export const CRED_KEYS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'HANDS_GH_TOKENS', 'HANDS_TOKEN', 'HANDS_MAC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'];
@@ -177,15 +178,38 @@ export async function main(argv = process.argv.slice(2), env = process.env, out 
   let testsProxy = null;
   let mirror = null;
   let forwarder = null;
+  let meter;
   if (cfg.sandboxed && !args.dryRun) {
     cfg.claudeAuth = mode;
     // F-03: the model API is reached ONLY through the loopback forwarder (messages endpoints, our credential); Claude's CONNECT proxy then
     // has nothing in its allowlist. HANDS_ANTHROPIC_FORWARDER=0 falls back to CONNECT api.anthropic.com (see lib/egress.mjs).
     const secret = mode === 'api' ? env.ANTHROPIC_API_KEY : env.CLAUDE_CODE_OAUTH_TOKEN;
     if (env.HANDS_ANTHROPIC_FORWARDER !== '0') {
-      forwarder = await startAnthropicForwarder({ mode, secret, log });
+      // C1 + C2: a random per-run key (Claude gets it, the forwarder requires it); every API response is metered and posted to the brain as it
+      // happens, and appended to a local ledger, so a killed or timed-out job still has its spend on record
+      const runKey = newRunKey();
+      const ledger = join(cfg.workdir, 'meter.jsonl');
+      forwarder = await startAnthropicForwarder({
+        mode, secret, runKey, log, maxTokensCeiling: cfg.maxOutputTokens ?? 16000, prices: priceTable(env),
+        onMeter: (m) => {
+          try {
+            appendFileSync(ledger, `${JSON.stringify({ at: Date.now(), runId: batch?.runId ?? args.run, ...m })}\n`);
+          } catch {
+            /* a full disk must not stop the meter's report */
+          }
+          const runId = batch?.runId ?? args.run;
+          brain.meter({ runId, ...m }).catch((e) => log(`meter report failed: ${e.message}`));
+        },
+      });
       cfg.anthropicBaseUrl = `http://127.0.0.1:${forwarder.port}`;
-      cfg.anthropicPlaceholderKey = ANTHROPIC_PLACEHOLDER_KEY;
+      cfg.anthropicPlaceholderKey = runKey;
+      meter = {
+        begin: (j) => {
+          forwarder.begin(j);
+          brain.meter({ runId: batch?.runId ?? args.run, jobId: j.id, started: true }).catch((e) => log(`meter start beacon failed: ${e.message}`));
+        },
+        end: (id) => forwarder.end(id),
+      };
     }
     proxy = await startProxy({ allow: forwarder ? [] : claudeAllowList(cfg.egressAllow), log });
     cfg.proxyEnv = proxyEnv(proxy.port);
@@ -208,7 +232,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, out 
     log,
   });
   log(`run ${batch.runId} (${batch.kind}): ${batch.jobs.length} job(s), per-job cap ${batch.perJobCapMin} min, usage threshold ${thresholdPct}% (brain ${batch.usageThresholdPct ?? 'n/a'}%)`);
-  const results = await runBatch(batch, { brain, cfg, exec, usage, log, keepWorkdir: false, env: childEnv, creds });
+  const results = await runBatch(batch, { brain, cfg, exec, usage, log, keepWorkdir: false, env: childEnv, creds, meter });
   for (const p of [proxy, testsProxy, mirror, forwarder]) {
     if (!p) continue;
     if (p.denied.size) log(`egress denied during the run: ${[...p.denied].join(', ')}`);

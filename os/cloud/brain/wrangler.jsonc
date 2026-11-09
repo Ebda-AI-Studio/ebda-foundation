@@ -51,9 +51,13 @@
     // F-01: "1" halts every container start (the DO `halt` key, set by cost-stop and POST /api/halt, is the first line of defence)
     "HANDS_HALT": "0",
     // RR-hands-api-auth: the cloud hands run on a Console API key (ANTHROPIC_API_KEY secret, hands container only), paid from the $200/month
-    // API credit. 'max' stays selectable. api mode REFUSES to start until HANDS_API_SPEND_LIMIT_USD (the hard limit set in the Console) is rendered.
+    // API credit. 'max' stays selectable. HANDS_API_SPEND_LIMIT_USD is the hard limit Ahmad set in the Console ($200); api mode refuses to start
+    // without a positive value, and the monthly budget below must stay under it (config test).
     "HANDS_CLAUDE_AUTH": "api",
-    "HANDS_API_SPEND_LIMIT_USD": "__HANDS_API_SPEND_LIMIT_USD__",
+    "HANDS_API_SPEND_LIMIT_USD": "200",
+    // the pessimistic charge for a Claude run nothing metered (never $0) and the per-job hard budget the forwarder enforces
+    "HANDS_JOB_PESSIMISTIC_USD": "2",
+    "HANDS_JOB_BUDGET_USD": "5",
     // LEAN mode: sonnet by default, haiku for triage / summaries, opus only for jobs flagged security-design or money-design, capped per day
     "HANDS_DEFAULT_MODEL": "sonnet",
     "HANDS_OPUS_JOBS_PER_DAY": "2",
@@ -62,6 +66,9 @@
     "HANDS_DAILY_BUDGET_USD": "10",
     "HANDS_MAC_JOBS_PER_DAY": "5",
     "INGEST_PER_DAY": "1000",
+    // the footprint watcher halts the hands when the estimated Cloudflare month reaches CF_STOP_USD: Ahmad's own alerts are $10 (warn) and $20 (stop)
+    "CF_WARN_USD": "10",
+    "CF_STOP_USD": "20",
     // the brain's own public URL the hands container calls back (rendered from OS_BRAIN_HOST)
     "HANDS_BRAIN_URL": "__HANDS_BRAIN_URL__",
     "ACCESS_TEAM_DOMAIN": "__ACCESS_TEAM_DOMAIN__",

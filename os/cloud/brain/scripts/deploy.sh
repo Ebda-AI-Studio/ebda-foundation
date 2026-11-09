@@ -35,7 +35,6 @@ sub = {
     "__DEPLOYED_REPOS__": os.environ.get("OS_BRAIN_DEPLOYED_REPOS") or "__DEPLOYED_REPOS__",
     "__ACCESS_TEAM_DOMAIN__": os.environ.get("OS_BRAIN_ACCESS_TEAM_DOMAIN") or "__ACCESS_TEAM_DOMAIN__",
     "__ACCESS_AUD__": os.environ.get("OS_BRAIN_ACCESS_AUD") or "__ACCESS_AUD__",
-    "__HANDS_API_SPEND_LIMIT_USD__": os.environ.get("OS_BRAIN_API_SPEND_LIMIT_USD") or "__HANDS_API_SPEND_LIMIT_USD__",
     "__HANDS_BRAIN_URL__": ("https://" + os.environ["OS_BRAIN_HOST"].strip()) if os.environ.get("OS_BRAIN_HOST", "").strip() else "__HANDS_BRAIN_URL__",
 }
 for k, v in sub.items():
@@ -46,6 +45,12 @@ if host:
     if not re.fullmatch(r"[a-z0-9.-]+", host):
         sys.exit("deploy: OS_BRAIN_HOST must be a bare hostname")
     t = t.replace('"workers_dev": false,', '"workers_dev": false,\n  "routes": [{ "pattern": "%s", "custom_domain": true }],' % host, 1)
+# the declared Console spend limit: the committed default (200) unless HANDS_API_SPEND_LIMIT_USD is set in the environment
+lim = os.environ.get("HANDS_API_SPEND_LIMIT_USD")
+if lim:
+    if not lim.replace(".", "", 1).isdigit() or float(lim) <= 0:
+        sys.exit("deploy: HANDS_API_SPEND_LIMIT_USD must be a positive number")
+    t = t.replace('"HANDS_API_SPEND_LIMIT_USD": "200"', '"HANDS_API_SPEND_LIMIT_USD": "%s"' % lim)
 ht = os.environ.get("OS_BRAIN_HEALTH_TARGETS")
 if ht:
     json.loads(ht)  # fail loud on a malformed list

@@ -401,6 +401,27 @@ describe('F-05: the footprint watcher', () => {
     expect(s.halt).toBeNull();
     expect(s.findings.recent.some((f) => f.kind === 'cf-usage-warn')).toBe(true);
   });
+  it('the dollar view: an estimated month at or above $20 halts (Ahmad\'s alert level) even when no single metric is over its own limit; $10 warns; under it is quiet', async () => {
+    const huge = { CF_KV_WRITES_DAY: '100000000', CF_DO_REQUESTS_DAY: '100000000' }; // per-metric limits out of the way
+    const stopRun = await run({ ...ok, kvOperationsAdaptiveGroups: 200_000 }, huge); // 6M writes/month = $25
+    expect((await stopRun.run((b) => b.state(NOW))).halt).toMatch(/estimated spend \$25\.\d\d\/month/);
+    expect(stopRun.sent.filter((t) => /estimated spend/.test(t))).toHaveLength(1);
+    const warnRun = await run({ ...ok, kvOperationsAdaptiveGroups: 100_000 }, huge); // 3M writes/month = $10
+    const s = await warnRun.run((b) => b.state(NOW));
+    expect(s.halt).toBeNull();
+    expect(s.findings.recent.some((f) => f.kind === 'cf-usage-warn' && /estimated spend/.test(f.title))).toBe(true);
+    const quiet = await run(ok, huge);
+    expect((await quiet.run((b) => b.state(NOW))).halt).toBeNull();
+    await quiet.run((b) => b.digest(NOW));
+    expect(quiet.sent.at(-1)).toMatch(/; est \$0\.\d\d\/month\./);
+  });
+  it('estimateMonthlyUsd follows the published rates above the included amounts', async () => {
+    const { estimateMonthlyUsd } = await import('../src/watchers/cf-usage');
+    expect(estimateMonthlyUsd({ doRequests: 1000, kvWrites: 1000, workersRequests: 1000, containerVcpuSec: 100 })).toBe(0); // inside the allowances
+    expect(estimateMonthlyUsd({ kvWrites: 200_000 })).toBeCloseTo((6_000_000 - 1_000_000) / 1e6 * 5, 6);
+    expect(estimateMonthlyUsd({ doRequests: 2_000_000 })).toBeCloseTo((60_000_000 - 1_000_000) / 1e6 * 0.15, 6);
+    expect(estimateMonthlyUsd({ containerVcpuSec: 3600 * 24 })).toBeGreaterThan(20); // a standard-1 container up all day
+  });
   it('GraphQL 200 + errors: a watcher-error and "footprint unknown", NEVER 0 and never a halt', async () => {
     const h = await run({ ...ok, containersUsageAdaptiveGroups: 'error' });
     const s = await h.run((b) => b.state(NOW));
@@ -480,5 +501,88 @@ describe('F-15: the cron fan-out stays far under the subrequest limit', () => {
     }
     // every watcher in a group has a declared worst case (a new watcher without one fails here, not in production)
     for (const e of Object.values(GROUPS).flat()) expect(worst[e.id], e.id).toBeDefined();
+  });
+});
+
+describe('C1 / I1: spend is metered as it happens, charged pessimistically when unseen, and recorded even late', () => {
+  const NOW = T0;
+  async function started(h: Awaited<ReturnType<typeof harness>>, p: Rec, n = 1) {
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 5 }, NOW));
+    for (let i = 0; i < n; i++) await h.run((b) => b.ingestFinding(docs({ key: `m${i}` }), NOW + i));
+    const r = (await h.run((b) => b.runNightly(NOW + HOUR))) as { runId: string };
+    return { runId: r.runId, jobs: p.started[0]!.jobs };
+  }
+  const call = (costUsd: number) => ({ model: 'claude-sonnet-5-5', inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd });
+  const monthSpend = async (h: Awaited<ReturnType<typeof harness>>, at = NOW + 2 * HOUR) => (await h.run((b) => b.state(at))).spend.month;
+
+  it('meter posts add spend per call, per run; an outcome that follows does not charge the job twice', async () => {
+    const p = rec();
+    const h = await harness(p);
+    const { runId, jobs } = await started(h, p);
+    await h.run((b) => b.recordMeter(runId, { jobId: jobs[0]!.id, started: true }));
+    await h.run((b) => b.recordMeter(runId, { jobId: jobs[0]!.id, ...call(0.4) }, NOW + HOUR));
+    await h.run((b) => b.recordMeter(runId, { jobId: jobs[0]!.id, ...call(0.6) }, NOW + HOUR));
+    expect(await monthSpend(h)).toBeCloseTo(1.0, 6);
+    await h.run((b) => b.recordOutcome(jobs[0]!.id, { status: 'merged', claudeRan: true, metered: true, usage: call(1.0) }, NOW + 2 * HOUR));
+    expect(await monthSpend(h)).toBeCloseTo(1.0, 6); // the meter already charged it
+  });
+  it('a meter post for a job outside the run is refused (nothing charged)', async () => {
+    const p = rec();
+    const h = await harness(p);
+    const { jobs } = await started(h, p);
+    expect(await h.run((b) => b.recordMeter('run_other', { jobId: jobs[0]!.id, ...call(9) }))).toEqual({ ok: false });
+    expect(await monthSpend(h)).toBe(0);
+  });
+  it('C1: a job that started Claude, was killed, and is swept with NO reading is charged the pessimistic amount (config, never $0), once per attempt', async () => {
+    const p = rec();
+    const h = await harness(p, { HANDS_JOB_PESSIMISTIC_USD: '3' });
+    const { runId, jobs } = await started(h, p);
+    await h.run((b) => b.recordMeter(runId, { jobId: jobs[0]!.id, started: true }));
+    expect(await h.run((b) => b.sweepStuckRuns(NOW + HOUR + 200 * MIN))).toBe(1);
+    expect(await monthSpend(h, NOW + 5 * HOUR)).toBeCloseTo(3, 6);
+    // the job is requeued; a second attempt that dies again is charged again (each attempt is real spend)
+    const r2 = (await h.run((b) => b.runNightly(NOW + DAY))) as { runId: string };
+    const job2 = p.started[1]!.jobs[0]!;
+    await h.run((b) => b.recordMeter(r2.runId, { jobId: job2.id, started: true }));
+    await h.run((b) => b.sweepStuckRuns(NOW + DAY + 200 * MIN));
+    expect(await monthSpend(h, NOW + DAY + 5 * HOUR)).toBeCloseTo(6, 6);
+  });
+  it('a swept job that never started Claude (queued behind a dead run) is not charged; a metered one is not charged again', async () => {
+    const p = rec();
+    const h = await harness(p, { HANDS_JOB_PESSIMISTIC_USD: '3' });
+    const { runId, jobs } = await started(h, p, 2);
+    await h.run((b) => b.recordMeter(runId, { jobId: jobs[0]!.id, started: true }));
+    await h.run((b) => b.recordMeter(runId, { jobId: jobs[0]!.id, ...call(0.5) }, NOW + HOUR));
+    await h.run((b) => b.sweepStuckRuns(NOW + HOUR + 200 * MIN));
+    expect(await monthSpend(h, NOW + 5 * HOUR)).toBeCloseTo(0.5, 6);
+  });
+  it('an outcome with claudeRan and no reading at all is charged the pessimistic amount; one with no Claude run costs nothing', async () => {
+    const p = rec();
+    const h = await harness(p, { HANDS_JOB_PESSIMISTIC_USD: '2' });
+    const { jobs } = await started(h, p, 2);
+    await h.run((b) => b.recordOutcome(jobs[0]!.id, { status: 'timed_out', claudeRan: true, metered: false }, NOW + 2 * HOUR));
+    await h.run((b) => b.recordOutcome(jobs[1]!.id, { status: 'could_not_fix', note: 'clone failed' }, NOW + 2 * HOUR));
+    expect(await monthSpend(h)).toBeCloseTo(2, 6);
+  });
+  it('I1: the usage of a LATE outcome (the job was already swept) is still recorded, and only then is the state change refused', async () => {
+    const p = rec();
+    const h = await harness(p);
+    const { jobs } = await started(h, p);
+    await h.run((b) => b.sweepStuckRuns(NOW + HOUR + 200 * MIN)); // times the run out: the job is no longer `running`
+    const r = await h.run((b) => b.recordOutcome(jobs[0]!.id, { status: 'merged', claudeRan: true, usage: call(1.5) }, NOW + 6 * HOUR));
+    expect(r).toMatchObject({ ok: false, reason: expect.stringMatching(/not running/) });
+    expect(await monthSpend(h, NOW + 7 * HOUR)).toBeCloseTo(1.5, 6);
+    // a second copy of the same late outcome does not charge twice
+    await h.run((b) => b.recordOutcome(jobs[0]!.id, { status: 'merged', claudeRan: true, usage: call(1.5) }, NOW + 8 * HOUR));
+    expect(await monthSpend(h, NOW + 9 * HOUR)).toBeCloseTo(1.5, 6);
+  });
+  it('POST /hands/meter needs the run token; a Mac token or another run\'s token is refused', async () => {
+    const body = JSON.stringify({ runId: 'run_x', jobId: 'job_x', started: true });
+    expect((await SELF.fetch('https://brain.test/hands/meter', { method: 'POST', body })).status).toBe(401);
+    expect((await SELF.fetch('https://brain.test/hands/meter', { method: 'POST', headers: { Authorization: 'Bearer test-mac-token' }, body })).status).toBe(401);
+    const tok = await runToken('test-hands-token', 'run_x');
+    expect((await SELF.fetch('https://brain.test/hands/meter', { method: 'POST', headers: { Authorization: `Bearer ${tok}` }, body })).status).toBe(200);
+    const bad = JSON.stringify({ runId: 'run_x', jobId: 'job_x', model: 'm', inputTokens: -1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 1 });
+    expect((await SELF.fetch('https://brain.test/hands/meter', { method: 'POST', headers: { Authorization: `Bearer ${tok}` }, body: bad })).status).toBe(400);
   });
 });

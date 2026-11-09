@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { recordingBrain } from '../lib/brain-client.mjs';
 import { validateConfig } from '../lib/config.mjs';
-import { CLAUDE_ISOLATION, claudePermissionArgs, runJob } from '../lib/job.mjs';
+import { CLAUDE_ISOLATION, claudePermissionArgs, killUntrustedProcesses, runJob } from '../lib/job.mjs';
 import { runBatch } from '../lib/run.mjs';
 import { UsageGuard } from '../lib/usage-guard.mjs';
 
@@ -497,5 +497,43 @@ describe('N-3b (final review): no process of an unprivileged uid outlives its jo
   it('outside the container nothing is killed (the Mac user is Ahmad)', async () => {
     const { calls } = await run(job('docs'));
     expect(calls.some((c) => c.cmd === 'pkill')).toBe(false);
+  });
+});
+
+describe('N-3b pin (final review 5): the end-of-job kill is by uid, bounded, verified, and never by name', () => {
+  const run = async (survive) => {
+    const calls = [];
+    const exec = async (cmd, args) => {
+      calls.push([cmd, ...args]);
+      if (cmd === 'pgrep') return { code: survive ? 0 : 1, stdout: survive ? '4242\n' : '', stderr: '', timedOut: false };
+      return { code: 0, stdout: '', stderr: '', timedOut: false };
+    };
+    const reason = await killUntrustedProcesses({ sandboxUser: 'node', testUser: 'tester' }, exec);
+    return { calls, reason };
+  };
+  it('a clean kill: one pkill + one pgrep per uid, both by -u, nothing else', async () => {
+    const { calls, reason } = await run(false);
+    expect(reason).toBeNull();
+    expect(calls).toEqual([['pkill', '-KILL', '-u', 'node'], ['pgrep', '-u', 'node'], ['pkill', '-KILL', '-u', 'tester'], ['pgrep', '-u', 'tester']]);
+  });
+  it('a survivor is retried exactly 5 times, then the job fails with the uid named', async () => {
+    const { calls, reason } = await run(true);
+    expect(reason).toMatch(/processes of node survived/);
+    expect(calls.filter((c) => c[0] === 'pkill')).toHaveLength(5);
+    expect(calls.every((c) => c.includes('-u'))).toBe(true);
+  });
+  it('no process kill anywhere in the hands is by name pattern (never -f, never killall)', async () => {
+    const { readFileSync, readdirSync } = await import('node:fs');
+    const root = join(import.meta.dirname, '..');
+    const files = [...readdirSync(join(root, 'lib')).map((f) => join(root, 'lib', f)), join(root, 'run-batch.mjs'), join(root, 'entrypoint.sh')].filter((f) => /\.(mjs|sh)$/.test(f));
+    for (const f of files) {
+      const text = readFileSync(f, 'utf8');
+      expect(text, f).not.toMatch(/pkill\s+-[a-zA-Z]*f|killall|pkill['"],\s*\[[^\]]*['"]-f/);
+    }
+  });
+  it('a missing sandbox user (the Mac) kills nothing', async () => {
+    const calls = [];
+    expect(await killUntrustedProcesses({}, async (...a) => (calls.push(a), { code: 0 }))).toBeNull();
+    expect(calls).toEqual([]);
   });
 });

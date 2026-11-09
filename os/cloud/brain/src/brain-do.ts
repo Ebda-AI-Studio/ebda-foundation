@@ -112,6 +112,7 @@ export interface BrainState {
 export interface Footprint {
   at: number;
   unknown: boolean;
+  estUsd?: number;
   containerMin?: number;
   doRequests?: number;
   doRowsWritten?: number;
@@ -746,6 +747,11 @@ export class BrainDO extends DurableObject<Env> {
       if (String(run.provider) === 'cloudflare-sandbox') await this.hands.stop?.(run.kind as RunKind, { halt: false }).catch(() => undefined);
       for (const j of jobs) {
         const id = String(j.id);
+        // a swept job that began Claude but produced no meter reading is charged the pessimistic amount (the run died with its spend unseen)
+        if (this.getMeta(`job:started:${id}`) && this.getMeta(`job:metered:${id}`) === null && !this.getMeta(`job:billed:${id}`)) {
+          this.setMeta(`job:billed:${id}`, 1);
+          await this.addSpend({ model: 'unmetered', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: this.pessimisticJobUsd() }, now);
+        }
         if (urgent) {
           await this.recordOutcome(id, { status: 'timed_out', note: `no outcome within ${run.cap_min} min` }, now);
           continue;
@@ -883,8 +889,11 @@ export class BrainDO extends DurableObject<Env> {
   async recordOutcome(jobId: string, o: JobOutcome, now: number = Date.now()): Promise<{ ok: boolean; reason?: string }> {
     const j = this.row(`SELECT j.*, f.title FROM jobs j JOIN findings f ON f.fp = j.fp WHERE j.id = ?`, jobId);
     if (!j) return { ok: false, reason: 'no such job' };
+    // I1 (money re-review): spend is recorded FIRST, even for a late outcome of a job that is no longer running (swept, timed out); only then is
+    // the state change refused. The meter (every API response, posted as it happens) is the source of truth; the outcome's own usage block is
+    // used only when the forwarder metered nothing (fallback), and a job that ran Claude with no reading at all is charged the pessimistic amount.
+    await this.billOutcome(jobId, o, now);
     if (j.status !== 'running') return { ok: false, reason: `job is ${j.status}, not running` };
-    if (o.usage) await this.addSpend(o.usage, now);
     if (o.status === 'skipped_usage') {
       // the hands stopped at the usage threshold before this job: back to the queue, not a failure
       if (j.lane === 'urgent') {
@@ -916,6 +925,45 @@ export class BrainDO extends DurableObject<Env> {
       }
     }
     return { ok: true };
+  }
+
+  /** Pessimistic per-job charge for a Claude run nothing metered (config HANDS_JOB_PESSIMISTIC_USD, default 2): never $0. */
+  pessimisticJobUsd(): number {
+    return numberVar(this.env.HANDS_JOB_PESSIMISTIC_USD, 2);
+  }
+
+  /** The forwarder's meter: one API response's real usage (or a job-start beacon), posted as it happens. Idempotent per call id. */
+  async recordMeter(runId: string, m: { jobId: string; started?: boolean; callId?: string; model?: string; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; costUsd?: number }, now: number = Date.now()): Promise<{ ok: boolean }> {
+    const owner = this.runOfJob(m.jobId);
+    if (!owner || owner.runId !== runId) return { ok: false };
+    if (m.started) {
+      // a new attempt (a requeued job starts again): its meter and billing flags start clean, the earlier attempt was charged when it ended
+      this.sql.exec(`DELETE FROM meta WHERE k IN ('job:metered:${m.jobId}', 'job:billed:${m.jobId}')`);
+      this.setMeta(`job:started:${m.jobId}`, 1);
+      return { ok: true };
+    }
+    const usage: JobUsage = { model: String(m.model ?? 'unknown'), inputTokens: Number(m.inputTokens ?? 0), outputTokens: Number(m.outputTokens ?? 0), cacheReadTokens: Number(m.cacheReadTokens ?? 0), cacheWriteTokens: Number(m.cacheWriteTokens ?? 0), costUsd: Number(m.costUsd ?? 0) };
+    this.setMeta(`job:started:${m.jobId}`, 1);
+    this.setMeta(`job:metered:${m.jobId}`, (this.getMeta<number>(`job:metered:${m.jobId}`) ?? 0) + usage.costUsd);
+    await this.addSpend(usage, now);
+    return { ok: true };
+  }
+
+  /** Charge a job's outcome exactly once (see recordOutcome). */
+  private async billOutcome(jobId: string, o: JobOutcome, now: number): Promise<void> {
+    if (this.getMeta(`job:billed:${jobId}`)) return;
+    const metered = this.getMeta<number>(`job:metered:${jobId}`);
+    if (metered !== null) {
+      this.setMeta(`job:billed:${jobId}`, 1); // the meter already charged every call
+      return;
+    }
+    if (o.usage) {
+      this.setMeta(`job:billed:${jobId}`, 1);
+      await this.addSpend(o.usage, now);
+    } else if (o.claudeRan === true || this.getMeta(`job:started:${jobId}`)) {
+      this.setMeta(`job:billed:${jobId}`, 1);
+      await this.addSpend({ model: 'unmetered', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: this.pessimisticJobUsd() }, now);
+    }
   }
 
   reportUsage(u: Omit<UsageReport, 'reportedAt'>, now: number = Date.now()): void {
@@ -996,7 +1044,7 @@ export class BrainDO extends DurableObject<Env> {
       usageNote: refused && now - refused.at < DAY ? refused.reason : null,
       halted: this.halted(),
       budget: (() => { const sp = this.spent(now); const b = this.budgets(); return `Hands spend: $${sp.month.toFixed(2)} of $${b.monthly} this month ($${sp.day.toFixed(2)} today of $${b.daily}).`; })(),
-      footprint: (() => { const f = this.getMeta<Footprint>('footprint:last'); if (!f) return null; if (f.unknown) return `Footprint (24 h): unknown (${f.note ?? 'read failed'}).`; return `Footprint (24 h): containers ${Math.round(f.containerMin ?? 0)} min, DO requests ${f.doRequests ?? 0}, DO rows written ${f.doRowsWritten ?? 0}, KV writes ${f.kvWrites ?? 0}.`; })(),
+      footprint: (() => { const f = this.getMeta<Footprint>('footprint:last'); if (!f) return null; if (f.unknown) return `Footprint (24 h): unknown (${f.note ?? 'read failed'}).`; return `Footprint (24 h): containers ${Math.round(f.containerMin ?? 0)} min, DO requests ${f.doRequests ?? 0}, DO rows written ${f.doRowsWritten ?? 0}, KV writes ${f.kvWrites ?? 0}${f.estUsd === undefined ? '' : `; est $${f.estUsd.toFixed(2)}/month`}.`; })(),
       requeued: (() => { const q = this.getMeta<{ at: number; n: number }>('sweep:requeued'); return q && now - q.at < DAY ? q.n : 0; })(),
     });
     const r = await this.emit(msg, now);

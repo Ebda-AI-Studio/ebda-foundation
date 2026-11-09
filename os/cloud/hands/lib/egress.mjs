@@ -100,62 +100,164 @@ export function testsEnv(proxyPort, mirrorPort) {
 }
 
 // ---- F-03: the model-API forwarder -------------------------------------------------------------------------------------------------
-// Claude runs with ANTHROPIC_BASE_URL pointing here (plain HTTP on loopback). The forwarder is the ONLY way to the model API: it allows
-// POST /v1/messages and POST /v1/messages/count_tokens, refuses everything else (the Files API, GETs, other paths), and sets the credential
-// itself: api mode replaces x-api-key with the real key (Claude only ever holds a placeholder, so a prompt-injected process has no key to
-// steal and an attacker's key in a request is overwritten, never forwarded); max mode requires the request to carry exactly our OAuth bearer.
-// The CONNECT proxy for Claude then has an empty allowlist: there is no direct TLS path to api.anthropic.com at all.
-// NOT VERIFIED: that Claude Code 2.1.309 accepts a placeholder key / a loopback base URL end to end (deploy smoke; ruling RR-hands-api-auth).
-// HANDS_ANTHROPIC_FORWARDER=0 falls back to CONNECT api.anthropic.com with the real credential in Claude's env.
-export const ANTHROPIC_PLACEHOLDER_KEY = 'sk-ant-api03-hands-local-placeholder-not-a-real-key';
-const FWD_PATHS = new Set(['/v1/messages', '/v1/messages/count_tokens']);
-const FWD_PASS = ['content-type', 'accept', 'anthropic-version', 'anthropic-beta', 'user-agent', 'x-app', 'accept-encoding'];
+// Claude runs with ANTHROPIC_BASE_URL pointing here (plain HTTP on 127.0.0.1). The forwarder is the ONLY way to the model API and it is also the
+// METER (RR-hands-api-auth, money re-review C1):
+//   - it REQUIRES the per-run key: api mode = a random placeholder (generated per run, handed to Claude only), compared in constant time; max mode =
+//     our OAuth bearer. Any other local process (the tests uid, a postinstall) has no key and gets 401, so it cannot spend through the forwarder (C2);
+//   - POST /v1/messages and /v1/messages/count_tokens only; the body must be JSON, its `model` must be the model routed for the ACTIVE job (anything
+//     else, e.g. opus on a sonnet run, is refused), `max_tokens` is clamped to the per-kind ceiling, `inference_geo` is refused (a 1.1x price tier);
+//   - once the active job's metered spend reaches its budget, further calls are refused (429) so a runaway job cannot keep spending (I2);
+//   - it sets the real credential itself (api mode: Claude only ever holds the placeholder) and meters each response's real `usage`
+//     (input, output, cache read, cache writes split 5m / 1h; streaming or not) through `onMeter`, as it happens;
+//   - it asks upstream for an uncompressed body (identity) so the usage can be read.
+// NOT VERIFIED: that Claude Code 2.1.309 works end to end with a placeholder key and a loopback base URL (deploy smoke; HANDS_ANTHROPIC_FORWARDER=0
+// falls back to a direct key and CONNECT, metered only from the result event).
+import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { costOf, priceTable } from './prices.mjs';
 
-export function startAnthropicForwarder({ mode, secret, upstream = { host: 'api.anthropic.com', port: 443, tls: true }, log = () => {}, maxBody = 16 * 1024 * 1024 }) {
+export const ANTHROPIC_PLACEHOLDER_KEY = 'sk-ant-api03-hands-local-placeholder-not-a-real-key';
+/** A fresh unguessable placeholder per run (C2). */
+export const newRunKey = () => `sk-ant-api03-hands-${randomBytes(24).toString('hex')}`;
+const FWD_PATHS = new Set(['/v1/messages', '/v1/messages/count_tokens']);
+const FWD_PASS = ['content-type', 'accept', 'anthropic-version', 'anthropic-beta', 'user-agent', 'x-app'];
+
+function safeEqual(a, b) {
+  const x = Buffer.from(String(a ?? ''));
+  const y = Buffer.from(String(b ?? ''));
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/** Usage of one response body: JSON ({usage}) or SSE (message_start usage + message_delta output_tokens). null when none is found. */
+export function usageFromResponse(text) {
+  const t = String(text ?? '');
+  try {
+    const j = JSON.parse(t);
+    if (j && typeof j === 'object' && j.usage) return { model: j.model, usage: j.usage };
+  } catch {
+    /* maybe SSE */
+  }
+  let usage = null;
+  let model;
+  for (const line of t.split('\n')) {
+    if (!line.startsWith('data:')) continue;
+    let ev;
+    try {
+      ev = JSON.parse(line.slice(5).trim());
+    } catch {
+      continue;
+    }
+    if (ev.type === 'message_start' && ev.message?.usage) {
+      usage = { ...ev.message.usage };
+      model = ev.message.model;
+    } else if (ev.type === 'message_delta' && ev.usage) {
+      usage = { ...(usage ?? {}), ...ev.usage };
+    }
+  }
+  return usage ? { model, usage } : null;
+}
+
+export function startAnthropicForwarder({ mode, secret, runKey, upstream = { host: 'api.anthropic.com', port: 443, tls: true }, log = () => {}, maxBody = 16 * 1024 * 1024, maxTokensCeiling = 16000, prices = priceTable(), onMeter = () => {} }) {
   const denied = new Set();
+  const perJob = new Map();
+  const jobCalls = new Map();
+  const jobTok = new Map();
+  let active = null; // { id, model, budgetUsd }
+  let totalUsd = 0;
+  let calls = 0;
   const refuse = (res, code, why, what) => {
     denied.add(what);
     log(`model API request refused: ${what} (${why})`);
-    res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { type: 'forbidden', message: `hands forwarder: ${why}` } }));
+    res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify({ type: 'error', error: { type: code === 429 ? 'rate_limit_error' : 'permission_error', message: `hands forwarder: ${why}` } }));
   };
   const server = createServer((req, res) => {
     const path = String(req.url ?? '').split('?')[0];
     const what = `${req.method} ${path}`;
+    // the per-run credential first: nothing else is looked at for a caller that does not hold it
+    if (mode === 'api') {
+      if (!safeEqual(req.headers['x-api-key'], runKey)) return refuse(res, 401, 'missing or wrong run key', what);
+    } else {
+      if (req.headers['x-api-key']) return refuse(res, 401, 'an API key is not allowed in max mode', what);
+      if (!safeEqual(req.headers.authorization, `Bearer ${secret}`)) return refuse(res, 401, 'missing or wrong credential', what);
+    }
     if (req.method !== 'POST') return refuse(res, 405, 'only POST', what);
     if (!FWD_PATHS.has(path)) return refuse(res, 403, 'path not allowed (messages only)', what);
-    const apiKey = req.headers['x-api-key'];
-    const auth = req.headers.authorization;
-    if (mode === 'max') {
-      if (apiKey) return refuse(res, 403, 'an API key is not allowed in max mode', what);
-      if (auth !== `Bearer ${secret}`) return refuse(res, 403, 'authorization is not the configured token', what);
-    }
-    const headers = { host: upstream.host };
-    for (const h of FWD_PASS) if (req.headers[h]) headers[h] = req.headers[h];
-    if (mode === 'api') headers['x-api-key'] = secret; // the placeholder (or an attacker's key) never reaches Anthropic
-    else headers.authorization = `Bearer ${secret}`;
+    if (!active) return refuse(res, 409, 'no active job', what);
+    const job = active;
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > maxBody) {
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
+      if (size > maxBody) req.destroy();
+      else chunks.push(c);
     });
     req.on('end', () => {
       if (size > maxBody) return refuse(res, 413, 'body too large', what);
-      const body = Buffer.concat(chunks);
-      headers['content-length'] = String(body.length);
+      let body;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      } catch {
+        return refuse(res, 400, 'body is not JSON', what);
+      }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return refuse(res, 400, 'body is not an object', what);
+      if (body.inference_geo !== undefined) return refuse(res, 403, 'inference_geo is not allowed (price tier)', what);
+      if (body.model !== job.model) return refuse(res, 403, `model ${String(body.model).slice(0, 60)} is not this run's routed model ${job.model}`, what);
+      if (job.budgetUsd !== undefined && (perJob.get(job.id) ?? 0) >= job.budgetUsd) return refuse(res, 429, `job budget $${job.budgetUsd.toFixed(2)} spent`, what);
+      if (path === '/v1/messages' && typeof body.max_tokens === 'number' && body.max_tokens > maxTokensCeiling) body.max_tokens = maxTokensCeiling;
+      const out = Buffer.from(JSON.stringify(body));
+      const headers = { host: upstream.host, 'accept-encoding': 'identity', 'content-length': String(out.length) };
+      for (const h of FWD_PASS) if (req.headers[h]) headers[h] = req.headers[h];
+      if (mode === 'api') headers['x-api-key'] = secret; // the placeholder (or any other key) never reaches Anthropic
+      else headers.authorization = `Bearer ${secret}`;
       const up = (upstream.tls ? httpsRequest : httpRequest)({ host: upstream.host, port: upstream.port, method: 'POST', path: req.url, headers }, (r) => {
         res.writeHead(r.statusCode ?? 502, r.headers);
-        r.pipe(res);
+        const seen = [];
+        let seenBytes = 0;
+        r.on('data', (c) => {
+          res.write(c);
+          if (seenBytes < 32 * 1024 * 1024) {
+            seen.push(c);
+            seenBytes += c.length;
+          }
+        });
+        r.on('end', () => {
+          res.end();
+          if (path !== '/v1/messages' || (r.statusCode ?? 0) >= 400) return;
+          const got = usageFromResponse(Buffer.concat(seen).toString('utf8'));
+          if (!got) {
+            log(`model API response for job ${job.id} had no usage block (metered as unknown)`);
+            return;
+          }
+          const m = costOf(got.usage, got.model ?? job.model, prices);
+          perJob.set(job.id, (perJob.get(job.id) ?? 0) + m.costUsd);
+          totalUsd += m.costUsd;
+          calls++;
+          jobCalls.set(job.id, (jobCalls.get(job.id) ?? 0) + 1);
+          const t = jobTok.get(job.id) ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+          for (const k of Object.keys(t)) t[k] += m[k];
+          jobTok.set(job.id, t);
+          try {
+            onMeter({ jobId: job.id, ...m });
+          } catch (e) {
+            log(`meter callback failed: ${e?.message ?? e}`);
+          }
+        });
       });
       up.on('error', () => res.headersSent || res.writeHead(502).end('upstream error'));
-      up.end(body);
+      up.end(out);
     });
   });
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => resolve({ port: server.address().port, denied, close: () => new Promise((r) => server.close(r)) }));
+    server.listen(0, '127.0.0.1', () =>
+      resolve({
+        port: server.address().port,
+        denied,
+        /** the job whose calls are allowed and metered: its routed model id and dollar budget */
+        begin: (j) => { active = { id: j.id, model: j.model, budgetUsd: j.budgetUsd }; perJob.set(j.id, perJob.get(j.id) ?? 0); },
+        /** what the job cost as metered at the forwarder */
+        end: (id) => { const usd = perJob.get(id) ?? 0; active = null; return { usd, calls: jobCalls.get(id) ?? 0, ...(jobTok.get(id) ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }) }; },
+        spent: () => ({ totalUsd, calls }),
+        close: () => new Promise((r) => server.close(r)),
+      }),
+    );
   });
 }

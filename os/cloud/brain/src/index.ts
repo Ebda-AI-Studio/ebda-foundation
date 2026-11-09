@@ -175,9 +175,18 @@ async function handleHands(request: Request, env: Env, path: string): Promise<Re
     if (!OUTCOME_STATUSES.includes(body?.status)) return json({ error: `status must be one of ${OUTCOME_STATUSES.join('|')}` }, 400);
     const usage = validateJobUsage(body?.usage);
     if (body?.usage !== undefined && !usage) return json({ error: 'usage must be {model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd} (finite numbers >= 0)' }, 400);
-    const o: JobOutcome = { status: body.status, ...(typeof body.prUrl === 'string' ? { prUrl: body.prUrl.slice(0, 500) } : {}), ...(typeof body.note === 'string' ? { note: body.note.slice(0, 1000) } : {}), ...(usage ? { usage } : {}) };
+    const o: JobOutcome = { status: body.status, ...(typeof body.prUrl === 'string' ? { prUrl: body.prUrl.slice(0, 500) } : {}), ...(typeof body.note === 'string' ? { note: body.note.slice(0, 1000) } : {}), ...(usage ? { usage } : {}), ...(body.claudeRan === true ? { claudeRan: true } : {}), ...(body.metered === true ? { metered: true } : {}) };
     const r = await brain.recordOutcome(m[1]!, o);
     return json(r, r.ok ? 200 : 409);
+  }
+  if (path === '/hands/meter') {
+    // the forwarder's meter (money re-review C1): one API response's usage, or a job-start beacon, scoped to the run by its token
+    if (typeof body?.runId !== 'string' || !/^[\w-]{1,64}$/.test(body.runId) || typeof body?.jobId !== 'string' || !/^[\w-]{1,64}$/.test(body.jobId)) return json({ error: 'runId and jobId required' }, 400);
+    if (!(await handsScope(request, env, body.runId, brain))) return denied();
+    if (body.started === true) return json(await brain.recordMeter(body.runId, { jobId: body.jobId, started: true }));
+    const usage = validateJobUsage({ model: body.model, inputTokens: body.inputTokens, outputTokens: body.outputTokens, cacheReadTokens: body.cacheReadTokens, cacheWriteTokens: body.cacheWriteTokens, costUsd: body.costUsd });
+    if (!usage) return json({ error: 'usage must be finite numbers >= 0 and a short model id' }, 400);
+    return json(await brain.recordMeter(body.runId, { jobId: body.jobId, ...usage }));
   }
   if (path === '/hands/refused') {
     if (!request.headers.get('Authorization')) return denied();

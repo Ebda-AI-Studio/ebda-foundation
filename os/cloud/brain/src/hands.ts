@@ -61,6 +61,10 @@ export interface JobOutcome {
   note?: string;
   /** what the job cost, computed by the hands from the API response usage x the price table */
   usage?: JobUsage;
+  /** the hands ran Claude for this job (even if nothing else is known): a run with no spend reading is then charged the pessimistic amount, never $0 */
+  claudeRan?: boolean;
+  /** the usage above came from the forwarder meter (every API response), not the result-event fallback */
+  metered?: boolean;
 }
 
 export interface JobUsage {

@@ -3,7 +3,7 @@
 import { runJob } from './job.mjs';
 import { validThreshold } from './usage-guard.mjs';
 
-export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {}, now = () => Date.now(), runCapMin, keepWorkdir = false, env, creds }) {
+export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {}, now = () => Date.now(), runCapMin, keepWorkdir = false, env, creds, meter }) {
   const results = [];
   const capMin = runCapMin ?? (batch.kind === 'urgent' ? batch.perJobCapMin : cfg.runCapMin);
   const runDeadline = now() + capMin * 60_000;
@@ -37,7 +37,9 @@ export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {},
     log(`job ${job.id} (${job.finding?.kind} ${job.finding?.repo ?? ''}): start, ${g.reason}`);
     let o;
     try {
-      o = await runJob(job, { cfg, exec, usage, log, now, runDeadline, capMin: batch.perJobCapMin, keepWorkdir, env, creds });
+      // I2: a hard dollar cap for THIS job at the forwarder: the per-job config cap, and never more than what the run has left
+      const jobBudgetUsd = typeof batch.budgetUsd === 'number' ? Math.max(0.01, Math.min(cfg.jobBudgetUsd ?? 5, batch.budgetUsd - spent)) : cfg.jobBudgetUsd;
+      o = await runJob(job, { cfg, exec, usage, log, now, runDeadline, capMin: batch.perJobCapMin, keepWorkdir, env, creds, meter, jobBudgetUsd });
     } catch (e) {
       o = { status: 'could_not_fix', note: `hands error: ${String(e?.message ?? e).slice(0, 300)}` };
     }

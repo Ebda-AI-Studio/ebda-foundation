@@ -68,6 +68,9 @@ export interface Env {
   /** dollar budgets: monthly (default 150, must stay under the $200 credit) and daily (default 10) */
   HANDS_MONTHLY_BUDGET_USD?: string;
   HANDS_DAILY_BUDGET_USD?: string;
+  /** a Claude run nothing metered is charged this much per job (default 2), never $0; the per-job hard budget the forwarder enforces (default 5) */
+  HANDS_JOB_PESSIMISTIC_USD?: string;
+  HANDS_JOB_BUDGET_USD?: string;
   /** F-01: '1' halts every container start (second line of defence; the DO `halt` key is the first) */
   HANDS_HALT?: string;
   /** F-06: 'max' (default, Claude Max OAuth) or 'api' (a Console API key with a hard spend limit; REQUIRES HANDS_API_SPEND_LIMIT_USD) */
@@ -82,6 +85,9 @@ export interface Env {
   CF_CONTAINER_VCPU_MIN_DAY?: string;
   CF_DO_REQUESTS_DAY?: string;
   CF_KV_WRITES_DAY?: string;
+  /** the estimated-monthly-USD thresholds of the footprint watcher; default to Ahmad's Cloudflare alerts ($10 warn, $20 stop) */
+  CF_WARN_USD?: string;
+  CF_STOP_USD?: string;
   /** F-12: GitHub App (preferred over the PAT): app id, PKCS#8 key, {"owner": installationId} */
   GH_APP_ID?: string;
   GH_APP_PRIVATE_KEY?: string;

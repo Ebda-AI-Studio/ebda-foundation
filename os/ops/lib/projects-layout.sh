@@ -5,6 +5,7 @@
 #
 # Layout — every business is a folder with everything about it:
 #   <business>/ internal-projects/<repo>   clients/<client>/<repo>   business/ (docs, never cloud-synced)
+#   <business>/studio/  app/ = ONE git repo (the studio code, Ahmad 2026-11-09); business/ + shared/ = LOCAL media, never git or cloud
 #   Personal/   projects/<repo>            documents/  (local, never cloud-synced)
 #   _worktrees  _backups  _archive  "calude code meomry"  — meta, not slots
 # <business> is any top-level folder that is not meta or Personal (Ebda-AI-Studio, Whisky-11, ...), so a
@@ -37,6 +38,8 @@ layout_slot_ok() {
     */internal-projects/*|Personal/projects/*) return 0 ;;
     */clients/*/*/*) return 1 ;;
     */clients/*/*) return 0 ;;
+    */studio/app/*) return 1 ;;
+    */studio/app) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -48,7 +51,7 @@ layout_slot_ok() {
 # repos 2-3 levels deep (tests/projects-layout.test.sh fails on a new one).
 list_repo_roots() {
   local r="$PROJECTS_ROOT" d
-  for d in "$r"/*/internal-projects/*/ "$r"/Personal/projects/*/ "$r"/*/clients/*/*/ "$r"/_clients/*/; do
+  for d in "$r"/*/internal-projects/*/ "$r"/Personal/projects/*/ "$r"/*/clients/*/*/ "$r"/*/studio/app/ "$r"/_clients/*/; do
     case "$d" in "$r"/_worktrees/*|"$r"/_backups/*|"$r"/_archive/*|"$r"/calude*) continue ;; esac
     d="${d%/}"
     [ -L "$d" ] && continue

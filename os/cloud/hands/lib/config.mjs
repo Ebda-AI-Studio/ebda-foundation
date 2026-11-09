@@ -21,6 +21,8 @@ export const DEFAULTS = {
   maxTurns: 80,
   // per-response output cap passed as CLAUDE_CODE_MAX_OUTPUT_TOKENS, and the diff caps of F-14 ("not a targeted fix" beyond them)
   maxOutputTokens: 16000,
+  // the per-job hard dollar cap the forwarder enforces (further calls are refused once a job's metered spend reaches it)
+  jobBudgetUsd: 5,
   maxChangedFiles: 200,
   maxChangedBytes: 1024 * 1024,
   usageThresholdPct: 80,
@@ -67,6 +69,7 @@ export async function loadConfig(env = process.env) {
   cfg.sandboxUser = env.HANDS_SANDBOX_USER && /^[a-z_][a-z0-9_-]{0,31}$/.test(env.HANDS_SANDBOX_USER) ? env.HANDS_SANDBOX_USER : '';
   cfg.testUser = env.HANDS_TEST_USER && /^[a-z_][a-z0-9_-]{0,31}$/.test(env.HANDS_TEST_USER) ? env.HANDS_TEST_USER : '';
   cfg.egressAllow = env.HANDS_EGRESS_ALLOW ?? '';
+  if (Number(env.HANDS_JOB_BUDGET_USD) > 0) cfg.jobBudgetUsd = Number(env.HANDS_JOB_BUDGET_USD);
   cfg.testHome = env.HANDS_TEST_HOME ?? (cfg.testUser ? `/home/${cfg.testUser}` : '');
   cfg.sandboxHome = env.HANDS_SANDBOX_HOME ?? (cfg.sandboxUser ? `/home/${cfg.sandboxUser}` : env.HOME);
   cfg.gitleaks = env.HANDS_GITLEAKS ?? '';

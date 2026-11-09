@@ -100,5 +100,20 @@ printf 'Y="$HOME/Desktop/projects/gone-repo"\n' > "$TMP/scripts/_retired/old.sh"
 out=$(bash "$OPS/projects-layout-check.sh" --refs "$TMP/scripts" 2>&1); rc=$?
 [ $rc -eq 0 ] && pass "backup copies and _retired/ are not scanned by --refs" || fail "non-running files flagged (rc=$rc): $out"
 
+# <business>/studio/app (Ahmad 2026-11-09, ported from the predecessor OS): the studio's code repo is a valid slot in every business; its sibling folders
+# (business/, shared/) are LOCAL media and must never hold a repo, and nothing may nest inside app/.
+layout_slot_ok "Whisky-11/studio/app" && pass "studio/app is a valid slot" || fail "Whisky-11/studio/app rejected"
+layout_slot_ok "Ebda-AI-Studio/studio/app" && layout_slot_ok "Acme-Co/studio/app" && pass "studio/app is valid in every business" || fail "studio/app not valid in every business"
+layout_slot_ok "Whisky-11/studio/shared" && fail "studio/shared accepted as a repo slot" || pass "studio/shared is not a repo slot"
+layout_slot_ok "Whisky-11/studio/business" && fail "studio/business accepted as a repo slot" || pass "studio/business is not a repo slot"
+layout_slot_ok "Whisky-11/studio/app/nested" && fail "a repo nested in studio/app accepted" || pass "nothing nests inside studio/app"
+layout_slot_ok "Whisky-11/studio" && fail "studio itself accepted as a repo slot" || pass "studio itself is not a repo slot"
+R2="$TMP/projects2"; mkdir -p "$R2"; mk2() { mkdir -p "$R2/$1/.git"; }
+mk2 Whisky-11/studio/app; mk2 Whisky-11/studio/shared; mk2 Whisky-11/internal-projects/whisky11-site
+got=$(PROJECTS_ROOT="$R2" bash -c ". '$OPS/lib/projects-layout.sh'; list_repo_roots" | sed "s#^$R2/##" | LC_ALL=C sort | tr '\n' ' ')
+[ "$got" = "Whisky-11/internal-projects/whisky11-site Whisky-11/studio/app " ] && pass "list_repo_roots lists studio/app (and not studio/shared)" || fail "list_repo_roots with studio: got '$got'"
+out=$(PROJECTS_ROOT="$R2" bash "$OPS/projects-layout-check.sh" 2>&1); rc=$?
+{ [ "$rc" = 1 ] && printf '%s' "$out" | grep -q '^MISPLACED Whisky-11/studio/shared' && ! printf '%s' "$out" | grep -q 'MISPLACED Whisky-11/studio/app'; } && pass "the checker flags studio/shared, not studio/app" || fail "checker with studio: rc=$rc out=$out"
+
 echo "projects-layout: $_pass passed, $_fail failed"
 [ "$_fail" -eq 0 ]
