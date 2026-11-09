@@ -15,6 +15,6 @@ regexes = [
   '''const pem = `-----BEGIN PRIVATE KEY-----''',
   # os/cloud/hands/test/diffcheck.test.mjs: the input of the secret-scanner's own unit test (an obviously fake 'abc...xyz123456' key).
   '''abcdefghijklmnopqrstuvwxyz123456''',
-  # os/ops/lib/__tests__/keychain.test.sh: hex-encodes the PEM HEADER TEXT only ("-----BEGIN PRIVATE KEY-----") to test the decoder; no key material.
-  '''hex '-----BEGIN PRIVATE KEY-----' ''',
+  # os/ops/lib/__tests__/keychain.test.sh: hex-encodes the PEM header TEXT only (no key material) to test the decoder. The pattern stops before the trailing dashes because a TOML literal string cannot end in a quote.
+  '''hex '-----BEGIN PRIVATE KEY''',
 ]
