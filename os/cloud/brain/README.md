@@ -33,14 +33,25 @@ validates the JSON ones); the only default is `DR_DRILL_REPO`.
 | `journey-monitor` (15 min) | guest GET journeys (home, product, cart); step fails on non-2xx, timeout or missing `contains` text. Read-only by construction: checkout/payment/order/login paths are refused at parse time | `JOURNEY_CONFIG` `[{name,steps:[{name,url,contains?}]}]` | `journey-monitor:<journey>:failed`, `:config:error` |
 | `deploy-drift` (hourly :07) | live `/health` commit vs tip of the branch (GitHub API); drift = differs AND tip older than the grace | `DEPLOY_DRIFT_TARGETS` `[{name,healthUrl,repo,branch?}]`, `DEPLOY_DRIFT_GRACE_MIN` (120), secret `GITHUB_TOKEN` | `deploy-drift:<name>:drifted` |
 | `pr-shepherd` (hourly :07) | open PRs in `OS_ORGS` that are CONFLICTING, have a FAILURE/ERROR check rollup, or sit non-draft without update for `PR_SHEPHERD_STALE_HOURS` | `OS_ORGS`, `PR_SHEPHERD_STALE_HOURS` (24), secret `GITHUB_TOKEN` | `pr:<repo>#<n>:conflicting|failed-checks|waiting` |
+
+pr-shepherd (ruling F-I5): a CONFLICTING or failing-checks PR on a same-repo branch that is the OS's own (`os/fix-*`, `ebda-os/*`) or bot-authored becomes a `pr-stuck` nightly job (the hands push a fix to that branch, never merge). Everything else, including every PR merely waiting over 24 h, is `pr-needs-you`: a digest note, no job, no Claude run.
 | `cf-workers` (6 h) | Workers named `CF_WORKERS_PREFIXES` (default `ebda-`): error rate over 6 h above `CF_WORKER_ERROR_RATE` (0.05, min 20 requests); `CF_WORKERS_EXPECTED` Workers missing from the account. A failed Workers Builds deploy is not visible through these APIs (CI owns it) | `CF_ACCOUNT_ID`, `CF_WORKERS_*`, secret `CF_API_TOKEN` (Analytics:Read + Workers Scripts:Read) | `cf-workers:<script>:errors|missing` |
 | `cost-guard` (6 h) | GitHub Actions minutes this month for `COST_GH_ORG` (warn 48000 / stop 49500) and Workers requests this month (warn 8M / stop 10M) | `COST_GH_ORG`, `COST_ACTIONS_WARN_MIN`, `COST_ACTIONS_STOP_MIN`, `CF_REQUESTS_WARN`, `CF_REQUESTS_STOP`, `CF_ACCOUNT_ID`, secrets `GITHUB_TOKEN` (org billing read), `CF_API_TOKEN` | `cost-guard:<counter>:warn|stop` |
 | `sentry-stale` (6 h) | unresolved issues `age:+72h lastSeen:-24h` per project | `SENTRY_ORG`, `SENTRY_PROJECTS`, `SENTRY_BASE_URL`, secret `SENTRY_AUTH_TOKEN` | `sentry-stale:<project>/<id>:stale` |
 | `world-watch` (6 h) | Statuspage incidents (impact major/critical, unresolved) for Cloudflare + GitHub; npm bulk advisories (high/critical) for the pinned runtime deps | `WORLD_STATUS_URLS` (default CF + GitHub), `WORLD_NPM_DEPS` `{"pkg":["x.y.z"]}` | `world-watch:<source>:<incident>`, `world-watch:npm/<pkg>/<id>:open` |
-| `dr-drill` (6 h, enqueue weekly) | once a week ONE nightly finding "run restore drill (node scripts/ops/restore-drill.mjs --target api) on ebda-store" for the hands; a stale finding when no drill job completed for `DR_DRILL_STALE_DAYS` (8) | `DR_DRILL_REPO` (default `Ebda-AI-Studio/ebda-store`), `DR_DRILL_STALE_DAYS` | `dr-drill:ebda-store:week-<n>`, `dr-drill:ebda-store:stale` |
+| `dr-drill` (6 h) | the age of the last restore-drill PASS the Mac posted to `POST /drill` (ruling F-I6, the drill needs R2 + age secrets the container must not hold; `os/ops/restore-drill.sh` runs it weekly): no PASS for `DR_DRILL_STALE_DAYS` (8) = a digest note; 14 days = ONE unhealed-P1 message. Never a hands job | `DR_DRILL_REPO` (default `Ebda-AI-Studio/ebda-store`), `DR_DRILL_STALE_DAYS` | `dr-drill:ebda-store:stale`, `dr-drill:ebda-store:overdue` |
 
 Crons (`src/schedule.ts` = `wrangler.jsonc`): `quarter` `2-59/15 * * * *`, `sixhourly` `17 */6 * * *`; `hourly` also runs deploy-drift and pr-shepherd.
 Footprint: at most 3 outbound requests per service per 15 min and a few dozen per 6 h; KV writes are one gate key per watcher run; no new paid service.
+
+## Config gaps and refusals (final review fixes)
+
+- A finding with no `repo`, or a repo missing from `HANDS_CONFIG_JSON`, never becomes a hands job: urgent class sends ONE `p1-unhealed` message, everything else lands in the digest. Put `repo` (owner/name) on `HEALTH_TARGETS` / `SERVICE_TARGETS` entries so an outage can reach the hands.
+- A URL belongs in `HEALTH_TARGETS` or `SERVICE_TARGETS`, never both (two sources = two fingerprints = two urgent runs).
+- With a real provider (not `stub`) an urgent container never boots on unknown usage; a P1 the hands refuse on usage (they now report the reading) sends one `p1-unhealed` message and stays queued for tonight (ruling F-C1).
+- A run that outlives its cap (+10 min) is timed out: urgent reports could-not-fix; nightly / Mac-claim jobs are requeued once, then end `timed_out`; the digest counts the requeues.
+- `mac-local` claims skip third-party-text jobs (advisories, `pr-stuck`, world-watch): ruling 4b-5, enforced in `claim()`.
+- `GET /api/state` lists `unconfigured` watcher ids; `os/ops/cutover-gate-check.sh --deployed <url>` fails while a ported watcher is unconfigured.
 
 ## Design
 

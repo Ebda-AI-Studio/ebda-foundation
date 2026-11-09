@@ -10,9 +10,10 @@ export interface Env {
   OS_ORGS: string;
   /** owner/name list of repos whose code is deployed; an advisory is urgent only there */
   DEPLOYED_REPOS?: string;
+  /** [{url,kind,repo?}] (fast 5-min check). A URL belongs here OR in SERVICE_TARGETS, never both. repo = owner/name lets an outage reach the hands */
   HEALTH_TARGETS: string;
   // cloud watcher config (all optional; unset = that watcher raises one monitor-unconfigured finding). JSON vars are lists.
-  /** services: [{name,url,kind:'api'|'page'|'money'}] */
+  /** services: [{name,url,kind:'api'|'page'|'money',repo?}] (not also in HEALTH_TARGETS) */
   SERVICE_TARGETS?: string;
   /** page-load: [{name,url}] and the p50 limit in ms (1500) */
   PAGE_LOAD_TARGETS?: string;

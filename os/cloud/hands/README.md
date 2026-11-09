@@ -11,6 +11,14 @@ time, 30-min cap)                      ┘   (container or Mac)                 
 Mac awake (launchd, every 30 min) ──────► run-batch.mjs --claim ──► POST /hands/claim (same usage guard)
 ```
 
+## Container isolation (ruling F-I8)
+
+- Egress: untrusted commands reach the network only through the root-run allowlist proxy (`lib/egress.mjs`: github.com, api.github.com, codeload.github.com, objects.githubusercontent.com, registry.npmjs.org, api.anthropic.com and the brain host). `entrypoint.sh` adds iptables rules so the unprivileged uids can only talk to loopback, and REFUSES to run (exit 3) if it cannot (`HANDS_EGRESS_REQUIRE_KERNEL=1`, the image default). Not measured on a real Cloudflare Container: `iptables` needs CAP_NET_ADMIN there.
+- Claude Code runs as `node`; the repo's test / format commands run as `tester` (`HANDS_TEST_USER`), so they cannot read Claude's memory or `/proc`.
+- Hands PRs run each repo's own CI; checked 2026-11-09 (ebda-store, ebda-whatsapp, ebda-foundation workflows): no workflow exposes deploy secrets to `pull_request` events; the only `secrets.*` on PR-triggered files sit in notify jobs gated to push-to-main.
+- Dependency fixes (I-9): only a version bump of an existing dependency to a plain semver range; a new package, URL/git spec or non-registry lockfile host is a PR + question. `lint` / `format` are not pre-approved (M-1).
+- `pr-stuck` jobs (ruling F-I5) work on the PR's own same-repo head branch and push a fast-forward to it; they never merge.
+
 ## Per job (sequential, one at a time)
 
 1. **Usage guard** (`lib/usage-guard.mjs`, Ruling I-4): read the weekly Claude usage; refuse when it is unknown or at /
