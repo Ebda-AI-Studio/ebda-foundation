@@ -10,7 +10,7 @@ Local dev and staging never touch prod data. Local points at a scratch/preview D
 | # | Criterion | Solid (grade 2) | Gap detection | Severity |
 |---|---|---|---|---|
 | 1 | Local dev DB is not prod | `.env`/`.env.local` `DATABASE_URL` host points at a scratch/preview branch, never the prod host | grep `.env*` for `DATABASE_URL`; confirm the host is NOT the prod DB host before any `migrate`/`db push` | Critical |
-| 2 | Local runs as app role, not owner | Local `DATABASE_URL` uses the app role (so RLS is exercised locally), not the owner role | grep `.env*` `DATABASE_URL` for the owner role name (e.g. `neondb_owner`); flag if local connects as owner | High |
+| 2 | Local runs as app role, not owner | Local `DATABASE_URL` uses the app role (so RLS is exercised locally), not the owner role | grep `.env*` `DATABASE_URL` for the owner role name (e.g. `db_owner`); flag if local connects as owner | High |
 | 3 | Preview/staging points at staging, not prod | Preview/staging env vars resolve to staging API + staging DB host, never the prod host | `vercel env ls --json` (Preview scope) — confirm `DATABASE_URL`/API base host ≠ prod host | Critical |
 | 4 | CI-enforced preview isolation | A CI step asserts the preview env is isolated from prod (rule 13) | grep `.github/workflows/*` for a `vercel env ls --json` isolation check; flag if absent | High |
 | 5 | Queue prefix on shared broker | Every staging service sets `QUEUE_PREFIX=<project>-staging` when staging + prod share a queue broker | grep staging service config/env for `QUEUE_PREFIX`; flag if shared broker and no per-env prefix | Critical |

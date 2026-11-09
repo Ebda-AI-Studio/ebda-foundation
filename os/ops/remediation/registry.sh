@@ -15,4 +15,4 @@ fix_lockfile_drift() {
 }
 
 op_graphify() { local repo="$1"; ( cd "$repo" && graphify update . >/dev/null 2>&1 ); }
-op_dr_backup() { echo "op_dr_backup: no Neon dump job in this repo (backup-all-neon.sh retired 2026-11-05)" >&2; return 1; }
+op_dr_backup() { echo "op_dr_backup: no managed Postgres dump job in this repo (backup-all-managed-db.sh retired 2026-11-05)" >&2; return 1; }

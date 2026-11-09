@@ -87,7 +87,7 @@ TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 TELEGRAM_ALERT_CHAT_ID=$TELEGRAM_ALERT_CHAT_ID
 EOF
 chmod 600 "$HOME/.whisky-whoop-telegram.env"
-# Bridge observability tokens to the file services-watch/alert-triage read.
+# Bridge observability tokens to the file alert-triage reads.
 cat > "$OS_SERVICES_ENV" <<EOF
 SENTRY_AUTH_TOKEN=${SENTRY_AUTH_TOKEN:-}
 SENTRY_ORG=${SENTRY_ORG:-}
@@ -171,6 +171,6 @@ echo "== installed $gen_count cloud-tier timers =="
 systemctl --user list-timers 'whisky-os-*' --no-pager 2>/dev/null | head -20
 echo
 echo ">> ON THE MAC, unload the now-duplicated launchd jobs so alerts don't double-fire:"
-echo "   for j in services-watch anomaly-watch alert-triage checkout-monitor msg-monitor os-watch runner-hook-health ci-runner-guard cost-guard dream docs-scan; do"
+echo "   for j in anomaly-watch alert-triage checkout-monitor msg-monitor os-watch runner-hook-health ci-runner-guard dream docs-scan; do"
 echo "     launchctl bootout gui/\$(id -u)/${OS_LAUNCHD_PREFIX}.\$j 2>/dev/null; done"
 echo "   KEEP on the Mac: ${OS_LAUNCHD_PREFIX}.mac-maintenance (Mac-local)."

@@ -35,7 +35,7 @@ git clone <foundation-remote> && cd ebda-foundation
 ./ops/bootstrap.sh          # brew + npm + uv + Claude Code, then install.sh, then the checklist
 ./ops/migrate-claude-home.sh import <tarball>   # restore CLAUDE-HOME (rules/skills/memory) exported from the old Mac
 ```
-Then complete the **manual re-auth** the checklist prints (claude/gh/neonctl/wrangler/railway
+Then complete the **manual re-auth** the checklist prints (claude/gh/wrangler/railway
 login + scp the 2 `.env` files). Verify: `bash ops/self-check.sh`, `os-recall.sh senses`,
 `open http://127.0.0.1:7717`.
 

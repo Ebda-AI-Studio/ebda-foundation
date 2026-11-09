@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Nightly pull of Ebda Store's Cloudflare backups (StoreDO + D1 exports in R2) to this Mac, so a Cloudflare
-# ACCOUNT loss is recoverable (Ebda INFRA-CF-1 gap G8). Modelled on the retired Neon dump job: caffeinate, loud
+# ACCOUNT loss is recoverable (Ebda INFRA-CF-1 gap G8). Modelled on the retired managed Postgres dump job: caffeinate, loud
 # failure, one page per run, keeps 30 days, content assertions instead of "the file exists".
 #
 # What it does

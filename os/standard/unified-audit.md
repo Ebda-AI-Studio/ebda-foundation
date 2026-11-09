@@ -5,7 +5,7 @@
 This audit IS steps 1–3 (ANALYZE → BLAST-RADIUS → AUDIT) of the self-improving loop (`feedback-os-self-improving-audit-loop`); it is followed by FIX-everything → save-memory → propagate-to-all-repos → save-memory → graphify → test+verify+REAL-test → loop.
 
 ## How it runs (the fleet)
-Dispatch one focused agent per DIMENSION below (parallel), each: (a) reads `graphify-out/GRAPH_REPORT.md` first, (b) grounds findings in CODE (file:line) AND in PROD DATA (read-only Neon query for the smoking-gun symptom), (c) grades against the linked `standard/` rubric (0=broken / 1=partial / 2=solid), (d) returns findings in the unified row format. Then a synthesis agent merges them into the ONE report, dedupes, builds the cross-cutting matrices, and assigns the verdict. Scale the fleet to the repo; never drop a dimension silently — if one is N/A, say so.
+Dispatch one focused agent per DIMENSION below (parallel), each: (a) reads `graphify-out/GRAPH_REPORT.md` first, (b) grounds findings in CODE (file:line) AND in PROD DATA (read-only managed Postgres query for the smoking-gun symptom), (c) grades against the linked `standard/` rubric (0=broken / 1=partial / 2=solid), (d) returns findings in the unified row format. Then a synthesis agent merges them into the ONE report, dedupes, builds the cross-cutting matrices, and assigns the verdict. Scale the fleet to the repo; never drop a dimension silently — if one is N/A, say so.
 
 ## LOOK EVERYWHERE — multi-source triangulation at EVERY step (2026-06-10, Ahmad)
 **Reading the code is never enough. At every step of the audit AND every bug investigation, cross-reference ALL of these sources — the truth is where they intersect:**

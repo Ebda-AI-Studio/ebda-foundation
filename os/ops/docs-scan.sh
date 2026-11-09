@@ -22,7 +22,7 @@ fi
 FULL_REPOS=(ebda-store ebda-whatsapp ebda-studio)
 # All live prod repos (README expected).
 ALL_REPOS=(ebda-store ebda-whatsapp ebda-studio ebda-foundation mypovonai digital-card)
-# Hosting/stack terms that are stale for the Ebda stack (Cloudflare Workers, Railway, Neon).
+# Hosting/stack terms that are stale for the Ebda stack (Cloudflare Workers, Railway, managed Postgres).
 STALE='Netlify|Heroku|render\.com|DigitalOcean'
 
 findings=()

@@ -25,7 +25,7 @@ PY
 }
 
 # --- the exact case that degraded Mission Control on 2026-08-18 ---------------
-# FORCE-API-26: a Neon autosuspend cold-start. 1 event, 0 users, never repeated.
+# FORCE-API-26: a managed Postgres autosuspend cold-start. 1 event, 0 users, never repeated.
 # The old probe degraded the whole board on len(issues) > 0.
 assert_py "single 1-event 0-user issue is ok (the 2026-08-18 false alarm)" "
 v, reason = si.verdict([issue(events=1, users=0)])

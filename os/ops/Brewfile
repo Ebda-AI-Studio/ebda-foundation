@@ -1,6 +1,6 @@
 # Whisky AI OS — Homebrew dependency manifest. `brew bundle --file ops/Brewfile`.
-# The CLIs the OS scripts + backups + deploys need. Non-brew deps (neonctl,
-# wrangler, railway, graphify, claude) are installed by ops/bootstrap.sh.
+# The CLIs the OS scripts + backups + deploys need. Non-brew deps
+# (wrangler, railway, graphify, claude) are installed by ops/bootstrap.sh.
 
 # core
 brew "git"
@@ -9,7 +9,7 @@ brew "python@3.13"
 brew "coreutils"          # gtimeout etc. for portable scripts
 brew "rsync"
 
-# database + backups (pg_dump MUST be >= the Neon server major = PG17)
+# database + backups (pg_dump MUST be >= the managed Postgres server major = PG17)
 brew "postgresql@17"
 
 # cloud / ops CLIs

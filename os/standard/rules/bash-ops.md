@@ -2,7 +2,7 @@
 
 tags: [BOTH]
 scope: shell scripts, ops tooling, launchd/cron jobs, CI shell steps, any `.sh` file or inline Bash-tool command
-sources: `../cicd.md`, `../testing.md` (criteria 7–8, 13), MEMORY.md feedback-bash-tool-shell-gotchas, feedback-jest-module-setinterval-leak, feedback-jest-ci-hang-debugging-and-root-causes, feedback-ci-integration-ephemeral-postgres-not-shared-neon, feedback-blast-radius-sweep-on-every-change
+sources: `../cicd.md`, `../testing.md` (criteria 7–8, 13), MEMORY.md feedback-bash-tool-shell-gotchas, feedback-jest-module-setinterval-leak, feedback-jest-ci-hang-debugging-and-root-causes, feedback-ci-integration-ephemeral-postgres-not-shared-managed-db, feedback-blast-radius-sweep-on-every-change
 
 ## Must Always
 - Remember the Bash tool on macOS runs **zsh**, and zsh arrays are **1-indexed** (`F=(*.mov); echo "${F[1]}"` is the first element, not `${F[0]}`). A glob that reports `count: 1` but reads back empty via `${F[0]}` is this trap, not a missing file. Prefer a shell-agnostic `for f in glob; do F="$f"; done` loop over indexed array access when a script might run under either bash or zsh.

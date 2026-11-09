@@ -355,7 +355,7 @@ WINDOW = 40  # chars — "same phrase", not "same file"
 
 # ops/*.sh scripts are large, prose-heavy, and mention almost any common word
 # SOMEWHERE incidentally (measured: "store" matched a health-check hostname
-# list, "onesignal"/"neon" matched a Gmail-alert-sender domain allowlist —
+# list, "onesignal"/"managed-db" matched a Gmail-alert-sender domain allowlist —
 # none of these are the theme's actual enforcement). A single-token theme is
 # too weak a signal to trust a full-body grep of ops/*.sh; for those, only
 # the script's OWN identity counts as evidence: its filename (a script

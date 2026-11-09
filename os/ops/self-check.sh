@@ -237,12 +237,10 @@ ops/install.sh                 ← one-time setup: copies scripts + loads launch
        └─ ops/*.sh             ← the OS runtime (source; installed copies are live)
 
 ops/notify.sh                  ← universal Telegram primitive; all scripts use it
-ops/services-watch.sh          ← infra cost + observability health (scheduled)
 ops/os-watch.sh                ← git/CI delivery state across all Force repos (scheduled)
 ops/alert-triage.sh            ← reads Sentry/UptimeRobot/Railway/Gmail/CI (scheduled)
 ops/anomaly-watch.sh           ← post-deploy anomaly detection (scheduled)
 ops/checkout-monitor.sh        ← synthetic checkout-path smoke test (scheduled)
-ops/cost-guard.sh              ← Neon/GitHub Actions/Vercel cost watchdog (scheduled)
 ops/docs-scan.sh               ← structural doc-drift detector across prod repos (scheduled)
 ops/blast-radius.sh            ← graphify-driven PR blast-radius reviewer (on-demand)
 ops/propagate.sh               ← cross-repo change propagation engine (on-demand)

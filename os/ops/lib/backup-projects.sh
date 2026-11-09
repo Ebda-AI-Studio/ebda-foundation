@@ -10,48 +10,48 @@
 #
 # THE RULE FOR THIS LIST: back up every LIVE project. A PAUSED project is
 # excluded on purpose — a nightly pg_dump is a real connection, so dumping a
-# paused Neon project restarts its billing clock every night and silently undoes
+# paused managed Postgres project restarts its billing clock every night and silently undoes
 # the pause. A paused project is watched through backup_project_paused (which
 # makes the freshness check SKIP it), never by pretending it has a fresh dump.
 
-# ── the Neon projects that are dumped nightly ────────────────────────────────
-# "friendly-name:neon-project-id[:neon-org-id]", one per line. friendly-name is also the
+# ── the managed Postgres projects that are dumped nightly ────────────────────────────────
+# "friendly-name:db-project-id[:db-org-id]", one per line. friendly-name is also the
 # directory under $OS_PROJECTS_DIR/_backups/. The optional third field is only needed when a
-# project's Neon org differs from the dump job's default org.
+# project's managed Postgres org differs from the dump job's default org.
 #
 # Project ids are infrastructure identifiers that belong to the machine, not the repo, so the
-# list is read from BACKUP_NEON_PROJECTS or from the per-machine file
+# list is read from BACKUP_DB_PROJECTS or from the per-machine file
 # ${OS_BACKUP_PROJECTS_FILE:-~/.ebda-os.local.backup-projects} (same line format, '#' comments).
 # Neither set: the list is empty and the dump job does nothing.
 #
-# A PAUSED project is left out on purpose: a nightly pg_dump restarts a paused Neon project's
+# A PAUSED project is left out on purpose: a nightly pg_dump restarts a paused managed Postgres project's
 # billing clock. Watch it through backup_project_paused instead (the freshness check SKIPS it).
 # shellcheck source=os-config.sh
 command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
 [ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
 _bp_file="${OS_BACKUP_PROJECTS_FILE:-$HOME/.ebda-os.local.backup-projects}"
-if [ -z "${BACKUP_NEON_PROJECTS:-}" ] && [ -f "$_bp_file" ]; then
-  BACKUP_NEON_PROJECTS="$(cat "$_bp_file")"
+if [ -z "${BACKUP_DB_PROJECTS:-}" ] && [ -f "$_bp_file" ]; then
+  BACKUP_DB_PROJECTS="$(cat "$_bp_file")"
 fi
-BACKUP_NEON_PROJECTS="${BACKUP_NEON_PROJECTS:-}"
+BACKUP_DB_PROJECTS="${BACKUP_DB_PROJECTS:-}"
 
 # Backup directories under _backups/ that are filled by a DIFFERENT job and must still be
 # watched for staleness (space-separated). Empty by default.
 BACKUP_EXTRA_DIRS="${BACKUP_EXTRA_DIRS-}"
 
-# backup_neon_entries — one "name:project-id" per line, comments/blanks stripped.
-backup_neon_entries() {
-  printf '%s\n' $BACKUP_NEON_PROJECTS | while IFS= read -r _bne; do
+# backup_db_entries — one "name:project-id" per line, comments/blanks stripped.
+backup_db_entries() {
+  printf '%s\n' $BACKUP_DB_PROJECTS | while IFS= read -r _bne; do
     case "$_bne" in ''|'#'*) continue ;; esac
     printf '%s\n' "$_bne"
   done
 }
 
-# backup_watch_names — every _backups/<dir> that must hold a fresh dump: the Neon
+# backup_watch_names — every _backups/<dir> that must hold a fresh dump: the managed Postgres
 # projects this OS dumps, plus the externally-dumped dirs. This is the checker's
 # list, and it is a SUPERSET of the writer's by construction.
 backup_watch_names() {
-  backup_neon_entries | while IFS= read -r _bwn; do
+  backup_db_entries | while IFS= read -r _bwn; do
     printf '%s\n' "${_bwn%%:*}"
   done
   printf '%s\n' ${BACKUP_EXTRA_DIRS:-} | while IFS= read -r _bwx; do
@@ -78,7 +78,7 @@ backup_project_paused() {
 # notify.sh failure (rotated creds, curl error, file gone) was invisible at
 # exactly the moment a real outage also needed paging.
 #
-# The body must never carry a dump's stderr: a failing neonctl/pg_dump can print
+# The body must never carry a dump's stderr: a failing provider CLI / pg_dump can print
 # a connection string, and this text leaves the machine. Callers pass project
 # names and exit codes, and point at the local log for detail.
 backup_alert() {

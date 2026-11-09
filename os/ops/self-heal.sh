@@ -153,11 +153,6 @@ run_recovery(){
       # so a failed rollback can't be mis-credited as a heal in step 4.
       printf 'y\n' | wrangler rollback --name "$(j cf_worker)" --message "auto-heal $(ts)" 2>&1 | tail -3
       return "${PIPESTATUS[1]}";;
-    neon-prepare-recovery)
-      # TIER 3 (data) — NEVER auto-cuts-over. Prepares a verified PITR recovery branch and
-      # escalates for one-tap human approve (Ahmad's decision 2026-07-06). Non-destructive:
-      # only creates a `recover-*` branch; prod data is untouched until a human approves.
-      "$HERE/neon-recover.sh" prepare "$(j neon_project)" 2>&1 | tail -4; return 2;;
     escalate-only)
       echo "escalate-only (platform recovery not yet wired for $ID)"; return 2;;
     *) echo "unknown recovery: $REC"; return 2;;

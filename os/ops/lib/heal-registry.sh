@@ -3,8 +3,8 @@
 #   heal_registry_path   prints the registry JSON path: $HEAL_REG when set, else $OS_STATE_DIR/heal-registry.json built from
 #                        the "heal_services" list. Prints nothing (and returns 1) when no services are configured.
 # One list item per service, "|"-separated:  id|name|platform|health-url|expect|recovery|k=v,k=v
-#   expect: HTTP code or "<500".  recovery: railway-redeploy | wrangler-rollback | neon-prepare-recovery | escalate-only.
-#   k=v extras: railway_project railway_service railway_env cf_worker neon_project (whatever the recovery needs).
+#   expect: HTTP code or "<500".  recovery: railway-redeploy | wrangler-rollback | db-prepare-recovery | escalate-only.
+#   k=v extras: railway_project railway_service railway_env cf_worker db_project (whatever the recovery needs).
 # Ebda-only (Ahmad 2026-11-06): the list holds Ebda/Whisky services; the predecessor's products are never registered.
 heal_registry_path() {
   if [ -n "${HEAL_REG:-}" ]; then printf '%s' "$HEAL_REG"; [ -f "$HEAL_REG" ]; return; fi

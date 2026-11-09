@@ -3,7 +3,7 @@
 tags: [MOBILE]
 sources: reference-mobile-ios-android-build-methodology.md, CLAUDE.md (rule 4 — mobile app store rejection-proofing), reference-iceberg-audit.md (rule 4)
 
-> AUTHOR-ONLY concern. This rubric applies to native iOS/Android apps (Expo React Native + EAS on a Node/Neon backend). It is **N/A for web-only repos** (previous products) — those have no `apps/mobile/**`. Grade only a repo that ships a native app.
+> AUTHOR-ONLY concern. This rubric applies to native iOS/Android apps (Expo React Native + EAS on a Node/managed Postgres backend). It is **N/A for web-only repos** (previous products) — those have no `apps/mobile/**`. Grade only a repo that ships a native app.
 
 ## What "solid" looks like
 App-store compliance baked in at design-time (Sign in with Apple, ≤2-tap account deletion + public web delete URL, IAP + Restore Purchases, anti-steering CI lint, `PrivacyInfo.xcprivacy`, bilingual privacy strings, Android `blockedPermissions`); MASVS-grade secret storage + TLS + cert pinning on auth/payment; push notifications post-value-moment via OneSignal with a timeout guard; OTA staged rollout via EAS Update; Sentry + crash-free/ANR SLOs from day 1.

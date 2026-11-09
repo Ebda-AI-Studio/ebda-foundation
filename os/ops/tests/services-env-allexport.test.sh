@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Class guard (#197): sourcing ~/.whisky-services.env WITHOUT `set -a` leaves the
-# keys shell-local, so child processes (neonctl, node, ...) never see them. Every
+# keys shell-local, so child processes (node, wrangler, ...) never see them. Every
 # ops script that sources the env file must do so inside `set -a ... set +a`.
 set -uo pipefail
 cd "$(dirname "$0")/.."; OPS="$(pwd)"

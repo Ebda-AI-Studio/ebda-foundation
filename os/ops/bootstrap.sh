@@ -20,7 +20,7 @@ else
 fi
 
 step "2/4  non-brew CLIs (npm / uv / Claude Code)"
-command -v npm  >/dev/null 2>&1 && npm  install -g neonctl wrangler @railway/cli 2>/dev/null && echo "  npm: neonctl wrangler @railway/cli" || echo "  npm missing — install node first"
+command -v npm  >/dev/null 2>&1 && npm  install -g wrangler @railway/cli 2>/dev/null && echo "  npm: wrangler @railway/cli" || echo "  npm missing — install node first"
 command -v uv   >/dev/null 2>&1 && uv tool install graphifyy 2>/dev/null && echo "  uv: graphifyy (graphify)" || echo "  uv missing — brew install uv"
 command -v claude >/dev/null 2>&1 || { echo "  installing Claude Code…"; curl -fsSL https://claude.ai/install.sh | bash 2>/dev/null || echo "  install Claude Code manually: https://claude.ai/download"; }
 
@@ -32,7 +32,6 @@ cat <<'EOF'
 Re-authenticate on THIS machine (credentials never sync — re-login each):
   • claude /login                         (Max plan — powers claude -p, the OS's autonomous worker)
   • gh auth login                         (GitHub: the owner orgs in os.env)
-  • neonctl auth                          (Neon — DB backups/PITR/recovery)
   • wrangler login                        (Cloudflare Workers deploy/rollback)
   • railway login                         (Railway API deploy/rollback)
 Copy the 2 secret files from the old Mac (scp), do NOT commit them:

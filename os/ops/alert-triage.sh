@@ -152,7 +152,7 @@ else echo "alert-triage: uptimerobot skipped (no UPTIMEROBOT_API_KEY)" >&2; fi
 # passwords; requires 2FA). Set GMAIL_IMAP_USER + GMAIL_IMAP_APP_PASSWORD in
 # ~/.whisky-services.env. Searches the last day from known alert senders.
 if [ -n "${GMAIL_IMAP_USER:-}" ] && [ -n "${GMAIL_IMAP_APP_PASSWORD:-}" ]; then
-  GMAIL_ALERT_SENDERS="${GMAIL_ALERT_SENDERS:-sentry.io railway.app railway.com vercel.com uptimerobot.com github.com neon.tech posthog.com onesignal.com google.com cloudflare.com}" \
+  GMAIL_ALERT_SENDERS="${GMAIL_ALERT_SENDERS:-sentry.io railway.app railway.com vercel.com uptimerobot.com github.com posthog.com onesignal.com google.com cloudflare.com}" \
   python3 -c "
 import imaplib,email,os,json,sys
 from email.header import decode_header

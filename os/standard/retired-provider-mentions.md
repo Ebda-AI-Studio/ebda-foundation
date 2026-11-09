@@ -6,7 +6,7 @@ Pack: docs, cicd | Probe type: S | Source: Ebda AI Studio audit 2026-10-26 DOC-1
 Providers the product has left must not appear in docs, runbooks or workflows; they send the next operator to the wrong console.
 
 ## Scenario
-Ebda's operational docs and repo leftovers still described Railway, Redis and an old Neon project after the Cloudflare move; inherited ledger docs carried retired providers and foreign-law wording.
+Ebda's operational docs and repo leftovers still described Railway, Redis and an old managed Postgres project after the Cloudflare move; inherited ledger docs carried retired providers and foreign-law wording.
 
 ## Source candidate
 - (low) A retired provider named in .fleet-retired-providers.txt is still mentioned.

@@ -18,7 +18,7 @@ The observability fleet (`services-watch`, `msg-monitor`, `checkout-monitor`, `c
 ## Recovery playbooks (compute only — NEVER data)
 | platform | recovery | action |
 |---|---|---|
-| railway | `railway-redeploy` | `railway redeploy --from-source` (proven; also the fix for a crash-loop or the Neon-creds-drift outage) |
+| railway | `railway-redeploy` | `railway redeploy --from-source` (proven; also the fix for a crash-loop or the managed Postgres-creds-drift outage) |
 | vercel  | `vercel-rollback`  | `vercel rollback` to the last-good production deploy |
 | cloudflare | `wrangler-rollback` | `wrangler rollback` |
 | any | `escalate-only` | no auto-action — alert only (safe default for unmapped/ambiguous services) |

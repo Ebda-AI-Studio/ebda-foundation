@@ -9,7 +9,7 @@
 #
 # What it does, per Force repo:
 #   1. Detect any CRITICAL gate workflow that is NOT `active` (disabled_manually etc.)
-#      — excluding an allowlist of intentionally-disabled ones (Neon snapshot = retired
+#      — excluding an allowlist of intentionally-disabled ones (managed Postgres snapshot = retired
 #      for cost; ZAP = opt-in).
 #   2. AUTO RE-ENABLE it (`gh workflow enable`) — self-healing, not just alerting.
 #   3. Flag active gates that haven't RUN in >STALE_DAYS — but only after asking
@@ -66,9 +66,9 @@ CRITICAL="${GATE_CRITICAL:-\\bci\\b|ai review|blast-radius|gitleaks|semgrep|scop
 # only ever produced a false "never run" finding. This is a precision fix, not a mute:
 # the workflows it is called FROM are still graded in their own repos.
 NOT_A_GATE="${GATE_NOT_A_GATE:-reusable ci}"
-# Intentionally-disabled — never auto-enable these (cost / opt-in). Neon snapshot was
-# deliberately retired (per rollback discipline: local pg_dump replaced per-commit snaps).
-ALLOW_DISABLED="${GATE_ALLOW_DISABLED:-neon snapshot|zap}"
+# Intentionally-disabled — never auto-enable these (cost / opt-in). Per-commit database
+# snapshots are retired (local pg_dump replaced them).
+ALLOW_DISABLED="${GATE_ALLOW_DISABLED:-zap}"
 
 ts(){ date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo now; }
 log(){ printf '%s %s\n' "$(ts)" "$*" >>"$LOG"; }

@@ -4,7 +4,7 @@ Mission Control over.
 
 WHY: services-watch.sh:probe_sentry used to degrade the board whenever the
 `age:-24h` query returned anything at all — no impact test of any kind. On
-2026-08-18 that fired on FORCE-API-26: ONE event, ZERO users, a Neon autosuspend
+2026-08-18 that fired on FORCE-API-26: ONE event, ZERO users, a managed Postgres autosuspend
 cold-start on ProductService.getCategories that never recurred. A gate that
 fires on a single transient blip trains you to ignore it, and then it is worth
 less than no gate.

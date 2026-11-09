@@ -238,11 +238,11 @@ eq "schedule+RunAtLoad is scheduled, not daemon" "$(verdict sched-runatload)" "f
 # --- backup jobs keep their pinned 36h window -------------------------------
 # A missed backup is a DR gap on the FIRST night. The generic rule would give a
 # daily job 48h and let one missed night pass unremarked until the night after.
-mkplist ebda-cf-backup "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict><key>StandardOutPath</key><string>$TMP/neon.log</string>"
-mklog "$TMP/neon.log" 108000             # 30h
+mkplist ebda-cf-backup "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict><key>StandardOutPath</key><string>$TMP/managed-db.log</string>"
+mklog "$TMP/managed-db.log" 108000             # 30h
 eq "backup fresh at 30h"           "$(verdict ebda-cf-backup)" "fresh"
 eq "backup window is pinned to 36h" "$(vfield ebda-cf-backup 3)" "129600"
-mklog "$TMP/neon.log" 144000             # 40h — inside 48h, outside 36h
+mklog "$TMP/managed-db.log" 144000             # 40h — inside 48h, outside 36h
 eq "backup stale at 40h (36h window)" "$(verdict ebda-cf-backup)" "stale"
 
 # --- an ARRAY of calendar entries divides the period ------------------------

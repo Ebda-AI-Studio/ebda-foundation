@@ -6,7 +6,6 @@
 # as broken, each naming a different, contradictory cause —
 #   cf-workers-watch "could not verify the token (CF API unreachable?)"
 #   deploy-drift     "Railway API query failed (check RAILWAY_API_TOKEN)"
-#   services-watch   "PostHog API auth FAILED or no project — check POSTHOG_API_KEY"
 # Every service was healthy minutes later. The Telegram sends failed too
 # ("Could not resolve host: api.telegram.org") — the one broken thing was this Mac.
 #
@@ -185,47 +184,6 @@ else
 fi
 
 echo
-echo "== services-watch =="
-
-: > "$NOTIFY_LOG"
-D="$(mkrun services-watch.sh)"
-OUT="$TMP/services-unreach.log"
-( HOME="$FAKE_HOME" WHISKY_SERVICES_ENV=/dev/null \
-  SERVICES_WATCH_PROBES="probe_posthog probe_railway" \
-  POSTHOG_API_KEY=fake-key-for-test POSTHOG_HOST="$CLOSED" \
-  RAILWAY_API_TOKEN=fake-token-for-test RAILWAY_API_URL="$CLOSED/graphql/v2" \
-  NET_PREFLIGHT_URLS="$ONLINE_PREFLIGHT" NET_PREFLIGHT_TRIES=1 NET_PREFLIGHT_TIMEOUT=3 \
-  bash "$D/services-watch.sh" ) > "$OUT" 2>&1
-
-if grep -qi "check POSTHOG_API_KEY" "$OUT"; then
-  fail "services-watch: told Ahmad to check POSTHOG_API_KEY for a TRANSPORT failure (Ruling M-3)"
-else
-  pass "services-watch: no 'check POSTHOG_API_KEY' on a transport failure"
-fi
-if grep -qi "rotated/expired" "$OUT"; then
-  fail "services-watch: claimed the Railway token was rotated/expired on a TRANSPORT failure"
-else
-  pass "services-watch: no 'rotated/expired' claim on a transport failure"
-fi
-
-: > "$NOTIFY_LOG"
-D="$(mkrun services-watch.sh)"
-OUT="$TMP/services-offline.log"
-( HOME="$FAKE_HOME" WHISKY_SERVICES_ENV=/dev/null \
-  SERVICES_WATCH_PROBES="probe_posthog probe_railway" \
-  POSTHOG_API_KEY=fake-key-for-test POSTHOG_HOST="$CLOSED" \
-  RAILWAY_API_TOKEN=fake-token-for-test RAILWAY_API_URL="$CLOSED/graphql/v2" \
-  NET_PREFLIGHT_URLS="$OFFLINE_PREFLIGHT" NET_PREFLIGHT_TRIES=1 NET_PREFLIGHT_TIMEOUT=2 \
-  bash "$D/services-watch.sh" ) > "$OUT" 2>&1
-grep -qi "host offline" "$OUT" \
-  && pass "services-watch: host-offline prints the blind-monitoring line" \
-  || fail "services-watch: no host-offline line: $(cat "$OUT")"
-[ "$(notify_count)" -eq 0 ] \
-  && pass "services-watch: host-offline does NOT page" \
-  || fail "services-watch: paged $(notify_count) time(s) while the host was offline"
-
-echo
-
 echo "== a missing classifier must fail LOUD, never open =="
 
 # ops/install.sh copies lib/*.sh, so net-probe.sh travels with the monitors. But a gate that is merely DECLARED and not

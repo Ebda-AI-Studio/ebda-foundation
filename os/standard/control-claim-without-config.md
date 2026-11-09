@@ -6,7 +6,7 @@ Pack: docs, data | Probe type: J | Source: Ebda master catalogue 2026-10-26 sec.
 A documented control must cite the config key that implements it; docs may only describe controls that exist.
 
 ## Scenario
-Docs promised a 7-day Neon PITR window while the project had 6 hours; the 3-2-1 backup claim had no off-machine copy (M-005, M-011).
+Docs promised a 7-day managed Postgres PITR window while the project had 6 hours; the 3-2-1 backup claim had no off-machine copy (M-005, M-011).
 
 ## Source candidate
 - (medium) A retention/PITR/backup number is stated with no config reference.

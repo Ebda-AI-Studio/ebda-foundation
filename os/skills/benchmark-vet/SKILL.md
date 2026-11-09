@@ -21,7 +21,7 @@ Write the sentence you would ship: condition, metric, threshold ("checkout p95 <
 5. **Baseline**: same command, data, warmup and environment on the old state (merge base, parent commit). No baseline means INCONCLUSIVE.
 6. **Why not double**: name the limiter (CPU, lock, disk, network, pool, the load generator itself) from a profile or counters, not from reading code. Use `top`/`pidstat`, `node --cpu-prof`, `py-spy`, `EXPLAIN ANALYZE`; profile in an unreported run.
 7. **Limits arithmetic**: bytes/s vs link, ops/s vs cores, time saved vs time the changed piece took (removing 10% of a run gains at most ~11%). Past a limit means you measured something else.
-8. **Tuned, and matters**: every side runs as production runs it (release build, prod flags, pool settings; **Neon: Hyperdrive/pooled, not a cold direct branch**). Micro results are stated as a share of the end-to-end path.
+8. **Tuned, and matters**: every side runs as production runs it (release build, prod flags, pool settings; **managed Postgres: Hyperdrive/pooled, not a cold direct branch**). Micro results are stated as a share of the end-to-end path.
 9. **Cost / usage figures**: reconcile against the provider's own invoice or dashboard for the same window; state the unit and period.
 
 ## 3. Verdict (exactly one, do not soften a negative)

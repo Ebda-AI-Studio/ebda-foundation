@@ -16,7 +16,6 @@
 # Pipe-delimited specifically because OnCalendar expressions contain spaces.
 
 # Synthetic monitors + alert intake (the reactive half)
-services-watch     | interval:900   | --notify
 anomaly-watch      | interval:900   | --notify
 alert-triage       | interval:1800  | --notify
 checkout-monitor   | interval:1800  | --notify
@@ -28,7 +27,6 @@ runner-hook-health | interval:10800 | --notify
 ci-runner-guard    | interval:10800 | -
 
 # Scheduled sweeps (the proactive half)
-cost-guard         | calendar:*-*-* 09:00:00     | -
 dream              | calendar:*-*-* 08:00:00     | --daily
 docs-scan          | calendar:Sun *-*-* 09:30:00 | -
 code-health        | calendar:Sat *-*-* 06:00:00 | --notify

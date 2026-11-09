@@ -5,7 +5,7 @@ sources: memory/feedback-test-truncate-wiped-prod-db.md (🔴 P0 prod wipe), CLA
 
 ## What "solid" looks like
 
-There is a small set of **common test-infra files** that every Force repo depends on and that EVERY worktree inherits by virtue of branching off `main`. They are not feature code — they are the safety rails the test suite runs on. The canonical one is the **destructive-reset prod-guard**: the check that refuses to `TRUNCATE`/`deleteMany`/`db push --force-reset` unless the target DB is provably a disposable localhost/test container. Its ABSENCE in an earlier messaging product let a local `npm test` wipe the **production** Neon DB (0 users → every login 401). a previous storefront product survived the identical risk only because it already had `guardNotProd()` — **the guard lived in one repo and was never propagated**. That is the whole lesson: a guard that exists in one repo and not the others is a latent P0.
+There is a small set of **common test-infra files** that every Force repo depends on and that EVERY worktree inherits by virtue of branching off `main`. They are not feature code — they are the safety rails the test suite runs on. The canonical one is the **destructive-reset prod-guard**: the check that refuses to `TRUNCATE`/`deleteMany`/`db push --force-reset` unless the target DB is provably a disposable localhost/test container. Its ABSENCE in an earlier messaging product let a local `npm test` wipe the **production** managed Postgres DB (0 users → every login 401). a previous storefront product survived the identical risk only because it already had `guardNotProd()` — **the guard lived in one repo and was never propagated**. That is the whole lesson: a guard that exists in one repo and not the others is a latent P0.
 
 So the rule is twofold:
 
@@ -21,14 +21,14 @@ So the rule is twofold:
 | `tests/helpers/prod-guard.*` · `tests/**/guard*.*` | the `guardNotProd()` / host-allowlist guard itself | every repo that runs destructive resets |
 | `jest.setup.*` / `vitest.setup.*` | timer/Prisma teardown discipline (clear intervals, `$disconnect`) | per test runner |
 
-The guard's invariant (from the an earlier messaging product fix): a destructive reset runs **only if** the DB host is `localhost`/`postgres` OR the db-name matches `test` **AND** the host is NOT a managed provider (`neon`/`railway`/`supabase`/`aws`). Anything else → throw before touching data.
+The guard's invariant (from the an earlier messaging product fix): a destructive reset runs **only if** the DB host is `localhost`/`postgres` OR the db-name matches `test` **AND** the host is NOT a managed provider (`managed-db`/`railway`/`supabase`/`aws`). Anything else → throw before touching data.
 
 ## Criteria
 
 | # | Criterion | Solid (grade 2) | Gap detection | Severity |
 |---|---|---|---|---|
 | 1 | Prod-guard present | every repo running a destructive test-reset has a guard that throws unless the DB is a disposable localhost/test container | grep the reset path (`TRUNCATE`/`deleteMany`/`--force-reset`) for a preceding host/db-name guard | Critical |
-| 2 | Guard covers managed providers | guard explicitly rejects `neon`/`railway`/`supabase`/`aws` hosts even if the name looks test-ish | read the guard predicate | Critical |
+| 2 | Guard covers managed providers | guard explicitly rejects `managed-db`/`railway`/`supabase`/`aws` hosts even if the name looks test-ish | read the guard predicate | Critical |
 | 3 | Present in every repo (propagated) | the guard + shared setup exist across ALL Force repos, not just the one it was born in | `ops/propagate.sh <src> <guard-path>` dry-run shows no applicable-but-missing repo | High |
 | 4 | Survives worktree teardown | `post-merge-cleanup.sh` gate 4 confirms a common test file exists on the parent checkout before/after teardown | run teardown; gate-4 warning fires if a guard is missing | High |
 | 6 | A declared runner reaches EVERY suite | one entry point (`ops/run-tests.sh`, an npm `test` script, a Makefile target) discovers every suite CLASS in the repo, and a class that discovers **zero** suites fails the run | list every suite location (`find . -name '*.test.*' -o -name 'test_*'`), then read the runner's globs. Any location not covered is run by nothing. On the foundation this was 13 of 38 suites — including one that had been RED for weeks | High |

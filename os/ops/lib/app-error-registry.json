@@ -10,7 +10,7 @@
       "window_h": 6,
       "threshold": 5,
       "action": "escalate",
-      "runbook": "Prisma connection-pool exhaustion / transaction timeout is recurring (refunds, store reads, storefront layout, auth all hit it). CHECK: (1) DB pool size — connection_limit on the pooled Neon URL + pgbouncer; (2) long-running / Redis-I/O-inside transactions holding connections; (3) a webhook/queue storm starving the pool. This is COMPUTE-fixable: a rolling redeploy of the API clears leaked connections as a stopgap, but the real fix is pool sizing / removing I/O from transactions. NEVER a data action."
+      "runbook": "Prisma connection-pool exhaustion / transaction timeout is recurring (refunds, store reads, storefront layout, auth all hit it). CHECK: (1) DB pool size — connection_limit on the pooled managed Postgres URL + pgbouncer; (2) long-running / Redis-I/O-inside transactions holding connections; (3) a webhook/queue storm starving the pool. This is COMPUTE-fixable: a rolling redeploy of the API clears leaked connections as a stopgap, but the real fix is pool sizing / removing I/O from transactions. NEVER a data action."
     },
     {
       "name": "inngest-coa-seed-missing",

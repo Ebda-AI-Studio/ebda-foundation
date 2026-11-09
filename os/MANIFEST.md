@@ -47,7 +47,7 @@ The AI OS layer of ebda-foundation: the operating tooling that every business (E
 
 ## Not ported (and why)
 
-- Client or finance data, never moved: client DB backup scripts and plists, the per-client cost model and its client list, the fleet store list (replaced by `config/fleet.example.json`), the bookkeeping app, client store journeys and the client-store monitors with their fixtures and tests. The nightly Neon project list is now read from a per-machine file (`~/.ebda-os.local.backup-projects`) instead of living in the repo.
+- Client or finance data, never moved: client DB backup scripts and plists, the per-client cost model and its client list, the fleet store list (replaced by `config/fleet.example.json`), the bookkeeping app, client store journeys and the client-store monitors with their fixtures and tests. The nightly managed Postgres project list is now read from a per-machine file (`~/.ebda-os.local.backup-projects`) instead of living in the repo.
 - Suites trimmed with their subjects: the client-store and bookkeeping cases of the monitors-unreachable suite, the backup-alerts suite (it pins the client project list), the cost-attribution suite, and the event-listener, findings-watch and watchers remediation suites (Task 4 components).
 - Task 4 components (also `ops/lib/heal-registry.json`): dashboard, command-center app, dream cycle (`dream*`), self-heal, `heal-*`, `watchers/`, event listener, page-load monitor and its journeys, daily brief.
 
@@ -65,7 +65,7 @@ Applied to the ported files (all generic): #279 guard rebuild backoff, #278 hygi
 
 ## Config contract
 
-`config/os.env` is the single source; `ops/lib/os-config.sh` (`os_config_load`) reads it, then `~/.ebda-os.local.env`, then falls back to built-in defaults that `tests/os-config-parity.test.sh` keeps identical. Every script that needs an identity value (primary org `$OS_ORG`, owners `$OS_ORGS`, `$OS_REPO_SLUG`, `$OS_PROJECTS_DIR`, `$OS_HOME`, `$OS_LAUNCHD_PREFIX`, `$OS_UMBRA_VMS` / `$OS_VM`, `$OS_SENTRY_ORG`, `$OS_NEON_ORG`, `$OS_PERSONAL_OWNER`, `$OS_SERVICES_ENV`) sources it and reads the key. `tests/no-literal-config.test.sh` fails when a literal of those values appears in `ops/` outside tests, fixtures, launchd templates, docs, comments and `os-config.sh`.
+`config/os.env` is the single source; `ops/lib/os-config.sh` (`os_config_load`) reads it, then `~/.ebda-os.local.env`, then falls back to built-in defaults that `tests/os-config-parity.test.sh` keeps identical. Every script that needs an identity value (primary org `$OS_ORG`, owners `$OS_ORGS`, `$OS_REPO_SLUG`, `$OS_PROJECTS_DIR`, `$OS_HOME`, `$OS_LAUNCHD_PREFIX`, `$OS_UMBRA_VMS` / `$OS_VM`, `$OS_SENTRY_ORG`, `$OS_PERSONAL_OWNER`, `$OS_SERVICES_ENV`) sources it and reads the key. `tests/no-literal-config.test.sh` fails when a literal of those values appears in `ops/` outside tests, fixtures, launchd templates, docs, comments and `os-config.sh`.
 
 ## Secret scanning
 
@@ -112,7 +112,8 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | dead-gate-detect | KEEP-MAC | dead-gate-detect | inspects locally installed hooks and gates |
 | deploy-drift | PORT-BRAIN | deploy-drift | compares live /health commit with main over HTTP |
 | docs-scan | KEEP-MAC | docs-scan | scans local checkouts |
-| dr-drill | PORT-BRAIN | dr-drill | weekly restore-drill trigger; API calls only |
+| dr-drill | PORT-BRAIN | dr-drill | checks the age of the last restore-drill PASS (digest after 8 days, one P1 after 14); the drill itself is `restore-drill` below (ruling F-I6) |
+| restore-drill | KEEP-MAC | restore-drill | the weekly restore drill needs R2 + age secrets the hands container must not hold; `ops/restore-drill.sh` posts PASS/FAIL to the brain `POST /drill` |
 | drift-watch | KEEP-MAC | drift-watch | diffs installed copies against the repo on disk |
 | ebda-cf-backup | KEEP-MAC | ebda-cf-backup | pulls the Cloudflare backup to local disk |
 | ebda-foundation-bump | KEEP-MAC | ebda-foundation-bump | git operations in local checkouts |
@@ -151,7 +152,6 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | code-health | KEEP-MAC | code-health | knip/jscpd and the claude judgment pass over local checkouts |
 | cost-attribution | DROP | - | per-client cost model was client finance data and was not ported |
 | runner-hook-health | KEEP-MAC | runner-hook-health | checks runner hooks on this host |
-| neon-backup | DROP | - | Ahmad 2026-11-06: only Force/client Neon databases; the Ebda OS never backs up Force products |
 | predecessor-client-backup-1 | DROP | - | Ahmad 2026-11-06: Force client database backup |
 | predecessor-client-backup-2 | DROP | - | Ahmad 2026-11-06: Force client database backup |
 | predecessor-product-monitor-1 | DROP | - | Ahmad 2026-11-06: Force product monitor |

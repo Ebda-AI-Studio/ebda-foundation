@@ -34,7 +34,7 @@
       "repo": "ebda-studio",
       "class": "overcomplexity",
       "title": "GET()/ReadableStream executor nesting is intentional SSE keep-alive design, not accidental complexity",
-      "_comment": "Verified 2026-08-18 at src/app/api/sse/route.ts:27 — the nesting IS the SSE protocol shape: a ReadableStream start() executor holding a send() closure over `closed`, the `retry: 30000` directive that stops EventSource storm-reconnects from exhausting the Neon pool, and the poll timer. Flattening it would break the closure that guards writes after close.",
+      "_comment": "Verified 2026-08-18 at src/app/api/sse/route.ts:27 — the nesting IS the SSE protocol shape: a ReadableStream start() executor holding a send() closure over `closed`, the `retry: 30000` directive that stops EventSource storm-reconnects from exhausting the managed Postgres pool, and the poll timer. Flattening it would break the closure that guards writes after close.",
       "_verified_at": "2026-08-18",
       "file": "src/app/api/sse/route.ts",
       "symbol": "GET()"

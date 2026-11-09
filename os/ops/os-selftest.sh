@@ -500,7 +500,7 @@ _info ""
 # ─────────────────────────────────────────────────────────────────────────────
 if [ "$DESKTOP_VISIBLE" = "0" ]; then _info "artifact freshness: SKIPPED (TCC-blind)"; else
 _info "checking artifact freshness (backups / dream / graphify) ..."
-# daily neon backups: newest dump per project < 36h old and not truncated.
+# daily managed-db backups: newest dump per project < 36h old and not truncated.
 #
 # The watched set is DERIVED from lib/backup-projects.sh — the same list the dump
 # job iterates — so the checker can no longer watch a SUBSET of what the writer
@@ -508,7 +508,7 @@ _info "checking artifact freshness (backups / dream / graphify) ..."
 # ebda-store and ebda-whatsapp while the job dumped six
 # projects, so other projects could have stopped being backed
 # up indefinitely with every gate green. A project dumped by a different
-# job, in a different Neon account) was watched by nothing at all.
+# job, in a different managed Postgres account) was watched by nothing at all.
 BK="$OS_PROJECTS_DIR/_backups"
 if ! command -v backup_watch_names >/dev/null 2>&1; then
   add_high "artifact: lib/backup-projects.sh is missing, so the dump freshness of EVERY project went unchecked (run ops/install.sh)"
@@ -555,8 +555,8 @@ print("" if best is None else "%.1f" % best)
   if [ -n "$newest_age_h" ] && [ "${newest_age_h%%.*}" -lt 36 ] 2>/dev/null; then
     PASS=$(( PASS + 1 ))
   else
-    add_high "artifact: no fresh Neon dump for $proj in 36h (${OS_LAUNCHD_PREFIX}.neon-backup output check)"
-    _fail "artifact: no fresh Neon dump for $proj in 36h"
+    add_high "artifact: no fresh managed Postgres dump for $proj in 36h (${OS_LAUNCHD_PREFIX}.db-backup output check)"
+    _fail "artifact: no fresh managed Postgres dump for $proj in 36h"
   fi
 done
 fi

@@ -58,7 +58,7 @@ without saying why in the divergence log.
 | Client names | `acme-client`, `example-customer` | A separate company's repo naming another company's clients is a confidentiality breach, not a tidiness problem |
 | Deploy targets | the other company's Cloudflare account ids, Railway project ids, Vercel project ids | A misfired deploy from this repo lands on the other company's infrastructure |
 | CI secret names | the other company's secret-name prefixes and chat ids | A workflow here would silently expect secrets it must never be given |
-| Database identifiers | Neon project ids, branch names, connection-string hosts | Same blast radius as a deploy target, with data attached |
+| Database identifiers | managed Postgres project ids, branch names, connection-string hosts | Same blast radius as a deploy target, with data attached |
 | Payment identifiers | the other company's merchant/API references | The client's cost centre, and a live money path |
 | Domains | `acme.example`, other client domains | Wrong-company links shipped to users |
 

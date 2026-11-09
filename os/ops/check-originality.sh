@@ -57,7 +57,7 @@ excludes = [e for e in (os.environ.get("EXCLUDES") or "").split(":") if e]
 # newline separated); only generic platform words are built in.
 _extra = [re.escape(e) for e in (os.environ.get("ENTITIES") or "").split("\n") if e.strip()]
 ENTITY = re.compile(
-    r'\b(' + '|'.join(['ebda', 'whisky', 'umbra', 'neon', 'cloudflare', 'railway', 'vercel', 'supabase',
+    r'\b(' + '|'.join(['ebda', 'whisky', 'umbra', 'cloudflare', 'railway', 'vercel', 'supabase',
                        'prisma', 'inngest', 'mypovonai', 'arabic', 'english'] + _extra) + r')\b', re.I)
 
 def strip_frontmatter(t):

@@ -17,13 +17,13 @@ Ahmad's actual stack, auto-relevant the moment a matching file is opened.
 | `typescript.md` | Any `.ts`/`.tsx` — API-edge validation, mock-factory drift, dependency-override pinning, TS/monorepo type coexistence |
 | `react-nextjs.md` | Any `.tsx`/`.jsx`, Next.js App Router routes — i18n/RTL, Tailwind JIT/v4 traps, force-dynamic + migration ordering |
 | `node-express.md` | Express route handlers, middleware, webhooks, workers — pool starvation, CSRF, Jest-hang root causes |
-| `prisma-postgres.md` | `schema.prisma`, Prisma client usage, raw SQL migrations, RLS policies — Neon pooling, enum migrations, transaction timeouts |
+| `prisma-postgres.md` | `schema.prisma`, Prisma client usage, raw SQL migrations, RLS policies — managed Postgres pooling, enum migrations, transaction timeouts |
 | `bash-ops.md` | `.sh` scripts, CI workflow files, launchd/cron, ops tooling — shell gotchas, CI hang debugging, blast-radius sweeps |
 
 ## Why these five
 
 They map to Ahmad's actual production stack across our products and every new project:
-Next.js/React on the frontend, Node/Express APIs, Prisma+Postgres(Neon) for data, TypeScript everywhere,
+Next.js/React on the frontend, Node/Express APIs, Prisma+Postgres(managed Postgres) for data, TypeScript everywhere,
 and Bash for ops/CI/automation. This is not a generic "cover every language" set — it's mined from real
 incidents (see each file's `sources:` frontmatter line) rather than invented best-practices, so every
 "Must Always"/"Must Never" traces back to a dated, verified production trap.

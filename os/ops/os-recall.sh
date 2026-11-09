@@ -55,10 +55,10 @@ senses() {
 
 SEE (inputs the OS reads):
   • Gmail            IMAP alert bridge (gmail-alert-poller in store API) → alerts from
-                     Sentry/UptimeRobot/PostHog/Railway/Neon land in Telegram.
+                     Sentry/UptimeRobot/PostHog/Railway/managed Postgres land in Telegram.
                      Creds: ~/.whisky-services.env (GMAIL_IMAP_*).
   • Health/monitors  ~/.whisky-os-state/*-status.json — every subsystem (services, checkout,
-                     msg, cf-workers, deploy-drift, dr-drill, neon-recover, cost, backup, …).
+                     msg, cf-workers, deploy-drift, dr-drill, cost, backup, …).
   • Knowledge graph  scoped memory graph + Obsidian vault graph (graphify) — recall via THIS script.
   • Event bus        ~/.whisky-os-state/events.ndjson + zero-inbox.ndjson (the live SEE stream).
 
@@ -67,7 +67,7 @@ SAY (how the OS reaches Ahmad):
                      Creds: ~/.whisky-whoop-telegram.env. Used by every monitor + self-heal + DR.
 
 DO (CLIs the OS can act with):
-  • railway / wrangler / neonctl — deploy, rollback, DB branch/restore (self-heal.sh, neon-recover.sh).
+  • railway / wrangler — deploy and rollback (self-heal.sh).
   • gh / git — CI status, PRs, repo ops (os-watch.sh, read-only).
   • graphify — query/extract the knowledge graph.
   • Gemini (GEMINI_API_KEY) — free bulk NLP / graph extraction.
@@ -78,8 +78,8 @@ KNOW (persistent memory across conversations):
   • Both are graphified; ask the brain: os-recall.sh "<question>"
 
 SELF-HEAL (autonomous remediation, tiered by reversibility):
-  • T1 restart/redeploy · T2 CF wrangler-rollback (live) · T3 Neon prepare+approve (human-gated cutover).
-  • Recovery proven weekly by dr-drill.sh. See reference-self-healing-os in memory.
+  • T1 restart/redeploy · T2 CF wrangler-rollback (live) · T3 data recovery stays a human decision.
+  • Recovery is proven weekly by the Mac restore drill (ops/restore-drill.sh). See reference-self-healing-os in memory.
 EOF
 }
 
