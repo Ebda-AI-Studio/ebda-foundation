@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { recordingBrain } from '../lib/brain-client.mjs';
 import { validateConfig } from '../lib/config.mjs';
-import { claudePermissionArgs, runJob } from '../lib/job.mjs';
+import { CLAUDE_ISOLATION, claudePermissionArgs, runJob } from '../lib/job.mjs';
 import { runBatch } from '../lib/run.mjs';
 import { UsageGuard } from '../lib/usage-guard.mjs';
 
@@ -62,6 +62,8 @@ function fakeExec(o = {}) {
       if (v === 'push' && o.push) return { code: 1, stdout: '', stderr: 'denied', timedOut: false };
       return ok();
     }
+    if (real === 'pgrep') return { code: o.survivors ? 0 : 1, stdout: o.survivors ? '4242\n' : '', stderr: '', timedOut: false };
+    if (real === 'python3') return o.exposure === undefined ? ok('[]\n') : o.exposure === 'error' ? { code: 1, stdout: '', stderr: 'boom', timedOut: false } : ok(JSON.stringify(o.exposure));
     if (real === 'gh') return ok('https://github.com/o/r/pull/7\n');
     if (real === 'claude') {
       const c = o.claude ?? {};
@@ -288,7 +290,7 @@ describe('Claude permissions (S4)', () => {
     for (const d of ['Edit(./.git/**)', 'Write(./.github/**)', 'Edit(./**/package.json)', 'Edit(./**/vitest.config.*)']) expect(deny).toContain(d);
     expect(claudePermissionArgs(cfg, cfg.repos['o/r'], 'dep-bump').join(' ')).not.toContain('package.json');
     const c = claudePermissionArgs({ ...cfg, sandboxed: true }, cfg.repos['o/r'], 'docs');
-    expect(c.slice(0, 3)).toEqual(['--permission-mode', 'bypassPermissions', '--disallowedTools']);
+    expect(c.slice(CLAUDE_ISOLATION.length, CLAUDE_ISOLATION.length + 3)).toEqual(['--permission-mode', 'bypassPermissions', '--disallowedTools']);
   });
 });
 
@@ -434,5 +436,66 @@ describe('N-3b: the dependency install is not Claude\'s uid, and a sandbox home 
     const h = await homes();
     await run(job('docs'), {}, { sandboxHome: h.sandboxHome });
     expect(await pathExists(join(h.sandboxHome, '.claude', 'settings.json'))).toBe(true);
+  });
+});
+
+describe('RR-egress-roles: each role gets its own proxy env', () => {
+  it('Claude gets the model-API proxy; install, test and format get the tests proxy + registry mirror', async () => {
+    const h = { sandboxUser: 'node', testUser: 'tester', sandboxHome: '/nonexistent/n', testHome: '/nonexistent/t', sandboxed: true, proxyEnv: { HTTPS_PROXY: 'http://127.0.0.1:1' }, proxyEnvTests: { HTTPS_PROXY: 'http://127.0.0.1:2', npm_config_registry: 'http://127.0.0.1:3/' } };
+    const { calls } = await run(job('docs'), {}, h);
+    const envOf = (name) => calls.filter((c) => c.cmd === 'setpriv' && c.args.includes(name)).map((c) => c.env);
+    for (const e of envOf('claude')) expect(e).toMatchObject({ HTTPS_PROXY: 'http://127.0.0.1:1' });
+    for (const e of envOf('npm')) expect(e).toMatchObject({ HTTPS_PROXY: 'http://127.0.0.1:2', npm_config_registry: 'http://127.0.0.1:3/' });
+    expect(envOf('npm')).toHaveLength(2);
+  });
+});
+
+describe('I-8 (final review): the secrets-exposure check runs BEFORE anything is pushed', () => {
+  const pushed = (calls) => calls.some((c) => c.cmd === 'git' && verbOf(c.args) === 'push') || calls.some((c) => c.cmd === 'gh');
+  it('an exposed secret in the base workflows: a question, no push, no PR (the PR\'s CI would have run with the secret)', async () => {
+    const { out, calls } = await run(job('docs'), { exposure: ['deploy.yml:preview:CLOUDFLARE_API_TOKEN'] });
+    expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/^question: .*CLOUDFLARE_API_TOKEN.*nothing pushed/) });
+    expect(pushed(calls)).toBe(false);
+    const py = calls.findIndex((c) => c.cmd === 'python3');
+    expect(py).toBeGreaterThan(-1);
+    expect(calls[py].args).toEqual(['-I', '/opt/os/ops/lib/merge_gate.py', 'secrets-exposure', expect.stringMatching(/base-workflows$/)]);
+  });
+  it('a check that cannot run fails closed: nothing pushed', async () => {
+    const { out, calls } = await run(job('docs'), { exposure: 'error' });
+    expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/^question: .*nothing pushed/) });
+    expect(pushed(calls)).toBe(false);
+  });
+  it('no exposure: the PR is pushed as before', async () => {
+    const { out, calls } = await run(job('docs'), { exposure: [] });
+    expect(out.status).toBe('merged');
+    expect(pushed(calls)).toBe(true);
+  });
+  it('pr-stuck mode checks too (a push to a PR branch starts CI)', async () => {
+    const j = job('pr-stuck', { mergePolicy: 'pr-and-question' });
+    j.finding = { ...j.finding, url: 'https://github.com/o/r/pull/9', detail: { pr: 9, head: 'os/fix-job_old', state: 'failed-checks' } };
+    const { out, calls } = await run(j, { edits: { 'src/a.ts': 'fixed\n' }, exposure: ['ci.yml:t:NPM_TOKEN'] });
+    expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/NPM_TOKEN/) });
+    expect(pushed(calls)).toBe(false);
+  });
+});
+
+describe('N-3b (final review): no process of an unprivileged uid outlives its job', () => {
+  const cont = { sandboxUser: 'node', testUser: 'tester', sandboxHome: '/nonexistent/n', testHome: '/nonexistent/t', sandboxed: true };
+  it('both uids are killed by uid (never by name pattern) before and after the job, and verified', async () => {
+    const { calls } = await run(job('docs'), {}, cont);
+    const kills = calls.filter((c) => c.cmd === 'pkill');
+    expect(kills.map((c) => c.args)).toEqual([['-KILL', '-u', 'node'], ['-KILL', '-u', 'tester'], ['-KILL', '-u', 'node'], ['-KILL', '-u', 'tester']]);
+    expect(calls.filter((c) => c.cmd === 'pgrep')).toHaveLength(4);
+    const firstKill = calls.findIndex((c) => c.cmd === 'pkill');
+    expect(firstKill).toBeLessThan(calls.findIndex((c) => c.cmd === 'setpriv'));
+  });
+  it('a survivor that will not die fails the job before Claude starts', async () => {
+    const { out, calls } = await run(job('docs'), { survivors: true }, cont);
+    expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/survived/) });
+    expect(calls.some((c) => c.cmd === 'setpriv')).toBe(false);
+  });
+  it('outside the container nothing is killed (the Mac user is Ahmad)', async () => {
+    const { calls } = await run(job('docs'));
+    expect(calls.some((c) => c.cmd === 'pkill')).toBe(false);
   });
 });

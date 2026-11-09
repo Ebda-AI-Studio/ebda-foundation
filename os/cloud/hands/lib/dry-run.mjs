@@ -41,6 +41,7 @@ export function dryRunExec({ batch, log = () => {}, usagePct = 12 }) {
       for (const e of events) opts.onLine?.(JSON.stringify(e));
       return ok(events.map((e) => JSON.stringify(e)).join('\n'));
     }
+    if (cmd === 'python3' && args.includes('secrets-exposure')) return ok('[]');
     if (args.some((a) => a.includes('merge-gate'))) return k.gate === 'red' ? { code: 1, stdout: '', stderr: 'REFUSED: check failed', timedOut: false } : ok('merge-gate: green');
     // the repo's own install / test command
     if (k.tests === 'fail') return { code: 1, stdout: '1 failing', stderr: '', timedOut: false };

@@ -3,13 +3,13 @@
 //   POST /hands/claim {provider,max} -> HandsBatch | {refused}
 //   POST /hands/jobs/:jobId/outcome  {status, prUrl?, note?}
 //   POST /hands/usage                {weeklyUsedPct, resetsAt?}   (resetsAt epoch ms)
-export function brainClient({ url, token, fetchImpl = fetch }) {
+export function brainClient({ url, token, runId, fetchImpl = fetch }) {
   if (!url || !token) throw new Error('BRAIN_URL and HANDS_TOKEN are required (or use --dry-run)');
   const base = url.replace(/\/+$/, '');
   async function call(method, path, body) {
     const res = await fetchImpl(`${base}${path}`, {
       method,
-      headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      headers: { authorization: `Bearer ${token}`, ...(runId ? { 'x-hands-run': runId } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const text = await res.text();
@@ -23,6 +23,7 @@ export function brainClient({ url, token, fetchImpl = fetch }) {
     return data;
   }
   return {
+    call,
     getRun: (runId) => call('GET', `/hands/runs/${encodeURIComponent(runId)}`),
     claim: (provider, max) => call('POST', '/hands/claim', { provider, max }),
     outcome: (jobId, o) => call('POST', `/hands/jobs/${encodeURIComponent(jobId)}/outcome`, o),

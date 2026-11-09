@@ -61,6 +61,7 @@ describe('git hygiene with real git', () => {
         return { code: 0, stdout: '', stderr: '', timedOut: false };
       }
       if (cmd === 'gh') return { code: 0, stdout: 'https://github.com/o/r/pull/9\n', stderr: '', timedOut: false };
+      if (cmd === 'python3') return { code: 0, stdout: '[]', stderr: '', timedOut: false }; // secrets-exposure
       return { code: 0, stdout: '', stderr: '', timedOut: false }; // npm ci / npm test / merge gate
     };
     const cfg = {

@@ -3,7 +3,8 @@ import net from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { recordingBrain } from '../lib/brain-client.mjs';
 import { diffAllowsAutoMerge, lockfileHostsOk, packageJsonBumpOnly, PROTECTED } from '../lib/diffcheck.mjs';
-import { allowList, hostAllowed, proxyEnv, startProxy } from '../lib/egress.mjs';
+import { createServer } from 'node:http';
+import { claudeAllowList, hostAllowed, proxyEnv, startProxy, startRegistryMirror, testsEnv } from '../lib/egress.mjs';
 import { asSandbox } from '../lib/git.mjs';
 import { runBatch } from '../lib/run.mjs';
 import { UsageGuard } from '../lib/usage-guard.mjs';
@@ -25,10 +26,10 @@ describe('C-1: the hands report the usage that made them refuse', () => {
 });
 
 describe('I-8 (ruling F-I8): egress allowlist + uid split', () => {
-  it('only the fixed hosts and the brain host are allowed', () => {
-    const allow = allowList('brain.example.workers.dev');
-    for (const h of ['github.com', 'api.github.com', 'codeload.github.com', 'registry.npmjs.org', 'api.anthropic.com', 'brain.example.workers.dev']) expect(hostAllowed(h, allow)).toBe(true);
-    for (const h of ['evil.example', 'github.com.evil.example', 'npmjs.org', '']) expect(hostAllowed(h, allow)).toBe(false);
+  it('Claude\'s proxy allows the model API (and the extras) and NOTHING else: no GitHub, no registry', () => {
+    const allow = claudeAllowList('brain.example.workers.dev');
+    for (const h of ['api.anthropic.com', 'brain.example.workers.dev']) expect(hostAllowed(h, allow)).toBe(true);
+    for (const h of ['github.com', 'api.github.com', 'gist.github.com', 'codeload.github.com', 'registry.npmjs.org', 'evil.example', 'api.anthropic.com.evil.example', '']) expect(hostAllowed(h, allow)).toBe(false);
   });
   it('the proxy answers 403 to a CONNECT for an unlisted host and records it; an allowed host is tunnelled', async () => {
     const upstream = net.createServer((s) => s.end('UPSTREAM')).listen(0, '127.0.0.1');
@@ -56,6 +57,43 @@ describe('I-8 (ruling F-I8): egress allowlist + uid split', () => {
     const cfg = { sandboxUser: 'node', testUser: 'tester' };
     expect(asSandbox(cfg, 'claude', ['-p'], 'claude')[1].slice(0, 2)).toEqual(['--reuid', 'node']);
     expect(asSandbox(cfg, 'npm', ['test'], 'tests')[1].slice(0, 2)).toEqual(['--reuid', 'tester']);
+  });
+});
+
+describe('RR-egress-roles: the tests role has no CONNECT target and only a read-only registry', () => {
+  async function upstream() {
+    const seen = [];
+    const server = createServer((req, res) => (seen.push(`${req.method} ${req.url} auth=${req.headers.authorization ?? '-'}`), res.writeHead(200, { 'content-type': 'application/json' }).end('{"name":"x"}')));
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    return { seen, port: server.address().port, close: () => new Promise((r) => server.close(r)) };
+  }
+  const call = (port, method, path, headers = {}) => fetch(`http://127.0.0.1:${port}${path}`, { method, headers, body: ['GET', 'HEAD'].includes(method) ? undefined : 'x' });
+
+  it('GET and HEAD are forwarded (credentials stripped); publish, dist-tag and unpublish are 405 and never reach the registry', async () => {
+    const up = await upstream();
+    const m = await startRegistryMirror({ upstream: { host: '127.0.0.1', port: up.port, tls: false } });
+    expect((await call(m.port, 'GET', '/left-pad', { authorization: 'Bearer attacker-npm-token' })).status).toBe(200);
+    expect((await call(m.port, 'HEAD', '/left-pad')).status).toBe(200);
+    for (const [method, path] of [['PUT', '/evil-pkg'], ['PUT', '/-/package/x/dist-tags/latest'], ['DELETE', '/evil-pkg/-rev/1'], ['POST', '/-/v1/login']]) expect((await call(m.port, method, path)).status).toBe(405);
+    expect(up.seen).toEqual(['GET /left-pad auth=-', 'HEAD /left-pad auth=-']);
+    expect([...m.denied].sort()).toEqual(['DELETE /evil-pkg/-rev/1', 'POST /-/v1/login', 'PUT /-/package/x/dist-tags/latest', 'PUT /evil-pkg']);
+    await m.close();
+    await up.close();
+  });
+  it('a proxy with an empty allowlist refuses every CONNECT (the tests role: no gist, no files upload, no publish tunnel)', async () => {
+    const p = await startProxy({ allow: [] });
+    const status = await new Promise((resolve) => {
+      const s = net.connect(p.port, '127.0.0.1', () => s.write('CONNECT api.github.com:443 HTTP/1.1\r\nHost: api.github.com:443\r\n\r\n'));
+      let buf = '';
+      s.on('data', (d) => (buf += d));
+      s.on('close', () => resolve(buf.slice(0, 12)));
+      setTimeout(() => s.destroy(), 500);
+    });
+    expect(status).toBe('HTTP/1.1 403');
+    await p.close();
+  });
+  it('testsEnv points npm at the mirror and the proxy at the empty-allowlist proxy', () => {
+    expect(testsEnv(1111, 2222)).toMatchObject({ HTTPS_PROXY: 'http://127.0.0.1:1111', npm_config_registry: 'http://127.0.0.1:2222/' });
   });
 });
 

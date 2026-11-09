@@ -24,11 +24,30 @@ export function createCloudflareSandboxProvider({ namespace, nightlyRunCapMin = 
       const res = await stub.fetch('https://hands.internal/start', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ runId: batch.runId, kind: batch.kind, capMin }),
+        body: JSON.stringify({ runId: batch.runId, kind: batch.kind, capMin, repos: [...new Set((batch.jobs ?? []).map((j) => j?.finding?.repo).filter(Boolean))] }),
       });
       if (!res.ok) throw new Error(`container start refused: ${res.status} ${(await res.text()).slice(0, 200)}`);
       const j = await res.json().catch(() => ({}));
       return { runId: batch.runId, provider: NAME, externalId: j.externalId ?? `hands-${batch.kind}:${batch.runId}`, startedAt: now() };
+    },
+    /** F-04 / F-01: destroy the lane's container now. halt:true also makes the container DO refuse later starts until resume(). Never throws. */
+    async stop(kind, { halt = false } = {}) {
+      if (!namespace) return { ok: true, note: 'no container binding' };
+      try {
+        const res = await namespace.get(namespace.idFromName(`hands-${kind}`)).fetch('https://hands.internal/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ halt }) });
+        return { ok: res.ok };
+      } catch (e) {
+        return { ok: false, note: String(e?.message ?? e).slice(0, 200) };
+      }
+    },
+    async resume(kind) {
+      if (!namespace) return { ok: true };
+      try {
+        const res = await namespace.get(namespace.idFromName(`hands-${kind}`)).fetch('https://hands.internal/resume', { method: 'POST' });
+        return { ok: res.ok };
+      } catch {
+        return { ok: false };
+      }
     },
   };
 }

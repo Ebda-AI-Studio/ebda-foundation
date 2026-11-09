@@ -33,9 +33,26 @@ export function candidate(src, pct, t, resetsAt, maxAgeS, nowS) {
 }
 
 /** A stream-json line object from `claude -p --output-format stream-json --verbose` -> reading or null. */
+const OVERAGE_ON = new Set(['allowed', 'using', 'in_use', 'active', 'enabled', 'allowed_overage']);
+/** F-08: a reading that says the account is (or may be) on pay-as-you-go extra usage is a refusal: the weekly limit would stop being a hard
+ *  stop and become a bill. The field names are UNCONFIRMED, so any key mentioning overage / extra usage with a truthy or 'allowed'-like value counts. */
+export function overageSeen(info) {
+  const walk = (o, depth = 0) => {
+    if (!o || typeof o !== 'object' || depth > 3) return false;
+    for (const [k, v] of Object.entries(o)) {
+      if (/overage|extra[_ ]?usage/i.test(k) && (v === true || (typeof v === 'string' && OVERAGE_ON.has(v.toLowerCase())))) return true;
+      if (typeof v === 'string' && /overage/i.test(k) === false && /^allowed_overage$/i.test(v)) return true;
+      if (walk(v, depth + 1)) return true;
+    }
+    return false;
+  };
+  return walk(info);
+}
+
 export function readingFromStreamEvent(ev, nowS) {
   if (!ev || ev.type !== 'rate_limit_event' || !ev.rate_limit_info) return null;
   const info = ev.rate_limit_info;
+  if (overageSeen(info)) return { src: 'claude-cli:overage', pct: 100, t: nowS, resetsAt: undefined };
   let util;
   let resetsAt;
   const sd = info.unifiedWindows?.seven_day;
@@ -147,5 +164,20 @@ export class UsageGuard {
     const d = decide(reading, this.thresholdPct);
     if (!reading) d.reason += ` [${why.join('; ')}]`;
     return { ...d, reading };
+  }
+}
+
+/**
+ * API-key mode (RR-hands-api-auth): there is no weekly plan window, so the usage guard is replaced by the dollar budget the brain hands
+ * out with the batch (lib/run.mjs stops between jobs when a run has spent it). Same interface as UsageGuard; never reads a rate limit.
+ */
+export class BudgetOnlyGuard {
+  constructor() {
+    this.thresholdPct = 100;
+    this.cli = null;
+  }
+  observe() {}
+  async check() {
+    return { allowed: true, reason: 'api key: dollar budget guard' };
   }
 }

@@ -13,11 +13,17 @@ export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {},
     usage.thresholdPct = validThreshold(b) && validThreshold(usage.thresholdPct) ? Math.min(usage.thresholdPct, b) : Number.NaN;
   }
   const jobs = batch.jobs ?? [];
+  let spent = 0;
   for (let i = 0; i < jobs.length; i++) {
     const job = jobs[i];
     // run cap: whatever is left goes back to the queue (skipped_usage = "not attempted, requeue"), never a failure
     if (now() >= runDeadline) {
       for (const j of jobs.slice(i)) results.push(await report(brain, j, { status: 'skipped_usage', note: `run cap ${capMin} min reached before this job; back to the queue` }, log));
+      break;
+    }
+    // RR-hands-api-auth: past the dollar budget the brain handed out with this batch, the rest goes back to the queue (not a failure)
+    if (typeof batch.budgetUsd === 'number' && spent >= batch.budgetUsd) {
+      for (const j of jobs.slice(i)) results.push(await report(brain, j, { status: 'skipped_usage', note: `run budget $${batch.budgetUsd.toFixed(2)} spent ($${spent.toFixed(2)}); back to the queue` }, log));
       break;
     }
     const g = await usage.check();
@@ -35,6 +41,7 @@ export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {},
     } catch (e) {
       o = { status: 'could_not_fix', note: `hands error: ${String(e?.message ?? e).slice(0, 300)}` };
     }
+    spent += o.usage?.costUsd ?? 0;
     results.push(await report(brain, job, o, log));
     // report the weekly usage the job's own Claude run showed (only a primary reading, never an echo)
     const u = usage.cli;

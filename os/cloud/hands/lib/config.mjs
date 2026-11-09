@@ -19,6 +19,10 @@ export const DEFAULTS = {
   runCapMin: 90,
   claudeModel: 'sonnet',
   maxTurns: 80,
+  // per-response output cap passed as CLAUDE_CODE_MAX_OUTPUT_TOKENS, and the diff caps of F-14 ("not a targeted fix" beyond them)
+  maxOutputTokens: 16000,
+  maxChangedFiles: 200,
+  maxChangedBytes: 1024 * 1024,
   usageThresholdPct: 80,
   branchPrefix: 'os/fix-',
   repos: {},

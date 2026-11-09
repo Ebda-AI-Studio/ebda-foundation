@@ -15,6 +15,8 @@ import { asSandbox, cloneUrl, gitEnv, prepareJobSecrets, SAFE_GIT, untrustedEnv 
 import { mayAutoMerge, mayWork } from './policy.mjs';
 import { buildPrompt, CANNOT_FIX } from './prompt.mjs';
 import { applyChanges, treeDiff } from './tree.mjs';
+import { expectedApiKeySource } from './auth.mjs';
+import { costOf, priceTable } from './prices.mjs';
 
 export { PROTECTED } from './diffcheck.mjs';
 
@@ -26,13 +28,18 @@ export function oneLine(s, n = 300) {
 
 /** Claude permission flags. Edits are scoped to the checkout; CI, env, .git and test-defining files are denied (the diff
  *  check enforces the same rule independently: a denied path in the diff = no auto-merge). */
+/** F-03: the checked-out repo's own Claude settings are NOT loaded (in -p mode there is no trust dialog, so its hooks, `env` block, apiKeyHelper
+ *  and .mcp.json servers would otherwise run); hooks are off, MCP is empty and strict. A repo `.claude/settings.json` can therefore neither run
+ *  code as Claude's uid nor switch the credential. (Flags to be re-verified on the pinned CLI: `claude --help`.) */
+export const CLAUDE_ISOLATION = ['--setting-sources', 'user', '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'];
+
 export function claudePermissionArgs(cfg, repoCfg, kind) {
   const deny = ['.git/**', '.github/**', '.env*', '**/.env*', '**/vitest.config.*', '**/jest.config.*', '**/playwright.config.*', '**/CLAUDE.md', '**/AGENTS.md', '**/GEMINI.md', '.claude/**', '.agents/**', '.cursor/**', '.husky/**', ...(repoCfg.protectedPaths ?? [])];
   if (!DEP_KINDS.has(kind)) deny.push('**/package.json');
   const denyRules = deny.flatMap((p) => [`Edit(./${p})`, `Write(./${p})`]);
-  if (cfg.sandboxed) return ['--permission-mode', 'bypassPermissions', '--disallowedTools', denyRules.join(',')];
+  if (cfg.sandboxed) return [...CLAUDE_ISOLATION, '--permission-mode', 'bypassPermissions', '--disallowedTools', denyRules.join(',')];
   const allow = ['Read(./**)', 'Edit(./**)', 'Write(./**)', 'Glob', 'Grep', `Bash(${repoCfg.test.join(' ')}:*)`];
-  return ['--permission-mode', 'acceptEdits', '--allowedTools', allow.join(','), '--disallowedTools', [...denyRules, 'WebFetch', 'WebSearch'].join(',')];
+  return [...CLAUDE_ISOLATION, '--permission-mode', 'acceptEdits', '--allowedTools', allow.join(','), '--disallowedTools', [...denyRules, 'WebFetch', 'WebSearch'].join(',')];
 }
 
 async function exists(p) {
@@ -62,9 +69,47 @@ export async function scrubSandboxHomes(cfg) {
   return null;
 }
 
+/** Every process of the unprivileged uids (Claude's and the tests') dies between jobs, so a backgrounded postinstall or test helper cannot
+ *  outlive its job and watch or act in the next. Scoped by uid (never by name pattern) and verified: returns a reason if any is left. */
+export async function killUntrustedProcesses(cfg, exec) {
+  if (!cfg.sandboxUser) return null;
+  for (const u of [...new Set([cfg.sandboxUser, cfg.testUser].filter(Boolean))]) {
+    for (let i = 0; i < 5; i++) {
+      await exec('pkill', ['-KILL', '-u', u], { timeoutMs: 10_000 });
+      const left = await exec('pgrep', ['-u', u], { timeoutMs: 10_000 });
+      if (left.code === 1) break; // pgrep: 1 = no process matched
+      if (i === 4) return `processes of ${u} survived the end-of-job kill`;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+  return null;
+}
+
+/** Dollars one job cost, from the result event(s): per model when the event breaks it down, else the aggregate x the routed model. */
+export function jobUsage(result, model, table) {
+  if (!result) return null;
+  const mu = result.modelUsage && typeof result.modelUsage === 'object' ? Object.entries(result.modelUsage) : [];
+  if (mu.length) {
+    const parts = mu.map(([m, u]) => costOf({ input_tokens: u.inputTokens, output_tokens: u.outputTokens, cache_read_input_tokens: u.cacheReadInputTokens, cache_creation_input_tokens: u.cacheCreationInputTokens }, m, table));
+    const top = parts.slice().sort((a, b) => b.costUsd - a.costUsd)[0];
+    return { model: top.model, inputTokens: parts.reduce((a, x) => a + x.inputTokens, 0), outputTokens: parts.reduce((a, x) => a + x.outputTokens, 0), cacheReadTokens: parts.reduce((a, x) => a + x.cacheReadTokens, 0), cacheWriteTokens: parts.reduce((a, x) => a + x.cacheWriteTokens, 0), costUsd: Math.round(parts.reduce((a, x) => a + x.costUsd, 0) * 1e6) / 1e6 };
+  }
+  return result.usage ? costOf(result.usage, model, table) : null;
+}
+
 export async function runJob(job, ctx) {
+  const acc = {};
+  const out = await runJobCore(job, ctx, acc);
+  // every outcome after a Claude run carries what that run cost (the brain keeps the daily / monthly totals and halts at the budget)
+  return acc.usage ? { ...out, usage: acc.usage } : out;
+}
+
+const MODELS = new Set(['haiku', 'sonnet', 'opus']);
+
+async function runJobCore(job, ctx, acc) {
   const { cfg, exec, usage, log = () => {}, now = () => Date.now(), env = process.env, creds = {} } = ctx;
   const slug = job.finding?.repo;
+  const ghToken = creds.ghTokens?.[String(slug ?? '').split('/')[0]] ?? creds.ghToken;
   const repoCfg = slug ? cfg.repos[slug] : undefined;
   if (!slug || !repoCfg) return { status: 'could_not_fix', note: `question: repo ${slug ?? '(none)'} has no hands config; add it to the hands repo config` };
   if (!/^[\w-]{1,64}$/.test(String(job.id))) return { status: 'could_not_fix', note: 'malformed job id' };
@@ -98,7 +143,7 @@ export async function runJob(job, ctx) {
   const runUntrusted = (cmd, args, o = {}) => {
     const role = o.role ?? 'claude';
     const [c, a] = asSandbox(cfg, cmd, args, role);
-    return exec(c, a, { cwd: W, ...o, env: untrustedEnv(env, { HOME: role === 'tests' ? testHome : sandboxHome, ...(cfg.proxyEnv ?? {}), ...(o.extraEnv ?? {}) }) });
+    return exec(c, a, { cwd: W, ...o, env: untrustedEnv(env, { HOME: role === 'tests' ? testHome : sandboxHome, ...((role === 'tests' ? cfg.proxyEnvTests : cfg.proxyEnv) ?? {}), ...(o.extraEnv ?? {}) }) });
   };
   const chownTo = (user) => (cfg.sandboxUser && user ? exec('chown', ['-R', `${user}:${user}`, W], { timeoutMs: step(60_000) }) : null);
 
@@ -106,11 +151,13 @@ export async function runJob(job, ctx) {
     await rm(jobDir, { recursive: true, force: true });
     await mkdir(jobDir, { recursive: true, mode: 0o755 });
     // N-3b: what the previous job's code left in the unprivileged homes must not steer this job's Claude or install
+    const survivors = await killUntrustedProcesses(cfg, exec);
+    if (survivors) return { status: 'could_not_fix', note: survivors };
     const dirty = await scrubSandboxHomes(cfg);
     if (dirty) return { status: 'could_not_fix', note: dirty };
     const secrets = await prepareJobSecrets(T);
-    const git = (cwd, args, o = {}) => exec('git', [...safe, ...args], { cwd, timeoutMs: step(), env: gitEnv(env, secrets, { token: creds.ghToken, auth: o.auth }) });
-    const url = cloneUrl(cfg.gitHost ?? 'https://github.com', slug, creds.ghToken);
+    const git = (cwd, args, o = {}) => exec('git', [...safe, ...args], { cwd, timeoutMs: step(), env: gitEnv(env, secrets, { token: ghToken, auth: o.auth }) });
+    const url = cloneUrl(cfg.gitHost ?? 'https://github.com', slug, ghToken);
 
     // 1. work tree + base sha, before Claude touches anything
     const cloneBranch = prMode ? prHead : base;
@@ -135,11 +182,19 @@ export async function runJob(job, ctx) {
     // 2. Claude Code, headless, capped; token through fd 3 (not the env); no GitHub credential at all
     const prompt = buildPrompt(job, repoCfg, slug);
     let result = null;
-    log(`job ${job.id}: claude (${cfg.claudeModel}, cap ${Math.round(left() / 60000)} min)`);
-    r = await runUntrusted(cfg.claudeBin, ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--model', cfg.claudeModel, '--max-turns', String(cfg.maxTurns), ...claudePermissionArgs(cfg, repoCfg, kind)], {
+    let badAuthSource = null;
+    // model routing: the brain's per-job choice (haiku | sonnet | opus), else the configured default; recorded with the cost
+    const model = MODELS.has(job.model) ? job.model : cfg.claudeModel;
+    const table = priceTable(env);
+    const mode = cfg.claudeAuth ?? (creds.claudeToken ? 'max' : 'login');
+    log(`job ${job.id}: claude (${model}, auth ${mode}, cap ${Math.round(left() / 60000)} min)`);
+    // credential: api -> the placeholder + the loopback forwarder (it holds the real key), or the key itself when the forwarder is off;
+    // max -> the OAuth token on fd 3; login (Mac) -> nothing, the CLI's own login
+    const authEnv = mode === 'api' ? (cfg.anthropicBaseUrl ? { ANTHROPIC_BASE_URL: cfg.anthropicBaseUrl, ANTHROPIC_API_KEY: cfg.anthropicPlaceholderKey } : { ANTHROPIC_API_KEY: creds.apiKey }) : creds.claudeToken ? { CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR: '3' } : {};
+    r = await runUntrusted(cfg.claudeBin, ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--model', model, '--max-turns', String(cfg.maxTurns), ...claudePermissionArgs(cfg, repoCfg, kind)], {
       timeoutMs: left(),
-      ...(creds.claudeToken ? { fd3: creds.claudeToken } : {}),
-      extraEnv: { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1', DISABLE_AUTOUPDATER: '1', ...(creds.claudeToken ? { CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR: '3' } : {}) },
+      ...(mode === 'max' && creds.claudeToken ? { fd3: creds.claudeToken } : {}),
+      extraEnv: { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(cfg.maxOutputTokens ?? 16000), ...authEnv },
       onLine: (line) => {
         let ev;
         try {
@@ -148,9 +203,13 @@ export async function runJob(job, ctx) {
           return;
         }
         usage?.observe(ev);
+        // F-06: the init event names where the credential came from; anything but the expected source aborts the job (checked when present)
+        if (ev.type === 'system' && ev.subtype === 'init' && typeof ev.apiKeySource === 'string' && ev.apiKeySource !== expectedApiKeySource(mode)) badAuthSource = ev.apiKeySource;
         if (ev.type === 'result') result = ev;
       },
     });
+    acc.usage = jobUsage(result, model, table);
+    if (badAuthSource) return { status: 'could_not_fix', note: `claude authenticated from '${badAuthSource}', expected '${expectedApiKeySource(mode)}'; aborted (billable-credential tripwire)` };
     if (r.timedOut || left() === 0) return { status: 'timed_out', note: `no fix within the ${Math.round(capMs / 60000)}-minute cap` };
     const text = String(result?.result ?? '');
     if (text.includes(CANNOT_FIX)) return { status: 'could_not_fix', note: oneLine(text.slice(text.indexOf(CANNOT_FIX) + CANNOT_FIX.length)) };
@@ -177,7 +236,9 @@ export async function runJob(job, ctx) {
     const diff = await treeDiff(W, C);
     if (diff.refused) return { status: 'could_not_fix', note: `question: ${diff.refused}` };
     let changes = diff.changes;
-    if (changes.length > 2000) return { status: 'could_not_fix', note: `question: ${changes.length} changed files is not a targeted fix` };
+    if (changes.length > (cfg.maxChangedFiles ?? 200)) return { status: 'could_not_fix', note: `question: ${changes.length} changed files is not a targeted fix` };
+    const bytes = changes.reduce((a, c) => a + (c.buf?.length ?? 0), 0);
+    if (bytes > (cfg.maxChangedBytes ?? 1024 * 1024)) return { status: 'could_not_fix', note: `question: ${bytes} changed bytes is not a targeted fix` };
     if (changes.length) {
       r = await git(C, ['check-ignore', '-z', '--', ...changes.map((c) => c.path)]);
       const ignored = new Set(r.stdout.split('\0').filter(Boolean));
@@ -220,6 +281,18 @@ export async function runJob(job, ctx) {
     const leak = await secretScan({ changes, title, body, T, exec, cfg, step });
     if (leak) return { status: 'could_not_fix', note: `question: secret scan hit (${leak}); nothing pushed` };
 
+    // 7b. I-8: the PR's CI runs with the repo's secrets (a hands PR is same-repo). If a PR-triggered workflow of the BASE branch lets PR code
+    // reach one, nothing is pushed at all: ask instead. Checked on the pristine base workflows, never the edited tree. Fails closed.
+    if (await exists(BW)) {
+      r = await exec('python3', ['-I', join(cfg.osHome, 'ops', 'lib', 'merge_gate.py'), 'secrets-exposure', BW], { timeoutMs: step(60_000) });
+      let exposed = null;
+      try {
+        exposed = JSON.parse(r.stdout);
+      } catch {}
+      if (r.code !== 0 || !Array.isArray(exposed)) return { status: 'could_not_fix', note: 'question: could not check the repo workflows for secrets reachable from a PR; nothing pushed' };
+      if (exposed.length) return { status: 'could_not_fix', note: `question: a PR-triggered workflow lets PR code reach repo secrets (${exposed.slice(0, 3).join(', ')}), so a hands PR's CI would run with them; nothing pushed` };
+    }
+
     // 8. commit from the fresh tree, explicit paths only, hooks off; then it must be clean
     await applyChanges(C, changes);
     const paths = changes.map((c) => c.path);
@@ -236,7 +309,7 @@ export async function runJob(job, ctx) {
     if (prMode) return { status: 'pr_opened', prUrl: job.finding.url, note: `question: pushed a ${prState === 'conflicting' ? 'conflict resolution' : 'fix for the failing checks'} to ${prHead}; the hands never merge a PR` };
 
     // 9. PR (GH_TOKEN only in this process; cwd is the private dir, --repo explicit)
-    const ghEnv = { PATH: env.PATH, HOME: T, GH_CONFIG_DIR: secrets.ghConfigDir, ...(creds.ghToken ? { GH_TOKEN: creds.ghToken } : {}), GH_PROMPT_DISABLED: '1' };
+    const ghEnv = { PATH: env.PATH, HOME: T, GH_CONFIG_DIR: secrets.ghConfigDir, ...(ghToken ? { GH_TOKEN: ghToken } : {}), GH_PROMPT_DISABLED: '1' };
     r = await exec('gh', ['pr', 'create', '--repo', slug, '--base', base, '--head', branch, '--title', title, '--body', body], { cwd: T, env: ghEnv, timeoutMs: Math.max(1, Math.min(left() || 60_000, 5 * 60_000)) });
     const prUrl = (r.stdout.match(/https?:\/\/\S+\/pull\/\d+/) ?? [])[0];
     if (r.code !== 0 || !prUrl) return { status: 'could_not_fix', note: `branch ${branch} pushed but PR create failed: ${oneLine(r.stderr)}` };
@@ -270,6 +343,7 @@ export async function runJob(job, ctx) {
     return { status: 'pr_opened', prUrl, note: `question: merge gate not green (exit ${r.code}${r.timedOut ? ', timed out' : ''}): ${oneLine(r.stderr || r.stdout, 200)}` };
   } finally {
     if (!ctx.keepWorkdir) await rm(jobDir, { recursive: true, force: true }).catch(() => {});
+    await killUntrustedProcesses(cfg, exec).catch(() => {});
     await scrubSandboxHomes(cfg).catch(() => {});
   }
 }

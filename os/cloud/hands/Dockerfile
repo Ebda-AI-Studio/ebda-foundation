@@ -62,6 +62,9 @@ RUN ln -s /opt/claude-cli/node_modules/.bin/claude /usr/local/bin/claude \
 COPY ops/merge-gate.sh /opt/ebda-os/ops/merge-gate.sh
 COPY ops/lib/merge_gate.py /opt/ebda-os/ops/lib/merge_gate.py
 COPY cloud/hands/run-batch.mjs cloud/hands/entrypoint.sh /opt/ebda-os/cloud/hands/
+# F-03: managed settings (highest precedence, a repo cannot override them): no hooks, no project MCP servers. Linux path per the Claude Code docs
+# (UNCONFIRMED on 2.1.309: the run-time isolation flags in lib/job.mjs do not depend on it).
+COPY cloud/hands/managed-settings.json /etc/claude-code/managed-settings.json
 COPY cloud/hands/lib /opt/ebda-os/cloud/hands/lib
 ENV HANDS_SANDBOXED=1 \
     HANDS_SANDBOX_USER=node \

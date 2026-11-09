@@ -18,14 +18,16 @@ import { join } from 'node:path';
 import { brainClient, recordingBrain } from './lib/brain-client.mjs';
 import { loadConfig, parseThreshold } from './lib/config.mjs';
 import { dryRunExec } from './lib/dry-run.mjs';
-import { allowList, proxyEnv, startProxy } from './lib/egress.mjs';
+import { ANTHROPIC_PLACEHOLDER_KEY, claudeAllowList, proxyEnv, startAnthropicForwarder, startProxy, startRegistryMirror, testsEnv } from './lib/egress.mjs';
+import { authModeOf, billableKeyTripwire } from './lib/auth.mjs';
+import { CLAUDE_ISOLATION } from './lib/job.mjs';
 import { exec as realExec } from './lib/exec.mjs';
 import { asSandbox, untrustedEnv } from './lib/git.mjs';
 import { runBatch } from './lib/run.mjs';
-import { UsageGuard } from './lib/usage-guard.mjs';
+import { BudgetOnlyGuard, UsageGuard } from './lib/usage-guard.mjs';
 
 /** Credentials the hands hold in memory; no child process inherits them from the hands' env. */
-export const CRED_KEYS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'HANDS_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'];
+export const CRED_KEYS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'HANDS_GH_TOKENS', 'HANDS_TOKEN', 'HANDS_MAC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'];
 
 function parseArgs(argv) {
   const a = { dryRun: false, max: 5 };
@@ -49,7 +51,7 @@ function parseArgs(argv) {
 function cliProbe(cfg, exec, env, creds) {
   return async () => {
     const events = [];
-    const [c, a] = asSandbox(cfg, cfg.claudeBin, ['-p', 'Reply with the single word ok.', '--model', 'haiku', '--max-turns', '1', '--output-format', 'stream-json', '--verbose', '--tools', '']);
+    const [c, a] = asSandbox(cfg, cfg.claudeBin, ['-p', 'Reply with the single word ok.', ...CLAUDE_ISOLATION, '--model', 'haiku', '--max-turns', '1', '--output-format', 'stream-json', '--verbose', '--tools', '']);
     const r = await exec(c, a, {
       env: untrustedEnv(env, { HOME: cfg.sandboxHome, ...(cfg.proxyEnv ?? {}), DISABLE_AUTOUPDATER: '1', ...(creds.claudeToken ? { CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR: '3' } : {}) }),
       ...(creds.claudeToken ? { fd3: creds.claudeToken } : {}),
@@ -92,7 +94,31 @@ export async function main(argv = process.argv.slice(2), env = process.env, out 
     return 64;
   }
   const log = (s) => out(`[hands ${new Date().toISOString()}] ${s}`);
-  const creds = { ghToken: env.GH_TOKEN || undefined, claudeToken: env.CLAUDE_CODE_OAUTH_TOKEN || undefined };
+  const sandboxed = env.HANDS_SANDBOXED === '1';
+  const mode = authModeOf(env, sandboxed);
+  // F-06: the billable-key tripwire runs before anything else. A stray key bills the API in -p mode, so it is refused, not ignored.
+  if (!args.dryRun) {
+    const trip = billableKeyTripwire(env, mode);
+    if (trip) {
+      log(`REFUSED to run: ${trip}`);
+      if (env.BRAIN_URL && env.HANDS_TOKEN && env.HANDS_RUN_ID) {
+        try {
+          await brainClient({ url: env.BRAIN_URL, token: env.HANDS_TOKEN, runId: env.HANDS_RUN_ID }).call('POST', '/hands/refused', { runId: env.HANDS_RUN_ID, reason: `billable key tripwire: ${trip}`.slice(0, 200) });
+        } catch {
+          /* best effort: the exit code is the signal */
+        }
+      }
+      return 4;
+    }
+  }
+  const ghTokens = (() => {
+    try {
+      return env.HANDS_GH_TOKENS ? JSON.parse(env.HANDS_GH_TOKENS) : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const creds = { ghToken: env.GH_TOKEN || undefined, ghTokens, claudeToken: mode === 'max' ? env.CLAUDE_CODE_OAUTH_TOKEN || undefined : undefined, apiKey: mode === 'api' ? env.ANTHROPIC_API_KEY || undefined : undefined };
   const childEnv = { ...env };
   for (const k of CRED_KEYS) delete childEnv[k];
   let cfg;
@@ -119,7 +145,8 @@ export async function main(argv = process.argv.slice(2), env = process.env, out 
       cfg.gitName = env.HANDS_GIT_NAME;
       cfg.gitEmail = env.HANDS_GIT_EMAIL;
       if (!cfg.gitName || !cfg.gitEmail) throw new Error('HANDS_GIT_NAME and HANDS_GIT_EMAIL are required (commit identity)');
-      brain = brainClient({ url: env.BRAIN_URL, token: env.HANDS_TOKEN });
+      // F-06b: a container holds its PER-RUN token (HANDS_TOKEN) and names its run; the Mac holds its own HANDS_MAC_TOKEN
+      brain = brainClient({ url: env.BRAIN_URL, token: args.claim ? env.HANDS_MAC_TOKEN : env.HANDS_TOKEN, runId: args.claim ? undefined : args.run });
       const swept = sweepWorkdir(cfg.workdir);
       if (swept) log(`removed ${swept} job dir(s) left by an earlier crash`);
       if (args.claim) {
@@ -147,17 +174,33 @@ export async function main(argv = process.argv.slice(2), env = process.env, out 
 
   // F-I8: in the container every untrusted command reaches the network only through the allowlist proxy (entrypoint.sh blocks the rest)
   let proxy = null;
+  let testsProxy = null;
+  let mirror = null;
+  let forwarder = null;
   if (cfg.sandboxed && !args.dryRun) {
-    proxy = await startProxy({ allow: allowList(cfg.egressAllow), log });
+    cfg.claudeAuth = mode;
+    // F-03: the model API is reached ONLY through the loopback forwarder (messages endpoints, our credential); Claude's CONNECT proxy then
+    // has nothing in its allowlist. HANDS_ANTHROPIC_FORWARDER=0 falls back to CONNECT api.anthropic.com (see lib/egress.mjs).
+    const secret = mode === 'api' ? env.ANTHROPIC_API_KEY : env.CLAUDE_CODE_OAUTH_TOKEN;
+    if (env.HANDS_ANTHROPIC_FORWARDER !== '0') {
+      forwarder = await startAnthropicForwarder({ mode, secret, log });
+      cfg.anthropicBaseUrl = `http://127.0.0.1:${forwarder.port}`;
+      cfg.anthropicPlaceholderKey = ANTHROPIC_PLACEHOLDER_KEY;
+    }
+    proxy = await startProxy({ allow: forwarder ? [] : claudeAllowList(cfg.egressAllow), log });
     cfg.proxyEnv = proxyEnv(proxy.port);
-    log(`egress allowlist proxy on 127.0.0.1:${proxy.port}`);
-  }
+    // the tests role (install / test / format) gets NO CONNECT target and a read-only registry mirror (RR-egress-roles)
+    testsProxy = await startProxy({ allow: [], log });
+    mirror = await startRegistryMirror({ log });
+    cfg.proxyEnvTests = testsEnv(testsProxy.port, mirror.port);
+    log(`egress: claude proxy 127.0.0.1:${proxy.port} (${forwarder ? `nothing; model API via forwarder :${forwarder.port}` : 'model API'}), tests proxy 127.0.0.1:${testsProxy.port} (nothing) + read-only registry mirror 127.0.0.1:${mirror.port}`);
+  } else cfg.claudeAuth = mode;
 
   // I-1: a threshold that is not a finite 1..100 number fails CLOSED (every job refused and reported)
   const parsed = parseThreshold(env.HANDS_USAGE_THRESHOLD_PCT);
   const thresholdPct = parsed === undefined ? cfg.usageThresholdPct : parsed === null ? Number.NaN : parsed;
   if (Number.isNaN(thresholdPct)) log(`HANDS_USAGE_THRESHOLD_PCT=${JSON.stringify(env.HANDS_USAGE_THRESHOLD_PCT)} is not a number 1..100: refusing every job`);
-  const usage = new UsageGuard({
+  const usage = mode === 'api' && !args.dryRun ? new BudgetOnlyGuard() : new UsageGuard({
     thresholdPct,
     manualPath: cfg.usageState ? join(cfg.usageState, 'manual.json') : '',
     snapshotPath: cfg.usageSnapshot,
@@ -166,9 +209,10 @@ export async function main(argv = process.argv.slice(2), env = process.env, out 
   });
   log(`run ${batch.runId} (${batch.kind}): ${batch.jobs.length} job(s), per-job cap ${batch.perJobCapMin} min, usage threshold ${thresholdPct}% (brain ${batch.usageThresholdPct ?? 'n/a'}%)`);
   const results = await runBatch(batch, { brain, cfg, exec, usage, log, keepWorkdir: false, env: childEnv, creds });
-  if (proxy) {
-    if (proxy.denied.size) log(`egress denied during the run: ${[...proxy.denied].join(', ')}`);
-    await proxy.close();
+  for (const p of [proxy, testsProxy, mirror, forwarder]) {
+    if (!p) continue;
+    if (p.denied.size) log(`egress denied during the run: ${[...p.denied].join(', ')}`);
+    await p.close();
   }
   const counts = results.reduce((m, r) => ((m[r.status] = (m[r.status] ?? 0) + 1), m), {});
   log(`run ${batch.runId} done: ${JSON.stringify(counts)}`);

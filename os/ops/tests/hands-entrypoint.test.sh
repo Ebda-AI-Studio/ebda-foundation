@@ -23,7 +23,7 @@ S
 chmod +x "$BIN/node"
 run() {  # extra env as args
   : > "$TMP/rules.log"
-  env -i PATH="$BIN:/usr/bin:/bin" HANDS_RUN_ID=run1 GH_TOKEN=x CLAUDE_CODE_OAUTH_TOKEN=y HANDS_SANDBOX_USER=node HANDS_TEST_USER=tester \
+  env -i PATH="$BIN:/usr/bin:/bin" HANDS_RUN_ID=run1 GH_TOKEN=x ANTHROPIC_API_KEY=y HANDS_SANDBOX_USER=node HANDS_TEST_USER=tester \
     HANDS_EGRESS_REQUIRE_KERNEL=1 HANDS_IPV6_DISABLE_FILE="$TMP/no-such-file" "$@" sh "$EP" >"$TMP/out" 2>&1; echo $?
 }
 n(){ grep -c "$1" "$TMP/rules.log"; }
@@ -45,4 +45,15 @@ ok "ip6tables fails but the kernel has IPv6 disabled => runs" "$(run FAIL_ip6tab
 echo 0 > "$TMP/ipv6-on"
 ok "ip6tables fails and disable_ipv6=0 => exit 3"     "$(run FAIL_ip6tables=1 HANDS_IPV6_DISABLE_FILE="$TMP/ipv6-on")" "3"
 ok "kernel enforcement off (Mac/dev): no rules, node runs" "$(run HANDS_EGRESS_REQUIRE_KERNEL=0)$(n '^ip6\?tables')" "00"
+# RR-egress-roles: ptrace_scope is raised to 1 when the container allows it, and the value is logged either way (deploy-time check)
+echo 0 > "$TMP/yama"
+ok "yama 0 is raised to 1 when writable"  "$(run HANDS_YAMA_FILE="$TMP/yama" >/dev/null; cat "$TMP/yama")" "1"
+ok "  ...and the value is logged"           "$(grep -c 'yama ptrace_scope=1' "$TMP/out")" "1"
+ok "no yama in this kernel: logged, run continues" "$(run HANDS_YAMA_FILE="$TMP/none" | tr -d "\n"; grep -c "yama not present" "$TMP/out")" "01"
+# cost audit: the credential for the mode must be present (api = the Console key, max = the OAuth token); GitHub: GH_TOKEN or per-owner App tokens
+ok "api mode without its key: refused (non-zero), nothing started" "$(run ANTHROPIC_API_KEY= | sed 's/^[1-9].*/refused/')$(n 'run-batch')" "refused0"
+ok "max mode needs the OAuth token, not the API key"     "$(run HANDS_CLAUDE_AUTH=max ANTHROPIC_API_KEY= | sed 's/^[1-9].*/refused/')$(n 'run-batch')" "refused0"
+ok "max mode with its token starts"                      "$(run HANDS_CLAUDE_AUTH=max CLAUDE_CODE_OAUTH_TOKEN=o ANTHROPIC_API_KEY=)" "0"
+ok "App tokens instead of GH_TOKEN are enough"           "$(run GH_TOKEN= 'HANDS_GH_TOKENS={"o":"t"}')" "0"
+ok "neither GH_TOKEN nor App tokens: exit 2"             "$(run GH_TOKEN=)" "2"
 echo "---"; echo "hands-entrypoint: $pass passed, $fail failed"; [ "$fail" = 0 ]

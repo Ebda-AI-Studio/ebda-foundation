@@ -54,6 +54,17 @@ export function checkDockerfile(text, context = CONTEXT) {
     if (I === 'USER') user = body;
     if (I === 'ENTRYPOINT') entry = body;
   }
+  // F-03: the image ships managed Claude settings with hooks off
+  const ms = logical.find((l) => /^COPY\s+\S*managed-settings\.json\s+\/etc\/claude-code\/managed-settings\.json$/i.test(l));
+  if (!ms) problems.push('no COPY of managed-settings.json to /etc/claude-code/managed-settings.json (F-03)');
+  else {
+    try {
+      const j = JSON.parse(readFileSync(join(context, ms.split(/\s+/)[1]), 'utf8'));
+      if (j.disableAllHooks !== true) problems.push('managed-settings.json must set disableAllHooks: true');
+    } catch (e) {
+      problems.push(`managed-settings.json unreadable: ${e.message}`);
+    }
+  }
   if (froms.length < 2) problems.push('expected a multi-stage build');
   // root is allowed only for the privilege-split design: the hands keep the tokens and run every untrusted command as
   // a named non-root sandbox user (HANDS_SANDBOX_USER) through setpriv
