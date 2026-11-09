@@ -3,7 +3,8 @@
 // cannot run a 6 h watcher twice.
 import type { BrainDO } from '../brain-do';
 import type { Env } from '../env';
-import { due, reportError, type Sink, type WatchCtx } from './common';
+import { due, reportError, unconfiguredIdent, type Sink, type WatchCtx } from './common';
+import * as ciCatchup from './ci-catchup';
 import * as cfWorkers from './cf-workers';
 import * as costGuard from './cost-guard';
 import * as deployDrift from './deploy-drift';
@@ -32,6 +33,7 @@ export const GROUPS: Record<WatcherGroup, Entry[]> = {
   hourly: [
     { id: deployDrift.ID, intervalMs: deployDrift.INTERVAL_MS, run: deployDrift.watchDeployDrift },
     { id: prShepherd.ID, intervalMs: prShepherd.INTERVAL_MS, run: prShepherd.watchPrShepherd },
+    { id: ciCatchup.ID, intervalMs: ciCatchup.INTERVAL_MS, run: ciCatchup.watchCiCatchup },
   ],
   sixhourly: [
     { id: cfWorkers.ID, intervalMs: cfWorkers.INTERVAL_MS, run: cfWorkers.watchCfWorkers },
@@ -52,7 +54,11 @@ export async function runWatchers(group: WatcherGroup, env: Env, brain: DurableO
         out[w.id] = 'skipped';
         continue;
       }
-      await w.run(ctx);
+      const wctx: WatchCtx = { ...ctx, configGaps: new Set() };
+      await w.run(wctx);
+      // N-1: a watcher that ran WITHOUT a config gap has its config now; close the earlier "not running" note, or the post-deploy
+      // cutover gate (--deployed) could never clear. (A thrown failure skips this: that says nothing about config.)
+      if (!wctx.configGaps!.has(w.id)) await ctx.sink.resolveFinding(unconfiguredIdent(w.id), 'configured', now).catch(() => undefined);
       out[w.id] = 'ran';
     } catch (e) {
       out[w.id] = 'error';

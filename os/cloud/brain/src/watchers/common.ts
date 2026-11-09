@@ -28,7 +28,12 @@ export interface WatchCtx {
   sink: Sink;
   now: number;
   fetchImpl: typeof fetch;
+  /** watcher ids that raised monitor-unconfigured during this run (set by reportUnconfigured; the runner resolves the rest, N-1) */
+  configGaps?: Set<string>;
 }
+
+/** The finding identity of a watcher's "I am not running: config missing" note. */
+export const unconfiguredIdent = (id: string) => ({ source: WATCHER_SOURCE, kind: 'monitor-unconfigured', key: `${id}:config:unconfigured` });
 
 export class WatcherError extends Error {}
 
@@ -101,6 +106,7 @@ export function finding(id: string, kind: string, subject: string, state: string
 
 /** One deduped finding saying a watcher cannot run because its config is missing. */
 export async function reportUnconfigured(ctx: WatchCtx, id: string, what: string): Promise<void> {
+  ctx.configGaps?.add(id);
   await ctx.sink.ingestMany([finding(id, 'monitor-unconfigured', 'config', 'unconfigured', `watcher ${id} is not running: ${what} is not set`, { severity: 'P3' })], ctx.now);
 }
 
