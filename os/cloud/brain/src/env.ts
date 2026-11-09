@@ -98,7 +98,16 @@ export interface Env {
   HANDS_GITHUB_ACTIONS_WORKFLOW?: string;
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
+  /** RR-dash-auth: interim Basic Auth for /dash/* and /api/* while Access is not configured. 'off' disables it (Access, or 503). */
+  DASH_BASIC_AUTH?: string;
+  /** the Basic Auth user (default `ahmad`) */
+  DASH_BASIC_USER?: string;
+  /** failures in 15 minutes before an IP (default 10) or everyone (default 200) is locked out */
+  DASH_AUTH_FAILS_PER_IP?: string;
+  DASH_AUTH_FAILS_GLOBAL?: string;
   // secrets
+  /** RR-dash-auth: the dashboard Basic Auth password (Keychain `ebda-os-brain-dash-password`); unset = Basic Auth off */
+  DASH_BASIC_PASSWORD?: string;
   GH_WEBHOOK_SECRET?: string;
   RELAY_SECRET?: string;
   GITHUB_TOKEN?: string;

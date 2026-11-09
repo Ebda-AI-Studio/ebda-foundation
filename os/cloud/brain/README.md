@@ -12,7 +12,7 @@ cron 6 h  cf-workers, sentry-stale, cost-guard, world-watch, dr-drill        pr-
 cron 21:30 UTC  the ONE nightly hands batch                                         │   runs, questions, messages
 cron 05:00 UTC  the ONE daily digest                                                ┘
 BrainDO ──► HandsProvider.start(batch) ──► hands pull GET /hands/runs/:id, post outcomes + usage
-BrainDO ──► Telegram (≤ 3/day + 1 digest, deduped)        dashboard /dash/ + /api/* (behind Cloudflare Access)
+BrainDO ──► Telegram (≤ 3/day + 1 digest, deduped)        dashboard /dash/ + /api/* (owner only: Access, else Basic Auth)
 ```
 
 ## Cloud watchers (ported from the Mac watchers, Task 4a)
@@ -74,7 +74,7 @@ Footprint: at most 3 outbound requests per service per 15 min and a few dozen pe
 | Metrics | `BrainDO.actedOn/selfCheck` | acted = dispatched to the hands, asked as a question, or resolved. Acted-on ratio = acted / raised (24 h and 7 d). A finding unacted 24 h after it was raised is an OS bug: counted on the dashboard and in the digest, never its own message. |
 | Usage guard | `src/usage.ts` | The hands report `POST /hands/usage {weeklyUsedPct, resetsAt?}` after each job. The brain refuses to start any run (urgent, nightly, Mac claim) when the last report is ≥ `USAGE_WEEKLY_THRESHOLD_PCT` (80) and not past `resetsAt`. No report / report older than 7 days → allowed and labelled `usage-unknown`. usage-unknown starts a run; the hands then refuse every job on unknown or over-threshold usage before any work (`os/cloud/hands/lib/usage-guard.mjs`, tested), so unknown is never unguarded. |
 | Usage-starved alert | `BrainDO.noteNightly` | Ruling 4b-6. A nightly batch is starved when the usage guard refuses to start it, or when it starts and every job comes back `skipped_usage`. After `USAGE_STARVED_ALERT_AFTER` (3) starved batches in a row, and every multiple after, one urgent-class message (`usage-starved`: Ebda OS: the last N nightly batches did no work). Any batch with a non-skipped outcome resets the streak. Queue empty or a pull-only provider is not a skip. |
-| Dashboard | `public/dash/`, `GET /api/state` | Static assets (en + ar, RTL by logical properties, night + gold `#B08D57`, no orange), CSP via `public/_headers`. `/api/*` verifies the Access JWT itself (RS256, aud, iss, exp) and fails closed (503) until Access is configured. |
+| Dashboard | `public/dash/`, `GET /api/state` | Static assets (en + ar, RTL by logical properties, night + gold `#B08D57`, no orange), CSP set by the Worker (and `public/_headers`). Ruling RR-dash-auth: EVERY path runs the Worker first (`run_worker_first: true`) and `/dash/*` (HTML, JS, CSS) plus `/api/*` go through `gateHuman()` (`src/dash-auth.ts`): the Access JWT (RS256, aud, iss, exp) when Access is configured, else HTTP Basic Auth (user `ahmad`, secret `DASH_BASIC_PASSWORD` = Keychain `ebda-os-brain-dash-password`, constant-time compare, 10 failures per IP / 200 overall per 15 min lock out, even the right password), else 503. Every refusal is an empty 401/403/429/503. `/health` stays public. |
 
 ### Contract for the hands (Task 4b)
 
@@ -154,6 +154,9 @@ All on the **personal** Cloudflare account. Never put an id or secret in the rep
    done
    ```
    - `HANDS_TOKEN` is the HMAC key for the per-run container tokens (never a bearer); `HANDS_MAC_TOKEN` is the Mac's own bearer (put the same value in the Mac's `OS_SERVICES_ENV`, NOT `HANDS_TOKEN`). The hands key: `HANDS_ANTHROPIC_API_KEY` (a Console key with a hard spend limit; `HANDS_API_SPEND_LIMIT_USD` declares that limit, committed as 200), plus `OS_BRAIN_CONTAINERS=1` at deploy to merge the containers block. Never put `ANTHROPIC_API_KEY` on the Mac.
+   - Dashboard (ruling RR-dash-auth): `DASH_BASIC_PASSWORD` from the Keychain without printing it:
+     `security find-generic-password -s ebda-os-brain-dash-password -a ahmad -w | npx wrangler secret put DASH_BASIC_PASSWORD --config wrangler.deploy.jsonc`.
+     Create it once with `security add-generic-password -s ebda-os-brain-dash-password -a ahmad -w "$(openssl rand -base64 32)"`. Without it (and without Access) `/dash/*` and `/api/*` answer 503.
    - `RELAY_SECRET` must equal the Mac listener's relay secret (in `OS_SERVICES_ENV`). Leave it unset to run brain-only (no `/pending` copy).
    - `GITHUB_TOKEN`: fine-grained PAT per org (resource owner = the org), read-only **Dependabot alerts**. Until set, the advisory watcher records `GITHUB_TOKEN secret unset` and does nothing.
    - Telegram (ruling RR-tg-send-only): the brain REUSES `@EbdaAIStudiobot`; no new bot. Telegram allows one consumer per bot and the tg-relay session already polls it with `getUpdates`, so the brain is **send-only** (`sendMessage` for alerts, questions and the digest; `answerCallbackQuery` to acknowledge a button). It never calls `setWebhook` or `getUpdates` (`test/send-only.test.ts` fails if any source does). Load the secrets from the Keychain without printing them:
@@ -166,9 +169,11 @@ All on the **personal** Cloudflare account. Never put an id or secret in the rep
    `/dash` and `/api`, policy = Ahmad's email only. Do **not** cover `/github`, `/telegram`, `/hands`, `/findings`,
    `/pending`, `/health` (machines authenticate with their own secrets). Then add the team domain + the application AUD
    tag to `~/.ebda-os.local.env` as `OS_BRAIN_ACCESS_TEAM_DOMAIN=<team>.cloudflareaccess.com` and `OS_BRAIN_ACCESS_AUD=<aud>`
-   and redeploy (step 3). Until then `/api/*` answers 503.
+   and redeploy (step 3). From then on Access wins and Basic Auth is ignored; set `DASH_BASIC_AUTH` to `off` in
+   `wrangler.jsonc` and `npx wrangler secret delete DASH_BASIC_PASSWORD` to drop it entirely. Until Access is set,
+   `/dash/*` and `/api/*` need Basic Auth (user `ahmad`, the Keychain password).
 8. Verify against production: `/health` 200; a webhook redelivery from the org settings → 204; `GET /pending` with the
-   relay secret returns `[]` or events; dashboard loads through Access; after the first `:07` the dashboard shows the
+   relay secret returns `[]` or events; `curl -sI https://$OS_BRAIN_HOST/dash/` and `/dash/dash.js` answer 401 with no body, the dashboard loads with the owner's login; after the first `:07` the dashboard shows the
    advisory run per org; the first digest arrives at 05:00 UTC.
 
 Rollback: `npx wrangler rollback --config wrangler.deploy.jsonc` (code); disable the org webhooks to stop the inbox.

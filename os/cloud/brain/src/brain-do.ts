@@ -182,6 +182,8 @@ export class BrainDO extends DurableObject<Env> {
         id TEXT PRIMARY KEY, slug TEXT NOT NULL, sha TEXT NOT NULL, workflow TEXT NOT NULL, branch TEXT NOT NULL,
         default_branch TEXT NOT NULL, url TEXT NOT NULL, ts INTEGER NOT NULL, processed_at INTEGER);
       CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS auth_fail (ip TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS auth_fail_ip ON auth_fail(ip, at);
     `);
   }
 
@@ -1102,6 +1104,23 @@ export class BrainDO extends DurableObject<Env> {
     if (used + n > intVar(this.env.INGEST_PER_DAY, 1000)) return false;
     this.setMeta(key, used + n);
     return true;
+  }
+
+  /**
+   * RR-dash-auth: the dashboard Basic Auth rate limiter. Called only for requests that carry credentials. Returns true when the
+   * caller may in: the credentials were right AND neither this IP (DASH_AUTH_FAILS_PER_IP, 10) nor everyone (DASH_AUTH_FAILS_GLOBAL,
+   * 200) is over its failure budget in the last 15 minutes. A locked caller is refused even with the right password (no oracle).
+   * Failures past the global cap are not stored (bounded writes).
+   */
+  dashAuthAttempt(ip: string, ok: boolean, now: number = Date.now()): boolean {
+    const since = now - 15 * 60_000;
+    this.sql.exec('DELETE FROM auth_fail WHERE at < ?', since);
+    const ipKey = ip.slice(0, 64);
+    const perIp = Number(this.row('SELECT COUNT(*) AS n FROM auth_fail WHERE ip = ?', ipKey)?.n ?? 0);
+    const all = Number(this.row('SELECT COUNT(*) AS n FROM auth_fail')?.n ?? 0);
+    const locked = perIp >= intVar(this.env.DASH_AUTH_FAILS_PER_IP, 10) || all >= intVar(this.env.DASH_AUTH_FAILS_GLOBAL, 200);
+    if (!ok && !locked) this.sql.exec('INSERT INTO auth_fail (ip, at) VALUES (?, ?)', ipKey, now);
+    return ok && !locked;
   }
 
   /** F-05: the footprint watcher stores its last reading (an unreadable one is `unknown`, never zero). */

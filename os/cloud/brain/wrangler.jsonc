@@ -13,8 +13,10 @@
   // F-18: a fan-out bug becomes a thrown error, not 10,000 subrequests or a runaway CPU bill (test/config.test.ts asserts both).
   "limits": { "cpu_ms": 30000, "subrequests": 500 },
 
-  // Dashboard: static files under public/dash/ (served at /dash/). /api/* and every machine path reach the Worker.
-  "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "none", "run_worker_first": ["/api/*", "/github/*", "/telegram/*", "/hands/*", "/findings", "/pending", "/health"] },
+  // Dashboard: static files under public/dash/ (served at /dash/). EVERY path runs the Worker first: /dash/* is served from the
+  // ASSETS binding only after the auth gate (RR-dash-auth), so the HTML/JS/CSS are never public. `true` rather than a path list:
+  // a list could be side-stepped by a spelling the asset router matches but the list does not (e.g. a percent-encoded path).
+  "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "none", "run_worker_first": true },
 
   // One SQLite-backed Durable Object holds the pipeline: findings, jobs, runs, questions, messages, counters.
   "durable_objects": { "bindings": [{ "name": "BRAIN", "class_name": "BrainDO" }] },
@@ -49,7 +51,7 @@
     "HANDS_PROVIDER": "stub",
     "HANDS_NIGHTLY_RUN_CAP_MIN": "90",
     // F-01: "1" halts every container start (the DO `halt` key, set by cost-stop and POST /api/halt, is the first line of defence)
-    "HANDS_HALT": "0",
+    "HANDS_HALT": "1",
     // RR-hands-api-auth: the cloud hands run on a Console API key (ANTHROPIC_API_KEY secret, hands container only), paid from the $200/month
     // API credit. 'max' stays selectable. HANDS_API_SPEND_LIMIT_USD is the hard limit Ahmad set in the Console ($200); api mode refuses to start
     // without a positive value, and the monthly budget below must stay under it (config test).
@@ -71,10 +73,15 @@
     "CF_STOP_USD": "20",
     // the brain's own public URL the hands container calls back (rendered from OS_BRAIN_HOST)
     "HANDS_BRAIN_URL": "__HANDS_BRAIN_URL__",
+    // RR-dash-auth: until Access is configured, /dash/* and /api/* need HTTP Basic Auth (user DASH_BASIC_USER, secret
+    // DASH_BASIC_PASSWORD from Keychain `ebda-os-brain-dash-password`). Once ACCESS_* are rendered, Access wins and Basic is
+    // ignored; set "off" to drop it entirely. No password secret = 503 (fail closed).
+    "DASH_BASIC_AUTH": "on",
+    "DASH_BASIC_USER": "ahmad",
     "ACCESS_TEAM_DOMAIN": "__ACCESS_TEAM_DOMAIN__",
     "ACCESS_AUD": "__ACCESS_AUD__"
   }
-  // Secrets (wrangler secret put, never here): GH_WEBHOOK_SECRET, RELAY_SECRET, GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
+  // Secrets (wrangler secret put, never here): DASH_BASIC_PASSWORD, GH_WEBHOOK_SECRET, RELAY_SECRET, GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
   // TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, HANDS_TOKEN, INGEST_TOKEN, CF_API_TOKEN, SENTRY_AUTH_TOKEN (GITHUB_TOKEN also feeds
   // deploy-drift, pr-shepherd, cost-guard); hands container (Task 7): CLAUDE_CODE_OAUTH_TOKEN,
   // HANDS_GH_TOKEN, HANDS_CONFIG_JSON, HANDS_GIT_NAME, HANDS_GIT_EMAIL. See README.md and os/cloud/hands/README.md.

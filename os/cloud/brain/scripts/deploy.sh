@@ -6,7 +6,8 @@
 #   OS_CF_ACCOUNT_ID        the personal Cloudflare account id
 #   OS_BRAIN_KV_ID          id of the KV namespace created for the brain (README step 2)
 #   OS_BRAIN_HOST           the brain's hostname on a zone in that account (custom domain; workers.dev stays off)
-# Optional: OS_BRAIN_ACCESS_TEAM_DOMAIN + OS_BRAIN_ACCESS_AUD (until set, /api/* answers 503 = fail closed),
+# Optional: OS_BRAIN_ACCESS_TEAM_DOMAIN + OS_BRAIN_ACCESS_AUD (until set, /dash/* and /api/* need the Basic Auth secret
+#           DASH_BASIC_PASSWORD, and answer 503 without it = fail closed; ruling RR-dash-auth),
 #           OS_BRAIN_HEALTH_TARGETS (JSON list, replaces the default health targets),
 #           OS_BRAIN_DEPLOYED_REPOS (space/comma list of owner/name; until set no advisory is urgent),
 #           OS_BRAIN_<NAME> for each cloud-watcher var in src/env.ts (SERVICE_TARGETS, PAGE_LOAD_TARGETS, JOURNEY_CONFIG,
@@ -35,7 +36,8 @@ sub = {
     "__DEPLOYED_REPOS__": os.environ.get("OS_BRAIN_DEPLOYED_REPOS") or "__DEPLOYED_REPOS__",
     "__ACCESS_TEAM_DOMAIN__": os.environ.get("OS_BRAIN_ACCESS_TEAM_DOMAIN") or "__ACCESS_TEAM_DOMAIN__",
     "__ACCESS_AUD__": os.environ.get("OS_BRAIN_ACCESS_AUD") or "__ACCESS_AUD__",
-    "__HANDS_BRAIN_URL__": ("https://" + os.environ["OS_BRAIN_HOST"].strip()) if os.environ.get("OS_BRAIN_HOST", "").strip() else "__HANDS_BRAIN_URL__",
+    # the hands call back on the route host when one is set (reachable from every ISP), else on the custom domain
+    "__HANDS_BRAIN_URL__": ("https://" + (os.environ.get("OS_BRAIN_ROUTE_HOST", "").strip() or os.environ["OS_BRAIN_HOST"].strip())) if (os.environ.get("OS_BRAIN_ROUTE_HOST", "").strip() or os.environ.get("OS_BRAIN_HOST", "").strip()) else "__HANDS_BRAIN_URL__",
 }
 for k, v in sub.items():
     t = t.replace(k, v.replace("\\", "").replace('"', ""))
@@ -44,7 +46,14 @@ if host:
     import re
     if not re.fullmatch(r"[a-z0-9.-]+", host):
         sys.exit("deploy: OS_BRAIN_HOST must be a bare hostname")
-    t = t.replace('"workers_dev": false,', '"workers_dev": false,\n  "routes": [{ "pattern": "%s", "custom_domain": true }],' % host, 1)
+    routes = [{"pattern": host, "custom_domain": True}]
+    # optional extra Worker route on a zone where a wildcard route would beat a custom domain (e.g. os.ebda.app/* on ebda.app)
+    rh, rz = os.environ.get("OS_BRAIN_ROUTE_HOST", "").strip(), os.environ.get("OS_BRAIN_ROUTE_ZONE", "").strip()
+    if rh and rz:
+        if not re.fullmatch(r"[a-z0-9.-]+", rh) or not re.fullmatch(r"[a-z0-9.-]+", rz):
+            sys.exit("deploy: OS_BRAIN_ROUTE_HOST / OS_BRAIN_ROUTE_ZONE must be bare hostnames")
+        routes.append({"pattern": rh + "/*", "zone_name": rz})
+    t = t.replace('"workers_dev": false,', '"workers_dev": false,\n  "routes": ' + json.dumps(routes) + ',', 1)
 # the declared Console spend limit: the committed default (200) unless HANDS_API_SPEND_LIMIT_USD is set in the environment
 lim = os.environ.get("HANDS_API_SPEND_LIMIT_USD")
 if lim:
@@ -88,7 +97,7 @@ if os.environ.get("OS_BRAIN_CONTAINERS") == "1":
     t = json.dumps(base, indent=2)
 open(out, "w", encoding="utf-8").write(t)
 PY
-grep -q '__ACCESS_AUD__' "$OUT" && echo "deploy: Access not configured yet: /api/* will answer 503 until OS_BRAIN_ACCESS_* are set" >&2
+grep -q '__ACCESS_AUD__' "$OUT" && echo "deploy: Access not configured yet: /dash/* and /api/* use Basic Auth (secret DASH_BASIC_PASSWORD) and answer 503 without it" >&2
 cd "$HERE"
 [ -x node_modules/.bin/wrangler ] || { echo "deploy: run npm ci in $HERE first" >&2; exit 2; }
 if [ "$DRY" -eq 1 ]; then
