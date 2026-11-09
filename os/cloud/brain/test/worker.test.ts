@@ -13,7 +13,7 @@ async function ghSig(body: string, secret: string): Promise<string> {
 }
 
 const run = (conclusion: string, branch = 'main', workflow = 'CI') =>
-  JSON.stringify({ action: 'completed', repository: { full_name: 'o/r', default_branch: 'main' }, workflow_run: { conclusion, head_sha: 'abc', head_branch: branch, name: workflow, html_url: 'https://gh/run/1' } });
+  JSON.stringify({ action: 'completed', repository: { full_name: 'o/r', default_branch: 'main' }, workflow_run: { id: Math.floor(Math.random() * 1e9), run_attempt: 1, updated_at: new Date().toISOString(), conclusion, head_sha: 'abc', head_branch: branch, name: workflow, html_url: 'https://gh/run/1' } });
 
 async function hook(body: string, id: string, sig?: string, event = 'workflow_run'): Promise<Response> {
   return SELF.fetch('https://brain.test/github/webhook', {
@@ -75,7 +75,7 @@ describe('machine endpoints', () => {
     expect((await call('/hands/usage', { weeklyUsedPct: 10 }, 'nope')).status).toBe(401);
     expect((await call('/hands/usage', { weeklyUsedPct: 'x' })).status).toBe(400);
     expect((await call('/hands/usage', { weeklyUsedPct: 10 })).status).toBe(200);
-    await SELF.fetch('https://brain.test/findings', { method: 'POST', headers: { Authorization: 'Bearer test-ingest-token' }, body: JSON.stringify({ source: 'dream', kind: 'test', key: 'claim-1', title: 'add a test' }) });
+    await SELF.fetch('https://brain.test/findings', { method: 'POST', headers: { Authorization: 'Bearer test-ingest-token' }, body: JSON.stringify({ source: 'dream', kind: 'test', key: 'claim-1', title: 'add a test', repo: 'o/r' }) });
     const batch = (await (await call('/hands/claim', { provider: 'mac-local', max: 1 })).json()) as { runId: string; jobs: Array<{ id: string }> };
     expect(batch.jobs).toHaveLength(1);
     const got = (await (await call(`/hands/runs/${batch.runId}`)).json()) as { jobs: unknown[] };
@@ -89,12 +89,12 @@ describe('machine endpoints', () => {
     const tg = (body: unknown, secret = 'test-tg-secret') =>
       SELF.fetch('https://brain.test/telegram/webhook', { method: 'POST', headers: { 'X-Telegram-Bot-Api-Secret-Token': secret }, body: JSON.stringify(body) });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"ok":true}'));
-    await brainStub(env).ingestFinding({ source: 'w', kind: 'auth-cookie', key: 'tg-q', title: 'cookie flags' });
+    await brainStub(env).ingestFinding({ source: 'w', kind: 'auth-cookie', key: 'tg-q', title: 'cookie flags', repo: 'o/r' });
     const q = (await brainStub(env).state()).questions.find((x) => String(x.text).startsWith('cookie flags'))!;
     expect((await tg({}, 'wrong')).status).toBe(401);
-    await tg({ callback_query: { id: 'c1', data: `q:${q.id}:hold`, message: { chat: { id: 999 } } } });
+    await tg({ callback_query: { id: 'c1', data: `q:${q.id}:hold`, message: { chat: { id: 999 } }, from: { id: 4242 } } });
     expect((await brainStub(env).state()).questions.some((x) => x.id === q.id)).toBe(true); // other chat: ignored
-    await tg({ callback_query: { id: 'c2', data: `q:${q.id}:hold`, message: { chat: { id: 4242 } } } });
+    await tg({ callback_query: { id: 'c2', data: `q:${q.id}:hold`, message: { chat: { id: 4242 } }, from: { id: 4242 } } });
     expect((await brainStub(env).state()).questions.some((x) => x.id === q.id)).toBe(false);
   });
 
@@ -118,7 +118,7 @@ describe('cron handlers', () => {
     const ctx = createExecutionContext();
     await worker.scheduled(createScheduledController({ cron: CRONS.tick, scheduledTime: Date.now() }), env, ctx);
     await waitOnExecutionContext(ctx);
-    expect(seen.sort()).toEqual(['https://api.example.test/health', 'https://shop.example.test/checkout']);
+    expect(seen.filter((u) => !u.includes('api.telegram.org')).sort()).toEqual(['https://api.example.test/health', 'https://shop.example.test/checkout']);
     const s = await brainStub(env).state();
     expect((s.health as { obs: Array<{ ok: boolean }> }).obs.map((o) => o.ok).sort()).toEqual([false, true]);
   });

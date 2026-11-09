@@ -12,7 +12,7 @@ export interface ServiceTarget extends HealthTarget {
   name: string;
 }
 
-const isService = (x: unknown): x is ServiceTarget => isObj(x) && isHttps(x.url) && typeof x.name === 'string' && /^[\w.-]{1,40}$/.test(x.name) && ['api', 'page', 'money'].includes(String(x.kind));
+const isService = (x: unknown): x is ServiceTarget => isObj(x) && isHttps(x.url) && typeof x.name === 'string' && /^[\w.-]{1,40}$/.test(x.name) && ['api', 'page', 'money'].includes(String(x.kind)) && (x.repo === undefined || /^[\w.-]+\/[\w.-]+$/.test(String(x.repo)));
 
 export async function watchServices(ctx: WatchCtx): Promise<{ checked: number; down: string[] }> {
   const targets = parseList(ctx.env.SERVICE_TARGETS, isService, 12);
@@ -38,12 +38,14 @@ export async function watchServices(ctx: WatchCtx): Promise<{ checked: number; d
     if (streak < budget) continue; // inside the retry window: not a finding yet
     // the same classifier rules as health.ts: an outage is urgent only once the retry budget is spent
     current.push(
-      finding(ID, t.kind === 'money' ? 'money-path-broken' : 'prod-outage', t.name, 'down', `service ${t.name} down (HTTP ${o.status || 'no response'}, ${streak} checks in a row)`, {
+      finding(ID, t.kind === 'money' ? 'money-path-broken' : 'prod-outage', t.name, 'down', `service ${t.name} down (HTTP ${o.status || 'no response'}, ${o.ms} ms, ${streak} checks in a row)`, {
         url: t.url,
+        ...(t.repo ? { repo: t.repo } : {}),
         severity: 'P1',
         selfHealExhausted: true,
         touches: t.kind === 'money' ? ['money'] : [],
-        detail: { incident: prev.since, status: o.status, ms: o.ms },
+        // evidence = the incident id ONLY (I-4): status / latency change every probe and would reopen the finding each cool-down
+        detail: { incident: prev.since },
       }),
     );
   }

@@ -102,7 +102,7 @@ describe('classifyFinding: nightly lane', () => {
 });
 
 describe('classifyFinding: dreaming-cycle kinds become jobs (never dropped, never urgent)', () => {
-  const kinds = ['improvement', 'reflect-unenforced-lesson', 'perf', 'seo', 'a11y', 'live-unreachable', 'failing-gate', 'scan-target-missing', 'dream-scan-failed', 'self-heal-broken', 'app-error'];
+  const kinds = ['improvement', 'reflect-unenforced-lesson', 'perf', 'seo', 'a11y', 'live-unreachable', 'failing-gate', 'self-heal-broken', 'app-error'];
   it.each(kinds)('%s -> nightly, PR plus one question', (kind) => {
     const c = classifyFinding(f({ source: 'dream', kind, severity: 'P3', detail: { product: 'ebda-store', evidence: 'https://example.test took 2.1s' } }));
     expect(c.lane).toBe('nightly');
@@ -112,6 +112,12 @@ describe('classifyFinding: dreaming-cycle kinds become jobs (never dropped, neve
     expect(classifyFinding(f({ source: 'dream', kind: 'lockfile-drift' }))).toMatchObject({ lane: 'nightly', mergePolicy: 'auto-when-gate-green' });
     expect(classifyFinding(f({ source: 'dream', kind: 'test' }))).toMatchObject({ lane: 'nightly', mergePolicy: 'auto-when-gate-green' });
     expect(classifyFinding(f({ source: 'dream', kind: 'dependency-advisory', severity: 'P2' }))).toMatchObject({ lane: 'nightly', mergePolicy: 'auto-when-gate-green' });
+  });
+});
+
+describe('I-2: dream config self-reports are digest-only (a config gap never spends a container)', () => {
+  it.each(['scan-target-missing', 'dream-scan-failed'])('%s -> digest', (kind) => {
+    expect(classifyFinding(f({ source: 'dream', kind, severity: 'P3' })).lane).toBe('digest');
   });
 });
 

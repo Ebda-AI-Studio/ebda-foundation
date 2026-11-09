@@ -9,7 +9,7 @@ import { due, graphql, type Sink, type WatchCtx } from '../src/watchers/common';
 import { watchCfWorkers } from '../src/watchers/cf-workers';
 import { watchCostGuard } from '../src/watchers/cost-guard';
 import { watchDeployDrift } from '../src/watchers/deploy-drift';
-import { isoWeek, watchDrDrill, WEEKLY_GATE } from '../src/watchers/dr-drill';
+import { isoWeek, watchDrDrill } from '../src/watchers/dr-drill';
 import { forbiddenPath, isStep, watchJourneys } from '../src/watchers/journey-monitor';
 import { median, watchPageLoad } from '../src/watchers/page-load';
 import { watchPrShepherd } from '../src/watchers/pr-shepherd';
@@ -417,41 +417,31 @@ describe('dr-drill', () => {
     await watchDrDrill(h.ctx);
     unconfigured(h, 'dr-drill');
   });
-  it('weekly enqueue: one nightly-lane drill job per ISO week; the gate closes after the ingest', async () => {
-    await fresh('dr:first-run', WEEKLY_GATE);
-    const h = harness(base, [], NOW - 86400000);
-    expect(await watchDrDrill(h.ctx)).toEqual({ enqueued: true, stale: false });
-    expect(h.ingested).toHaveLength(1);
-    expect(h.ingested[0]).toMatchObject({ kind: 'dr-drill', repo: 'Ebda-AI-Studio/ebda-store', key: 'dr-drill:ebda-store:2026-W45' });
-    expect(h.ingested[0]!.title).toContain('node scripts/ops/restore-drill.mjs --target api');
-    expect(classifyFinding(h.ingested[0]!).lane).toBe('nightly');
-    expect(await env.EVENTS.get(WEEKLY_GATE)).toBe(String(NOW));
-    const again = harness(base, [], NOW - 86400000);
-    expect((await watchDrDrill({ ...again.ctx, now: NOW + 6 * 3600000 })).enqueued).toBe(false);
-    expect(again.ingested).toEqual([]);
-  });
-  it('an ingest that throws leaves the weekly gate open so the next run retries', async () => {
-    await fresh('dr:first-run', WEEKLY_GATE);
-    const h = harness(base, [], NOW - 86400000);
-    const boom: Sink = { ...h.ctx.sink, async ingestMany() { throw new Error('do unavailable'); } };
-    await expect(watchDrDrill({ ...h.ctx, sink: boom })).rejects.toThrow('do unavailable');
-    expect(await env.EVENTS.get(WEEKLY_GATE)).toBeNull();
-    const retry = harness(base, [], NOW - 86400000);
-    expect((await watchDrDrill({ ...retry.ctx, now: NOW + 6 * 3600000 })).enqueued).toBe(true);
-  });
-  it('last PASSED drill older than 8 days is a stale finding; a recent pass resolves it', async () => {
+  it('F-I6: the watcher never enqueues a drill job (the drill runs on the Mac); it only checks the last PASS', async () => {
     await fresh('dr:first-run');
-    await env.EVENTS.put(WEEKLY_GATE, String(NOW));
+    const h = harness(base, [], NOW - 86400000);
+    expect(await watchDrDrill(h.ctx)).toEqual({ stale: false, overdue: false });
+    expect(h.ingested).toEqual([]);
+  });
+  it('F-I6: last PASS older than 8 days is a digest-lane stale finding (no job); a recent pass resolves it', async () => {
+    await fresh('dr:first-run');
     const stale = harness(base, [], NOW - 9 * 86400000);
     expect((await watchDrDrill(stale.ctx)).stale).toBe(true);
     expect(stale.ingested).toMatchObject([{ kind: 'dr-drill-stale', key: 'dr-drill:ebda-store:stale' }]);
+    expect(classifyFinding(stale.ingested[0]!).lane).toBe('digest');
     const ok = harness(base, [], NOW - 2 * 86400000);
     expect((await watchDrDrill(ok.ctx)).stale).toBe(false);
-    expect(ok.reconciled).toMatchObject([{ kind: 'dr-drill-stale', open: [] }]);
+    expect(ok.reconciled).toMatchObject([{ kind: 'dr-drill-stale', open: [] }, { kind: 'dr-drill-overdue', open: [] }]);
+  });
+  it('F-I6: 14+ days without a PASS is overdue: one unhealed-P1 message, still no hands job', async () => {
+    await fresh('dr:first-run');
+    const h = harness(base, [], NOW - 15 * 86400000);
+    expect(await watchDrDrill(h.ctx)).toEqual({ stale: false, overdue: true });
+    expect(h.ingested).toMatchObject([{ kind: 'dr-drill-overdue', severity: 'P1' }]);
+    expect(classifyFinding(h.ingested[0]!)).toMatchObject({ lane: 'digest', alert: true });
   });
   it('no drill ever passed: age counts from the watcher first run (no instant alarm)', async () => {
     await fresh('dr:first-run');
-    await env.EVENTS.put(WEEKLY_GATE, String(NOW));
     expect((await watchDrDrill(harness(base, [], null).ctx)).stale).toBe(false);
     await env.EVENTS.put('dr:first-run', String(NOW - 10 * 86400000));
     expect((await watchDrDrill(harness(base, [], null).ctx)).stale).toBe(true);
@@ -482,19 +472,15 @@ describe('runner + real Durable Object', () => {
     expect(h.ingested.some((f) => f.kind === 'watcher-error' && f.key === 'cf-workers:cloudflare:error')).toBe(true);
     expect(r['world-watch']).toBe('ran');
   });
-  it('brain DO: a done drill job without drill:pass (or with drill:fail) is NOT a pass; drill:pass is', async () => {
+  it('F-I6 brain DO: only a PASS posted by the Mac makes the drill fresh and closes the stale + overdue findings; a FAIL does not', async () => {
     const brain = brainStub(env);
     const t0 = Date.UTC(2026, 10, 1);
-    const run = async (key: string, o: { status: 'merged' | 'pr_opened'; drill?: 'pass' | 'fail' }, at: number) => {
-      const r = await brain.ingestFinding({ source: 'watcher', kind: 'dr-drill', key, title: 'drill' }, at);
-      await brain.claim('mac-local', 5, at);
-      expect((await brain.recordOutcome(r.jobId!, o, at + 1000)).ok).toBe(true);
-    };
-    await run('dr-drill:ebda-store:2026-W40', { status: 'merged' }, t0);
     expect(await brain.lastPassAt('watcher', 'dr-drill')).toBeNull();
-    await run('dr-drill:ebda-store:2026-W41', { status: 'merged', drill: 'fail' }, t0 + 1000000);
+    await brain.ingestFinding({ source: 'watcher', kind: 'dr-drill-stale', key: 'dr-drill:ebda-store:stale', title: 'stale', repo: 'o/r' }, t0);
+    await brain.recordDrill('fail', 'restore failed', t0 + 1000);
     expect(await brain.lastPassAt('watcher', 'dr-drill')).toBeNull();
-    await run('dr-drill:ebda-store:2026-W42', { status: 'pr_opened', drill: 'pass' }, t0 + 2000000);
-    expect(await brain.lastPassAt('watcher', 'dr-drill')).toBe(t0 + 2001000);
+    await brain.recordDrill('pass', undefined, t0 + 2000);
+    expect(await brain.lastPassAt('watcher', 'dr-drill')).toBe(t0 + 2000);
+    expect((await brain.state(t0 + 3000)).findings.recent.find((f) => f.kind === 'dr-drill-stale')).toMatchObject({ status: 'resolved' });
   });
 });

@@ -9,7 +9,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { classifyFinding } from './classify';
 import type { Env, Policy } from './env';
-import { policyFrom } from './env';
+import { intVar, policyFrom } from './env';
 import { evidenceOf, fingerprint, type Finding, type Lane, type MergePolicy } from './findings';
 import { providerFor, type HandsBatch, type HandsJob, type HandsProvider, type JobOutcome, type RunKind, type UsageReport } from './hands';
 import { admit, dayKey, digestMessage, MONITOR_NOTES_PER_DIGEST, questionMessage, sendTelegram, URGENT_KINDS, type MsgKind, type Outgoing } from './telegram';
@@ -20,6 +20,9 @@ const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
 export const NIGHTLY_MAX_JOBS = 25;
 export const UNACTED_LIMIT_MS = DAY;
+/** A nightly job whose run died is requeued once; the second death ends it as timed_out. */
+export const NIGHTLY_MAX_TRIES = 2;
+export const WAITING_MAX_MS = 14 * DAY;
 /** In flight: a re-sighting only updates last_seen (and may promote the lane, never demote it). `waiting` = fix PR open. */
 const ACTIVE = new Set(['open', 'queued', 'question', 'dispatched', 'waiting', 'digest']);
 /** Re-sighting rules after a finding left the active set (controller ruling 4a-I1):
@@ -56,6 +59,7 @@ export interface CiEventInput {
 export interface HealthObservation {
   url: string;
   kind: 'api' | 'page' | 'money';
+  repo?: string;
   ok: boolean;
   status: number;
   ms: number;
@@ -84,6 +88,16 @@ export interface BrainState {
   advisories: AdvisoryRunSummary | null;
 }
 
+function mappedReposFrom(json: string | undefined): Set<string> | null {
+  if (!json) return null;
+  try {
+    const repos = (JSON.parse(json) as { repos?: Record<string, unknown> }).repos;
+    return repos && typeof repos === 'object' ? new Set(Object.keys(repos)) : null;
+  } catch {
+    return null;
+  }
+}
+
 function uid(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
 }
@@ -95,12 +109,15 @@ export class BrainDO extends DurableObject<Env> {
   /** Replaceable in tests (the Telegram sender's fetch). */
   fetchImpl: typeof fetch = (...a) => fetch(...a);
   policy: Policy;
+  /** owner/name keys of the hands config (HANDS_CONFIG_JSON); null = no readable config, membership is not checked. Replaceable in tests. */
+  mappedRepos: Set<string> | null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.hands = providerFor(env.HANDS_PROVIDER ?? 'stub', env);
     this.policy = policyFrom(env);
+    this.mappedRepos = mappedReposFrom(env.HANDS_CONFIG_JSON);
     ctx.blockConcurrencyWhile(async () => this.migrate());
   }
 
@@ -154,7 +171,13 @@ export class BrainDO extends DurableObject<Env> {
   async ingestFinding(f: Finding, now: number = Date.now()): Promise<IngestResult> {
     const fp = await fingerprint(f);
     const evidence = await evidenceOf(f);
-    const c = classifyFinding(f);
+    let c = classifyFinding(f);
+    // I-2: a finding the hands cannot work on (no repo, or a repo missing from their config) never spends a container
+    let unmappedUrgent = false;
+    if (c.lane !== 'digest' && (!f.repo || (this.mappedRepos !== null && !this.mappedRepos.has(f.repo)))) {
+      unmappedUrgent = c.lane === 'urgent';
+      c = { lane: 'digest', reason: `${f.repo ? `repo ${f.repo} is not in the hands config` : 'no repo mapped'}: cannot auto-fix, digest only (was ${c.lane})`, mergePolicy: 'pr-and-question' };
+    }
     const existing = this.row('SELECT status, lane, reason, evidence, closed_at FROM findings WHERE fp = ?', fp);
     const data = JSON.stringify(f);
     if (existing) {
@@ -189,6 +212,8 @@ export class BrainDO extends DurableObject<Env> {
       // digest-only: no job, no question, no message. Counted as acted (the digest is the action) so self-check never flags it.
       this.sql.exec(`UPDATE findings SET status = 'digest', acted_at = COALESCE(acted_at, ?) WHERE fp = ?`, now, fp);
       if (existing) this.setMeta('digest:shown', (this.getMeta<string[]>('digest:shown') ?? []).filter((x) => x !== fp)); // a recurrence is news again
+      if (c.alert) await this.emit({ dedupeKey: `p1:${fp}:alert:${evidence}`, kind: 'p1-unhealed', text: `Ebda OS: ${f.title}\n${c.reason}.` }, now);
+      if (unmappedUrgent) await this.emit({ dedupeKey: `p1:${fp}:unmapped:${evidence}`, kind: 'p1-unhealed', text: `Ebda OS: could not self-heal: ${f.title}\n${c.reason}.` }, now);
       return { fp, deduped: false, reopened: !!existing, lane: 'digest', reason: c.reason, jobId: null };
     }
     const jobId = uid('job');
@@ -246,10 +271,20 @@ export class BrainDO extends DurableObject<Env> {
     return true;
   }
 
-  /** Newest finish time of a hands job for a finding class whose outcome carries the explicit drill-pass marker, or null. A job that merely ended 'done' does not count. */
-  lastPassAt(source: string, kind: string): number | null {
-    const r = this.row(`SELECT MAX(j.finished_at) AS at FROM jobs j JOIN findings f ON f.fp = j.fp WHERE f.source = ? AND f.kind = ? AND j.status = 'done' AND json_extract(j.outcome, '$.drill') = 'pass'`, source, kind);
-    return r?.at == null ? null : Number(r.at);
+  /**
+   * Restore drills run on the Mac (ruling F-I6: the drill needs R2 + age secrets the container must not hold) and post
+   * their PASS/FAIL here (POST /drill). Only a PASS counts as fresh; a FAIL is recorded and leaves the drill stale.
+   */
+  async recordDrill(result: 'pass' | 'fail', note: string | undefined, now: number = Date.now()): Promise<void> {
+    this.setMeta('drill:last', { at: now, result, ...(note ? { note: note.slice(0, 300) } : {}) });
+    if (result !== 'pass') return;
+    this.setMeta('drill:last-pass', now);
+    for (const kind of ['dr-drill-stale', 'dr-drill-overdue']) await this.resolveFinding({ source: 'watcher', kind, key: `dr-drill:ebda-store:${kind === 'dr-drill-stale' ? 'stale' : 'overdue'}` }, 'restore drill passed', now);
+  }
+
+  /** Newest PASS of the weekly restore drill (posted by the Mac), or null. The signature keeps the watcher Sink shape. */
+  lastPassAt(_source: string, _kind: string): number | null {
+    return this.getMeta<number>('drill:last-pass');
   }
 
   /** Resolve every open finding of source+kind whose key is not in `openKeys` (complete advisory listing only). */
@@ -264,6 +299,17 @@ export class BrainDO extends DurableObject<Env> {
   }
 
   // ---------- CI events (from the relay webhook) ----------
+  /** A green default-branch run: close the workflow's CI finding, and remember when (M-4: a red event older than this is stale). */
+  async resolveCi(slug: string, workflow: string, runKey: string, now: number = Date.now()): Promise<boolean> {
+    const greens = this.getMeta<Record<string, number>>('ci:green') ?? {};
+    greens[`${slug}:${workflow}`] = now;
+    // bounded: keep the 500 newest
+    const keep = Object.entries(greens).sort((a, b) => b[1] - a[1]).slice(0, 500);
+    this.setMeta('ci:green', Object.fromEntries(keep));
+    this.setMeta(`ci:green:last`, runKey);
+    return this.resolveFinding({ source: 'ci', kind: 'ci-failure', key: `${slug}:${workflow}` }, 'CI green again', now);
+  }
+
   ingestCiEvent(ev: CiEventInput): boolean {
     const before = this.sql.exec('SELECT 1 FROM events WHERE id = ?', ev.id).toArray().length;
     if (before) return false;
@@ -280,9 +326,12 @@ export class BrainDO extends DurableObject<Env> {
    */
   async processCiEvents(now: number = Date.now()): Promise<{ processed: number; findings: number }> {
     const evs = this.rows('SELECT * FROM events WHERE processed_at IS NULL ORDER BY ts LIMIT 200');
+    const greens = this.getMeta<Record<string, number>>('ci:green') ?? {};
     let findings = 0;
     for (const e of evs) {
-      if (e.branch === e.default_branch) {
+      // M-4: a failure that arrived BEFORE the newest green run of the same workflow is already fixed; raising it would cost a Claude run on a green CI
+      const staleRed = Number(e.ts) <= (greens[`${e.slug}:${e.workflow}`] ?? 0);
+      if (e.branch === e.default_branch && !staleRed) {
         const r = await this.ingestFinding(
           { source: 'ci', kind: 'ci-failure', key: `${e.slug}:${e.workflow}`, title: `CI "${e.workflow}" failing on ${e.branch}`, repo: String(e.slug), url: String(e.url), detail: { sha: e.sha } },
           now,
@@ -317,7 +366,7 @@ export class BrainDO extends DurableObject<Env> {
       since[o.url] ??= now;
       if (fails[o.url]! >= this.policy.healthFailBudget) {
         const r = await this.ingestFinding(
-          { ...ident, title: `${o.url} down (HTTP ${o.status || 'no response'}, ${fails[o.url]} checks in a row)`, url: o.url, severity: 'P1', selfHealExhausted: true, touches: o.kind === 'money' ? ['money'] : [], detail: { incident: since[o.url] } },
+          { ...ident, title: `${o.url} down (HTTP ${o.status || 'no response'}, ${fails[o.url]} checks in a row)`, url: o.url, ...(o.repo ? { repo: o.repo } : {}), severity: 'P1', selfHealExhausted: true, touches: o.kind === 'money' ? ['money'] : [], detail: { incident: since[o.url] } },
           now,
         );
         if (!r.deduped) raised.push(o.url);
@@ -459,47 +508,85 @@ export class BrainDO extends DurableObject<Env> {
   private async startRun(kind: RunKind, jobs: HandsJob[], capMin: number, now: number, provider: HandsProvider = this.hands): Promise<HandsBatch | null> {
     const runId = uid('run');
     const batch: HandsBatch = { runId, kind, jobs, perJobCapMin: capMin, usageThresholdPct: this.policy.usageThresholdPct, createdAt: now };
-    let ref: Awaited<ReturnType<HandsProvider['start']>>;
-    try {
-      ref = await provider.start(batch);
-    } catch (e) {
-      const error = String((e as Error)?.message ?? e).slice(0, 300);
-      this.sql.exec(
-        `INSERT INTO runs (id, kind, provider, external_id, status, day, started_at, cap_min, finished_at) VALUES (?, ?, ?, NULL, 'failed', ?, ?, ?, ?)`,
-        runId, kind, provider.name, dayKey(now), now, capMin, now,
-      );
-      this.setMeta('hands:start-failed', { at: now, runId, provider: provider.name, error });
-      console.error('hands provider failed to start', provider.name, error);
-      return null;
-    }
+    // M-7: the run row and the jobs' claim are written BEFORE the outbound start call. The call yields the DO, and another tick
+    // interleaving there must already see "a run is in flight" (urgent) and "these jobs are taken" (nightly), not start a second one.
     this.sql.exec(
-      `INSERT INTO runs (id, kind, provider, external_id, status, day, started_at, cap_min) VALUES (?, ?, ?, ?, 'running', ?, ?, ?)`,
-      runId, kind, ref.provider, ref.externalId ?? null, dayKey(now), now, capMin,
+      `INSERT INTO runs (id, kind, provider, external_id, status, day, started_at, cap_min) VALUES (?, ?, ?, NULL, 'running', ?, ?, ?)`,
+      runId, kind, provider.name, dayKey(now), now, capMin,
     );
     for (const j of jobs) {
       this.sql.exec(`UPDATE jobs SET status = 'running', run_id = ?, started_at = ? WHERE id = ?`, runId, now, j.id);
       this.sql.exec(`UPDATE findings SET status = 'dispatched', acted_at = COALESCE(acted_at, ?) WHERE fp = ?`, now, j.fingerprint);
     }
+    let ref: Awaited<ReturnType<HandsProvider['start']>>;
+    try {
+      ref = await provider.start(batch);
+    } catch (e) {
+      const error = String((e as Error)?.message ?? e).slice(0, 300);
+      // the run counts toward the urgent daily cap as 'failed'; the jobs go back to the queue untouched
+      this.sql.exec(`UPDATE runs SET status = 'failed', finished_at = ? WHERE id = ?`, now, runId);
+      for (const j of jobs) {
+        this.sql.exec(`UPDATE jobs SET status = 'queued', run_id = NULL, started_at = NULL WHERE id = ?`, j.id);
+        this.sql.exec(`UPDATE findings SET status = 'queued' WHERE fp = ? AND status = 'dispatched'`, j.fingerprint);
+      }
+      this.setMeta('hands:start-failed', { at: now, runId, provider: provider.name, error });
+      console.error('hands provider failed to start', provider.name, error);
+      return null;
+    }
+    this.sql.exec(`UPDATE runs SET provider = ?, external_id = ? WHERE id = ?`, ref.provider, ref.externalId ?? null, runId);
     return batch;
+  }
+
+  /**
+   * I-1: a run that outlives its cap (+10 min grace) is timed out, whatever its lane. Urgent: the job reports could-not-fix
+   * (message + free slot). Nightly / Mac claim: the run died mid-batch (container cap, OOM, Mac asleep), so its unreported
+   * jobs go back to the queue, and after NIGHTLY_MAX_TRIES tries they end as timed_out. The count lands in the digest.
+   */
+  async sweepStuckRuns(now: number): Promise<number> {
+    let swept = 0;
+    const nightlyCap = intVar(this.env.HANDS_NIGHTLY_RUN_CAP_MIN, 90);
+    for (const run of this.rows(`SELECT * FROM runs WHERE status = 'running'`)) {
+      const urgent = run.kind === 'urgent';
+      const jobs = this.rows(`SELECT id FROM jobs WHERE run_id = ? AND status = 'running'`, run.id);
+      // the nightly container's run cap, or 45 min per claimed job (the Mac), whichever is longer
+      const capMin = urgent ? this.policy.urgentRunCapMin : Math.max(nightlyCap, Number(run.cap_min) * jobs.length);
+      if (Number(run.started_at) >= now - (capMin + 10) * 60000) continue;
+      this.sql.exec(`UPDATE runs SET status = 'timed_out', finished_at = ? WHERE id = ? AND status = 'running'`, now, run.id);
+      swept++;
+      for (const j of jobs) {
+        const id = String(j.id);
+        if (urgent) {
+          await this.recordOutcome(id, { status: 'timed_out', note: `no outcome within ${run.cap_min} min` }, now);
+          continue;
+        }
+        const tries = (this.getMeta<number>(`job:tries:${id}`) ?? 0) + 1;
+        this.setMeta(`job:tries:${id}`, tries);
+        if (tries >= NIGHTLY_MAX_TRIES) {
+          await this.recordOutcome(id, { status: 'timed_out', note: `run ${run.id} died ${tries} times without an outcome` }, now);
+        } else {
+          const fp = String(this.row('SELECT fp FROM jobs WHERE id = ?', id)?.fp);
+          this.sql.exec(`UPDATE jobs SET status = 'queued', run_id = NULL, started_at = NULL WHERE id = ?`, id);
+          this.sql.exec(`UPDATE findings SET status = 'queued' WHERE fp = ? AND status = 'dispatched'`, fp);
+          this.setMeta('sweep:requeued', { at: now, n: (this.getMeta<{ at: number; n: number }>('sweep:requeued')?.n ?? 0) + 1 });
+        }
+      }
+    }
+    return swept;
   }
 
   /** Urgent lane: one run at a time, URGENT_RUNS_PER_DAY a day, one job per run, URGENT_RUN_CAP_MIN cap. */
   private async dispatchUrgent(now: number): Promise<void> {
-    // a stuck urgent run past its cap (+10 min grace) frees the slot and reports could-not-fix
-    for (const run of this.rows(`SELECT * FROM runs WHERE kind = 'urgent' AND status = 'running' AND started_at < ?`, now - (this.policy.urgentRunCapMin + 10) * 60000)) {
-      this.sql.exec(`UPDATE runs SET status = 'timed_out', finished_at = ? WHERE id = ? AND status = 'running'`, now, run.id);
-      for (const j of this.rows(`SELECT id FROM jobs WHERE run_id = ? AND status = 'running'`, run.id)) {
-        await this.recordOutcome(String(j.id), { status: 'timed_out', note: `no outcome within ${run.cap_min} min` }, now);
-      }
-    }
+    await this.sweepStuckRuns(now);
     const queued = this.jobsFor(`j.status = 'queued' AND j.lane = 'urgent' ORDER BY j.created_at`);
     if (!queued.length) return;
     if (this.row(`SELECT 1 FROM runs WHERE kind = 'urgent' AND status = 'running'`)) return; // one at a time; the rest wait
     const today = Number(this.row(`SELECT COUNT(*) AS n FROM runs WHERE kind = 'urgent' AND day = ?`, dayKey(now))?.n ?? 0);
     const guard = this.usage(now);
     const pullOnly = this.hands.pullOnly === true;
-    if (today >= this.policy.urgentRunsPerDay || !guard.allowed || pullOnly) {
-      const why = pullOnly ? `hands provider ${this.hands.name} is pull-only` : !guard.allowed ? guard.reason : `urgent cap ${this.policy.urgentRunsPerDay}/day reached`;
+    // Ruling I-4 / F-C1: with a real provider an urgent container never boots on an unknown usage (only the stub may)
+    const unknownBlocked = guard.unknown === true && this.hands.name !== 'stub';
+    if (today >= this.policy.urgentRunsPerDay || !guard.allowed || unknownBlocked || pullOnly) {
+      const why = pullOnly ? `hands provider ${this.hands.name} is pull-only` : !guard.allowed || unknownBlocked ? guard.reason : `urgent cap ${this.policy.urgentRunsPerDay}/day reached`;
       for (const j of queued) {
         // queued for the nightly batch and messaged ONCE per issue
         this.sql.exec(`UPDATE jobs SET lane = 'nightly' WHERE id = ?`, j.id);
@@ -571,6 +658,10 @@ export class BrainDO extends DurableObject<Env> {
     if (j.status !== 'running') return { ok: false, reason: `job is ${j.status}, not running` };
     if (o.status === 'skipped_usage') {
       // the hands stopped at the usage threshold before this job: back to the queue, not a failure
+      if (j.lane === 'urgent') {
+        // Ruling F-C1: a refused P1 is never demoted silently. ONE message (same key as dispatchUrgent's), job kept for the next run.
+        await this.emit({ dedupeKey: `p1:${j.fp}:${jobId}`, kind: 'p1-unhealed', text: `Ebda OS: could not self-heal: ${j.title}\nThe hands refused the urgent run (${o.note ?? 'usage guard'}); queued for tonight's batch.` }, now);
+      }
       this.sql.exec(`UPDATE jobs SET status = 'queued', run_id = NULL, started_at = NULL, lane = 'nightly' WHERE id = ?`, jobId);
       this.sql.exec(`UPDATE findings SET status = 'queued' WHERE fp = ?`, j.fp);
     } else {
@@ -619,11 +710,22 @@ export class BrainDO extends DurableObject<Env> {
     return { raised, acted, ratio: raised ? acted / raised : null };
   }
 
+  /**
+   * M-6: a fix PR that stays open (finding 'waiting') for over 14 days moves to the digest instead of silencing the issue
+   * forever; a PR closed unmerged is otherwise never noticed (no watcher reconciles dream findings).
+   */
+  private ageWaiting(now: number): void {
+    for (const r of this.rows(`SELECT f.fp FROM findings f WHERE f.status = 'waiting' AND COALESCE((SELECT MAX(j.finished_at) FROM jobs j WHERE j.fp = f.fp), f.raised_at) < ?`, now - WAITING_MAX_MS)) {
+      this.sql.exec(`UPDATE findings SET status = 'digest', lane = 'digest', reason = 'fix PR open for over 14 days: check it', closed_at = NULL WHERE fp = ?`, r.fp);
+    }
+  }
+
   /** The 5-minute tick: expire/send questions, dispatch urgent work, self-check. */
   async tick(now: number = Date.now()): Promise<{ osBugs: number }> {
     await this.retryFailed(now);
     await this.flushQuestions(now);
     await this.dispatchUrgent(now);
+    this.ageWaiting(now);
     return { osBugs: this.selfCheck(now).length };
   }
 
@@ -637,7 +739,9 @@ export class BrainDO extends DurableObject<Env> {
     for (const r of this.rows(`SELECT title, outcome FROM findings WHERE status = 'resolved' AND closed_at > ?`, since)) outcomes.push({ title: String(r.title), status: String(r.outcome ?? 'resolved'), prUrl: null });
     // digest-lane findings (monitor self-reports) are listed ONCE: the fingerprints already shown are remembered
     const shown = new Set(this.getMeta<string[]>('digest:shown') ?? []);
-    const watchRows = this.rows(`SELECT fp, title FROM findings WHERE lane = 'digest' AND status = 'digest' ORDER BY first_seen LIMIT 500`).filter((r) => !shown.has(String(r.fp)));
+    // R-4a-3 closed: the shown fingerprints are excluded in SQL, so old shown rows can never crowd out a new one
+    const shownList = [...shown];
+    const watchRows = this.rows(`SELECT fp, title FROM findings WHERE lane = 'digest' AND status = 'digest' AND fp NOT IN (SELECT value FROM json_each(?)) ORDER BY first_seen LIMIT 500`, JSON.stringify(shownList));
     // only the notes the digest actually renders are marked shown; the rest wait for the next digest
     const rendered = watchRows.slice(0, MONITOR_NOTES_PER_DIGEST);
     const a24 = this.actedOn(now, DAY);
@@ -657,6 +761,7 @@ export class BrainDO extends DurableObject<Env> {
       monitorMore: watchRows.length - rendered.length,
       osBugs: this.selfCheck(now).length,
       usageNote: refused && now - refused.at < DAY ? refused.reason : null,
+      requeued: (() => { const q = this.getMeta<{ at: number; n: number }>('sweep:requeued'); return q && now - q.at < DAY ? q.n : 0; })(),
     });
     const r = await this.emit(msg, now);
     if (r === 'sent') {

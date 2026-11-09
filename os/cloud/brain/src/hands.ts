@@ -52,8 +52,6 @@ export interface JobOutcome {
   status: 'merged' | 'pr_opened' | 'fix_deployed' | 'could_not_fix' | 'skipped_usage' | 'timed_out';
   prUrl?: string;
   note?: string;
-  /** dr-drill jobs only: set by the hands from the restore-drill output (PASS / FAIL). Only 'pass' counts as a fresh drill. */
-  drill?: 'pass' | 'fail';
 }
 
 export const OUTCOME_STATUSES: ReadonlyArray<JobOutcome['status']> = ['merged', 'pr_opened', 'fix_deployed', 'could_not_fix', 'skipped_usage', 'timed_out'];

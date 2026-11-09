@@ -142,7 +142,7 @@ describe('usage-starved alert (ruling 4b-6)', () => {
 });
 
 describe('urgent lane (Amendment A.1)', () => {
-  const outage = (key: string): Finding => ({ source: 'health', kind: 'prod-outage', key, title: `${key} down`, severity: 'P1', selfHealExhausted: true });
+  const outage = (key: string): Finding => ({ source: 'health', kind: 'prod-outage', key, title: `${key} down`, repo: 'o/r', severity: 'P1', selfHealExhausted: true });
 
   it('starts one immediate run with one job and a 30-minute cap; the next urgent job waits', async () => {
     const h = await harness();
@@ -293,7 +293,7 @@ describe('CI watcher (webhook inbox) and health watcher', () => {
 
   it('a target is a P1 only after the fail budget (3 checks); recovery resolves it', async () => {
     const h = await harness();
-    const down = [{ url: 'https://shop/checkout', kind: 'money' as const, ok: false, status: 502, ms: 10 }];
+    const down = [{ url: 'https://shop/checkout', kind: 'money' as const, repo: 'o/r', ok: false, status: 502, ms: 10 }];
     expect((await h.run((b) => b.observeHealth(down, T0))).raised).toEqual([]);
     expect((await h.run((b) => b.observeHealth(down, T0 + 5 * MIN))).raised).toEqual([]);
     expect((await h.run((b) => b.observeHealth(down, T0 + 10 * MIN))).raised).toEqual(['https://shop/checkout']);
@@ -345,7 +345,7 @@ describe('fix round 1: re-sighting, promotion, message ceiling, retries', () => 
 
   it('I-1: a persistent outage over 1 h is ONE incident and ONE urgent run', async () => {
     const h = await harness();
-    const down = [{ url: 'https://api.test/health', kind: 'api' as const, ok: false, status: 503, ms: 5 }];
+    const down = [{ url: 'https://api.test/health', kind: 'api' as const, repo: 'o/r', ok: false, status: 503, ms: 5 }];
     for (let i = 0; i <= 14; i++) {
       const t = T0 + i * 5 * MIN;
       await h.run((b) => b.observeHealth(down, t));
@@ -363,7 +363,7 @@ describe('fix round 1: re-sighting, promotion, message ceiling, retries', () => 
 
   it('I-2: a flood of 10 distinct urgent findings sends at most 6 messages; the rest go to the digest', async () => {
     const h = await harness();
-    for (let i = 0; i < 10; i++) await h.run((b) => b.ingestFinding({ source: 'health', kind: 'prod-outage', key: `u${i}`, title: `site ${i} down`, selfHealExhausted: true }, T0));
+    for (let i = 0; i < 10; i++) await h.run((b) => b.ingestFinding({ source: 'health', kind: 'prod-outage', key: `u${i}`, title: `site ${i} down`, repo: 'o/r', selfHealExhausted: true }, T0));
     for (let i = 0; i < 2; i++) await h.run((b) => b.ingestFinding(finding({ kind: 'payout-x', key: `q${i}`, title: `payout ${i}` }), T0));
     for (let i = 0; i < 6; i++) {
       const t = T0 + i * 10 * MIN;
@@ -406,7 +406,7 @@ describe('fix round 1: re-sighting, promotion, message ceiling, retries', () => 
       const ok = b.fetchImpl;
       b.fetchImpl = ((u: RequestInfo | URL, i?: RequestInit) => (fail ? Promise.resolve(new Response('down', { status: 502 })) : ok(u, i))) as typeof fetch;
     });
-    await h.run((b) => b.ingestFinding({ source: 'health', kind: 'prod-outage', key: 'r1', title: 'r1 down', selfHealExhausted: true }, B));
+    await h.run((b) => b.ingestFinding({ source: 'health', kind: 'prod-outage', key: 'r1', title: 'r1 down', repo: 'o/r', selfHealExhausted: true }, B));
     await h.run((b) => b.tick(B));
     await h.run((b) => b.recordOutcome(h.hands.started[0]!.jobs[0]!.id, { status: 'fix_deployed' }, B + MIN));
     expect(await h.run((b) => b.retryFailed(B + 2 * MIN))).toEqual({ sent: 0, undelivered: 0 }); // not due yet
@@ -425,7 +425,7 @@ describe('fix round 1: re-sighting, promotion, message ceiling, retries', () => 
       b.fetchImpl = ((u: RequestInfo | URL, i?: RequestInit) => (++calls === 1 ? Promise.resolve(new Response('x', { status: 500 })) : ok(u, i))) as typeof fetch;
     });
     const now = Date.now();
-    await h.run((b) => b.ingestFinding({ source: 'health', kind: 'prod-outage', key: 'r2', title: 'r2 down', selfHealExhausted: true }, now));
+    await h.run((b) => b.ingestFinding({ source: 'health', kind: 'prod-outage', key: 'r2', title: 'r2 down', repo: 'o/r', selfHealExhausted: true }, now));
     await h.run((b) => b.tick(now));
     await h.run((b) => b.recordOutcome(h.hands.started[0]!.jobs[0]!.id, { status: 'merged' }, now));
     const alarmAt = await h.run((_b) => 0).then(() => runInDurableObject(h.stub, (_i, st) => st.storage.getAlarm()));

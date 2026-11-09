@@ -33,6 +33,8 @@ export interface Classification {
   lane: Lane;
   reason: string;
   mergePolicy: MergePolicy;
+  /** digest-lane finding that ALSO gets one unhealed-P1 message (an overdue control Ahmad must act on, nothing for the hands) */
+  alert?: boolean;
 }
 
 /** sha-256 over source|kind|key, first 32 hex chars. The dedupe identity of a finding. */

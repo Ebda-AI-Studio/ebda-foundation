@@ -74,7 +74,10 @@ grep -q '__ACCESS_AUD__' "$OUT" && echo "deploy: Access not configured yet: /api
 cd "$HERE"
 [ -x node_modules/.bin/wrangler ] || { echo "deploy: run npm ci in $HERE first" >&2; exit 2; }
 if [ "$DRY" -eq 1 ]; then
-  exec node_modules/.bin/wrangler deploy --config wrangler.deploy.jsonc --dry-run --outdir dist
+  # the placeholder KV id and test values must never survive as a deployable file (a stray `wrangler deploy --config` would use them)
+  trap 'rm -f "$OUT"' EXIT
+  node_modules/.bin/wrangler deploy --config wrangler.deploy.jsonc --dry-run --outdir dist
+  exit $?
 fi
 export CLOUDFLARE_ACCOUNT_ID="$OS_CF_ACCOUNT_ID"
 exec node_modules/.bin/wrangler deploy --config wrangler.deploy.jsonc

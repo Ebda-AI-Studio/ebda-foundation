@@ -15,6 +15,10 @@ import type { Classification, Finding } from './findings';
 
 export const URGENT_CVSS = 9.0;
 
+/** Config / access self-reports of any source (watchers, dream-scan, heal-watch): ops problems, digest only. */
+const DIGEST_KINDS = new Set(['monitor-unconfigured', 'watcher-error', 'scan-target-missing', 'dream-scan-failed', 'dr-drill-stale', 'pr-needs-you']);
+/** Ruling F-I6: a restore drill with no PASS for 14+ days is a P1 decision for Ahmad (run it on the Mac), never a hands job. */
+const ALERT_KINDS = new Set(['dr-drill-overdue']);
 const OUTAGE_KINDS = new Set(['prod-outage', 'money-path-broken']);
 const EXPOSURE_KINDS = new Set(['data-exposure', 'pii-leak', 'secret-leak']);
 const ADVISORY_KINDS = new Set(['dependency-advisory', 'code-advisory']);
@@ -36,8 +40,12 @@ export function classifyFinding(f: Finding): Classification {
   // Self-reports of a monitor (no config, or a source it cannot read; any source: cloud watchers, dream, heal-watch) are ops
   // problems a hands container cannot fix (it cannot set a token or a var). They are recorded and deduped, listed once in the
   // daily digest, and never become a hands job or a Telegram question (rulings R-4a-1, R-4a-2).
-  if (kind === 'monitor-unconfigured' || kind === 'watcher-error') {
+  if (DIGEST_KINDS.has(kind)) {
     return { lane: 'digest', reason: 'monitor self-report (config or source access): digest only, no hands job, no question', mergePolicy: 'pr-and-question' };
+  }
+
+  if (ALERT_KINDS.has(kind)) {
+    return { lane: 'digest', reason: 'overdue control: one P1 message, no hands job', mergePolicy: 'pr-and-question', alert: true };
   }
 
   // (3) data exposure: contain it now. Rotating a secret stays a question for the hands (destructive class).

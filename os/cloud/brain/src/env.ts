@@ -77,6 +77,8 @@ export interface Env {
   SENTRY_AUTH_TOKEN?: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
+  /** user id allowed to press the question buttons; defaults to TELEGRAM_CHAT_ID (a private chat's id is the owner's user id) */
+  TELEGRAM_OWNER_ID?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
   HANDS_TOKEN?: string;
   INGEST_TOKEN?: string;

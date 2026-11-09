@@ -12,7 +12,7 @@ const T0 = Date.UTC(2026, 10, 5, 8, 0, 0);
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const finding = (x: Partial<Finding> = {}): Finding => ({ source: 'watcher', kind: 'docs', key: crypto.randomUUID(), title: 'fix docs', repo: 'o/r', ...x });
-const outage = (key: string): Finding => ({ source: 'health', kind: 'prod-outage', key, title: `${key} down`, severity: 'P1', selfHealExhausted: true });
+const outage = (key: string): Finding => ({ source: 'health', kind: 'prod-outage', key, title: `${key} down`, repo: 'o/r', severity: 'P1', selfHealExhausted: true });
 
 async function harness(hands: HandsProvider) {
   const stub = env.BRAIN.get(env.BRAIN.idFromName(crypto.randomUUID()));
@@ -84,6 +84,7 @@ describe('a throwing provider is a failed run, never an aborted tick', () => {
   });
   it('urgent: tick completes, each failure counts toward the 3/day cap, then the job goes to tonight with one message', async () => {
     const h = await harness(throwing);
+    await h.run((b) => b.reportUsage({ weeklyUsedPct: 10 }, T0));
     await h.run((b) => b.ingestFinding(outage('a'), T0));
     for (let i = 0; i < 4; i++) await expect(h.run((b) => b.tick(T0 + i * 5 * MIN))).resolves.not.toThrow();
     const s = await h.run((b) => b.state(T0 + 20 * MIN));

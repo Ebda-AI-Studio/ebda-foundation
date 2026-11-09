@@ -10,11 +10,13 @@ export const WEEK_MS = 7 * 24 * 3600 * 1000;
 export interface UsageDecision {
   allowed: boolean;
   reason: string;
+  /** true when the decision rests on no fresh report (no report, or older than 7 days) */
+  unknown?: boolean;
 }
 
 export function usageGuard(report: UsageReport | null, thresholdPct: number, now: number): UsageDecision {
-  if (!report) return { allowed: true, reason: 'usage-unknown: no report from the hands yet' };
-  if (now - report.reportedAt > WEEK_MS) return { allowed: true, reason: 'usage-unknown: last report older than 7 days' };
+  if (!report) return { allowed: true, unknown: true, reason: 'usage-unknown: no report from the hands yet' };
+  if (now - report.reportedAt > WEEK_MS) return { allowed: true, unknown: true, reason: 'usage-unknown: last report older than 7 days' };
   if (typeof report.resetsAt === 'number' && now >= report.resetsAt) return { allowed: true, reason: 'weekly window has reset' };
   if (report.weeklyUsedPct >= thresholdPct) {
     return { allowed: false, reason: `weekly usage ${report.weeklyUsedPct}% >= threshold ${thresholdPct}%` };

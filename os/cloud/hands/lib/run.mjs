@@ -23,6 +23,8 @@ export async function runBatch(batch, { brain, cfg, exec, usage, log = () => {},
     const g = await usage.check();
     if (!g.allowed) {
       log(`usage guard refused: ${g.reason}`);
+      // C-1: the reading that caused the refusal is the most important one; the brain must learn it
+      if (g.reading) await brain.usage({ weeklyUsedPct: g.reading.pct, ...(g.reading.resetsAt ? { resetsAt: g.reading.resetsAt * 1000 } : {}) }).catch((e) => log(`usage report failed: ${e.message}`));
       for (const j of jobs.slice(i)) results.push(await report(brain, j, { status: 'skipped_usage', note: g.reason }, log));
       break;
     }

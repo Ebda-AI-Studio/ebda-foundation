@@ -4,6 +4,7 @@
 //   POST /github/webhook  GitHub org webhook (X-Hub-Signature-256 / GH_WEBHOOK_SECRET). POST / is kept for the old URL.
 //   GET  /pending         Mac fallback drain of signed relay events (Bearer RELAY_SECRET), wire format unchanged.
 //   POST /findings        Mac watchers / dreaming cycle / self-heal report findings (Bearer INGEST_TOKEN).
+//   POST /drill           the Mac's weekly restore drill result {result:'pass'|'fail'} (Bearer INGEST_TOKEN, ruling F-I6).
 //   GET  /hands/runs/:id  POST /hands/jobs/:id/outcome  POST /hands/usage  POST /hands/claim   (Bearer HANDS_TOKEN)
 //   POST /telegram/webhook  inline-button answers (X-Telegram-Bot-Api-Secret-Token / TELEGRAM_WEBHOOK_SECRET)
 //   GET  /health
@@ -60,9 +61,15 @@ async function handleGitHub(request: Request, env: Env, ctx: ExecutionContext): 
   if (ghEvent !== 'workflow_run' || payload?.action !== 'completed') return new Response(null, { status: 204 });
   const detail = mapRunDetail(payload);
   const slug = String(payload?.repository?.full_name ?? '');
-  if (payload?.workflow_run?.conclusion === 'success' && detail.branch === detail.defaultBranch) {
-    // a green run on the default branch closes that workflow's open CI finding
-    ctx.waitUntil(brainStub(env).resolveFinding({ source: 'ci', kind: 'ci-failure', key: `${slug}:${detail.workflow}` }, 'CI green again'));
+  // M-3: X-GitHub-Delivery is NOT covered by the HMAC, so a captured signed body replayed under a new delivery id would be
+  // accepted. The signed run id + attempt is the dedupe identity, and a run last updated over an hour ago is not news.
+  const run = payload?.workflow_run;
+  const updated = Date.parse(String(run?.updated_at ?? ''));
+  if (!Number.isFinite(updated) || Date.now() - updated > 3600_000 || !run?.id) return new Response(null, { status: 204 });
+  const runKey = `${run.id}-${run.run_attempt ?? 1}`;
+  if (run?.conclusion === 'success' && detail.branch === detail.defaultBranch) {
+    // a green run on the default branch closes that workflow's open CI finding (and is remembered for M-4)
+    ctx.waitUntil(brainStub(env).resolveCi(slug, detail.workflow, runKey));
     return new Response(null, { status: 204 });
   }
   const mapped = mapEvent(ghEvent, payload);
@@ -73,7 +80,7 @@ async function handleGitHub(request: Request, env: Env, ctx: ExecutionContext): 
     const ev: RelayEvent = { id: deliveryId, kind: mapped.kind, ts, target: mapped.target, sig: await signEvent(deliveryId, mapped.kind, ts, mapped.target, env.RELAY_SECRET) };
     await env.EVENTS.put(`ev:${deliveryId}`, JSON.stringify(ev), { expirationTtl: 86400 });
   }
-  await brainStub(env).ingestCiEvent({ id: deliveryId, slug: mapped.target.slug, sha: mapped.target.sha, ...detail, ts: ts * 1000 });
+  await brainStub(env).ingestCiEvent({ id: runKey, slug: mapped.target.slug, sha: mapped.target.sha, ...detail, ts: ts * 1000 });
   return new Response(null, { status: 204 });
 }
 
@@ -107,6 +114,9 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
   const cb = update?.callback_query;
   // only button answers from the configured chat are accepted; everything else is acknowledged and ignored
   if (!cb || String(cb?.message?.chat?.id ?? '') !== String(env.TELEGRAM_CHAT_ID ?? '')) return new Response(null, { status: 200 });
+  // M-2: in a group chat any member could press a button; the presser must be the owner (TELEGRAM_OWNER_ID, default the chat id,
+  // which in a private chat IS the owner's user id and in a group is negative and so never matches: fail closed)
+  if (String(cb?.from?.id ?? '') !== String(env.TELEGRAM_OWNER_ID || env.TELEGRAM_CHAT_ID || '')) return new Response(null, { status: 200 });
   const m = String(cb.data ?? '').match(/^q:([\w-]+):([\w-]+)$/);
   let text = 'not understood';
   if (m) {
@@ -140,7 +150,7 @@ async function handleHands(request: Request, env: Env, path: string): Promise<Re
   }
   if ((m = path.match(/^\/hands\/jobs\/([\w-]+)\/outcome$/))) {
     if (!OUTCOME_STATUSES.includes(body?.status)) return json({ error: `status must be one of ${OUTCOME_STATUSES.join('|')}` }, 400);
-    const o: JobOutcome = { status: body.status, ...(typeof body.prUrl === 'string' ? { prUrl: body.prUrl.slice(0, 500) } : {}), ...(typeof body.note === 'string' ? { note: body.note.slice(0, 1000) } : {}), ...(body.drill === 'pass' || body.drill === 'fail' ? { drill: body.drill as 'pass' | 'fail' } : {}) };
+    const o: JobOutcome = { status: body.status, ...(typeof body.prUrl === 'string' ? { prUrl: body.prUrl.slice(0, 500) } : {}), ...(typeof body.note === 'string' ? { note: body.note.slice(0, 1000) } : {}) };
     const r = await brain.recordOutcome(m[1]!, o);
     return json(r, r.ok ? 200 : 409);
   }
@@ -205,6 +215,18 @@ export default {
           if (err) return json({ error: err }, 400);
         }
         return json(await brainStub(env).ingestMany(list as Finding[]));
+      }
+      if (path === '/drill' && request.method === 'POST') {
+        if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });
+        let body: any;
+        try {
+          body = await readJson(request);
+        } catch {
+          return json({ error: 'bad json' }, 400);
+        }
+        if (body?.result !== 'pass' && body?.result !== 'fail') return json({ error: "result must be 'pass' or 'fail'" }, 400);
+        await brainStub(env).recordDrill(body.result, typeof body.note === 'string' ? body.note : undefined);
+        return json({ ok: true });
       }
       if (path.startsWith('/api/')) return await handleApi(request, env, path);
       if (path === '/' && request.method === 'GET') return Response.redirect(new URL('/dash/', url).toString(), 302);

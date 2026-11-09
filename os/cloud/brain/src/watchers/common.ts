@@ -19,7 +19,7 @@ export interface Sink {
   ingestMany(fs: Finding[], now?: number): Promise<{ raised: number; deduped: number }>;
   resolveFinding(f: Pick<Finding, 'source' | 'kind' | 'key'>, outcome: string, now?: number): Promise<boolean>;
   reconcile(source: string, kind: string, keyPrefix: string, openKeys: string[], now?: number): Promise<number>;
-  /** newest finish time of a hands job for this finding class whose outcome has the explicit drill:'pass' marker, or null */
+  /** newest PASS of the weekly restore drill the Mac posted (POST /drill), or null */
   lastPassAt(source: string, kind: string): Promise<number | null>;
 }
 

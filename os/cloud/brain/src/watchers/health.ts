@@ -6,13 +6,15 @@ import type { HealthObservation } from '../brain-do';
 export interface HealthTarget {
   url: string;
   kind: 'api' | 'page' | 'money';
+  /** optional owner/name of the repo that ships this service: without it an outage can only be messaged, never handed to the hands (I-2) */
+  repo?: string;
 }
 
 export function parseTargets(raw: string | undefined): HealthTarget[] {
   try {
     const v = JSON.parse(raw ?? '[]') as unknown;
     if (!Array.isArray(v)) return [];
-    return v.filter((t): t is HealthTarget => !!t && typeof t.url === 'string' && /^https:\/\//.test(t.url) && ['api', 'page', 'money'].includes(t.kind)).slice(0, 10);
+    return v.filter((t): t is HealthTarget => !!t && typeof t.url === 'string' && /^https:\/\//.test(t.url) && ['api', 'page', 'money'].includes(t.kind)).map((t) => (t.repo !== undefined && !/^[\w.-]+\/[\w.-]+$/.test(String(t.repo)) ? { ...t, repo: undefined } : t)).slice(0, 10);
   } catch {
     return [];
   }
@@ -29,9 +31,9 @@ export async function checkOne(t: HealthTarget, fetchImpl: typeof fetch = fetch,
     } else {
       await r.body?.cancel();
     }
-    return { url: t.url, kind: t.kind, ok, status: r.status, ms: Date.now() - t0 };
+    return { url: t.url, kind: t.kind, ...(t.repo ? { repo: t.repo } : {}), ok, status: r.status, ms: Date.now() - t0 };
   } catch {
-    return { url: t.url, kind: t.kind, ok: false, status: 0, ms: Date.now() - t0 };
+    return { url: t.url, kind: t.kind, ...(t.repo ? { repo: t.repo } : {}), ok: false, status: 0, ms: Date.now() - t0 };
   }
 }
 

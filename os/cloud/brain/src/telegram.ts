@@ -105,6 +105,8 @@ export interface DigestInput {
   monitorNotes?: string[];
   /** digest-lane findings beyond the ones rendered; they stay unshown and lead the next digest */
   monitorMore?: number;
+  /** jobs put back in the queue in the last 24 h because their run died without reporting (I-1) */
+  requeued?: number;
 }
 
 /** Most monitor notes one digest renders; the brain marks exactly this many shown, never more. */
@@ -123,6 +125,7 @@ export function digestMessage(d: DigestInput): Outgoing {
   lines.push('', `Acted-on: ${r24} in 24 h; 7-day ratio ${d.ratio7d === null ? 'n/a' : `${Math.round(d.ratio7d * 100)}%`}.`);
   if (d.osBugs > 0) lines.push(`OS bug: ${d.osBugs} finding(s) left unacted for more than 24 h (see dashboard).`);
   if (d.usageNote) lines.push(`Hands paused: ${d.usageNote}.`);
+  if (d.requeued) lines.push(`Runs that died: ${d.requeued} job(s) put back in the queue.`);
   if (d.pendingQuestions.length) {
     lines.push('', 'Waiting for you:');
     for (const q of d.pendingQuestions.slice(0, 10)) lines.push(`- ${q.text} (default "${q.defaultOption}")`);
