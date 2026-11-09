@@ -107,10 +107,10 @@ describe('machine endpoints', () => {
     expect((await brainStub(env).state()).questions.some((x) => x.id === q.id)).toBe(false);
   });
 
-  it('the dashboard API fails closed while Access is not configured', async () => {
+  it('the dashboard API fails closed while neither Access nor the Basic Auth password is configured (RR-dash-auth)', async () => {
     const r = await SELF.fetch('https://brain.test/api/state');
     expect(r.status).toBe(503);
-    expect(await r.json()).toMatchObject({ reason: 'access not configured' });
+    expect(await r.text()).toBe('');
     expect((await SELF.fetch('https://brain.test/health')).status).toBe(200);
     expect((await SELF.fetch('https://brain.test/', { redirect: 'manual' })).headers.get('location')).toBe('https://brain.test/dash/');
   });

@@ -6,7 +6,8 @@
 #   OS_CF_ACCOUNT_ID        the personal Cloudflare account id
 #   OS_BRAIN_KV_ID          id of the KV namespace created for the brain (README step 2)
 #   OS_BRAIN_HOST           the brain's hostname on a zone in that account (custom domain; workers.dev stays off)
-# Optional: OS_BRAIN_ACCESS_TEAM_DOMAIN + OS_BRAIN_ACCESS_AUD (until set, /api/* answers 503 = fail closed),
+# Optional: OS_BRAIN_ACCESS_TEAM_DOMAIN + OS_BRAIN_ACCESS_AUD (until set, /dash/* and /api/* need the Basic Auth secret
+#           DASH_BASIC_PASSWORD, and answer 503 without it = fail closed; ruling RR-dash-auth),
 #           OS_BRAIN_HEALTH_TARGETS (JSON list, replaces the default health targets),
 #           OS_BRAIN_DEPLOYED_REPOS (space/comma list of owner/name; until set no advisory is urgent),
 #           OS_BRAIN_<NAME> for each cloud-watcher var in src/env.ts (SERVICE_TARGETS, PAGE_LOAD_TARGETS, JOURNEY_CONFIG,
@@ -96,7 +97,7 @@ if os.environ.get("OS_BRAIN_CONTAINERS") == "1":
     t = json.dumps(base, indent=2)
 open(out, "w", encoding="utf-8").write(t)
 PY
-grep -q '__ACCESS_AUD__' "$OUT" && echo "deploy: Access not configured yet: /api/* will answer 503 until OS_BRAIN_ACCESS_* are set" >&2
+grep -q '__ACCESS_AUD__' "$OUT" && echo "deploy: Access not configured yet: /dash/* and /api/* use Basic Auth (secret DASH_BASIC_PASSWORD) and answer 503 without it" >&2
 cd "$HERE"
 [ -x node_modules/.bin/wrangler ] || { echo "deploy: run npm ci in $HERE first" >&2; exit 2; }
 if [ "$DRY" -eq 1 ]; then

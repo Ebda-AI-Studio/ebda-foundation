@@ -9,10 +9,12 @@
 //   POST /telegram/webhook  inline-button answers FORWARDED BY THE tg-relay SESSION (it polls @EbdaAIStudiobot; the brain is send-only and
 //                           never registers this URL with Telegram). Auth: X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
 //   GET  /health
-// Human routes (behind Cloudflare Access at the edge AND verified here): GET /api/state, POST /api/questions/:id/answer,
-// and the static dashboard at /dash/ (Workers Static Assets).
+// Human routes: GET /api/state, POST /api/halt, POST /api/questions/:id/answer, and the static dashboard at /dash/ (Workers Static
+// Assets, run Worker-first so the HTML/JS/CSS are never served before the gate). All of them go through gateHuman()
+// (src/dash-auth.ts, ruling RR-dash-auth): the Cloudflare Access JWT when Access is configured, else the interim Basic Auth,
+// else 503. /health stays public and carries no data.
 import type { BrainDO } from './brain-do';
-import { verifyAccessJwt } from './access';
+import { DASH_HEADERS, gateHuman } from './dash-auth';
 import { type Env } from './env';
 import { validateFinding, type Finding } from './findings';
 import { OUTCOME_STATUSES, type JobOutcome, type JobUsage } from './hands';
@@ -218,10 +220,22 @@ export function validateJobUsage(u: any): JobUsage | null {
   return { model: u.model, inputTokens: u.inputTokens, outputTokens: u.outputTokens, cacheReadTokens: u.cacheReadTokens, cacheWriteTokens: u.cacheWriteTokens, costUsd: u.costUsd };
 }
 
+async function handleDash(request: Request, env: Env, url: URL): Promise<Response> {
+  const refused = await gateHuman(request, env, () => brainStub(env));
+  if (refused) return refused;
+  if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405, headers: DASH_HEADERS });
+  if (url.pathname === '/dash') return Response.redirect(new URL('/dash/', url).toString(), 302);
+  if (!env.ASSETS) return new Response(null, { status: 404, headers: DASH_HEADERS });
+  const asset = await env.ASSETS.fetch(request);
+  const res = new Response(asset.body, asset);
+  for (const [k, v] of Object.entries(DASH_HEADERS)) res.headers.set(k, v);
+  return res;
+}
+
 async function handleApi(request: Request, env: Env, path: string): Promise<Response> {
-  const auth = await verifyAccessJwt(request.headers.get('Cf-Access-Jwt-Assertion'), env.ACCESS_TEAM_DOMAIN, env.ACCESS_AUD, Date.now());
-  if (!auth.ok) return json({ error: 'forbidden', reason: auth.reason }, auth.reason === 'access not configured' ? 503 : 403);
   const brain = brainStub(env);
+  const refused = await gateHuman(request, env, () => brain);
+  if (refused) return refused;
   if (request.method === 'GET' && path === '/api/state') return json(await brain.state());
   // F-01: the global kill switch. POST /api/halt {on: boolean, reason?: string}; same-origin like the question answers. Clearing is manual only.
   if (request.method === 'POST' && path === '/api/halt') {
@@ -294,6 +308,7 @@ export default {
         return json({ ok: true });
       }
       if (path.startsWith('/api/')) return await handleApi(request, env, path);
+      if (path === '/dash' || path.startsWith('/dash/')) return await handleDash(request, env, url);
       if (path === '/' && request.method === 'GET') return Response.redirect(new URL('/dash/', url).toString(), 302);
       return new Response('not found', { status: 404 });
     } catch (e) {
