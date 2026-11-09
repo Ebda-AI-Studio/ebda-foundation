@@ -34,7 +34,7 @@ for (p, c), rs in g.items():
 new = []
 for p, items in sorted(by_prod.items()):
     for score, c, n, keys, last in sorted(items, key=lambda x: (-x[0], x[1]))[:top]:
-        new.append({"product": p, "class": "improvement", "severity": "P3", "key": "%s:improvement:%s" % (p, c),
+        new.append({"repo": last.get("repo", ""), "product": p, "class": "improvement", "severity": "P3", "key": "%s:improvement:%s" % (p, c),
                     "title": "[%s] improvement: %s (%d sighting(s) in %d day(s), score %d)" % (p, c, n, days, score),
                     "file": "", "line": 0, "evidence": "; ".join(keys[:5]) + " | latest: " + str(last.get("evidence", ""))[:200],
                     "detail": "", "fix": "address the recurring %s findings for %s" % (c, p), "autofixable": False})

@@ -19,7 +19,7 @@ cat > "$T/audit.json" <<'J'
                     "minimist":{"name":"minimist","severity":"low","via":[]}}}
 J
 echo '[{"name":"CI","conclusion":"failure","url":"https://example.test/run/1","headBranch":"main"},{"name":"CI","conclusion":"success","url":"u","headBranch":"main"}]' > "$T/ci.json"
-printf '{"dream_products":["shop|%s|file://%s"]}' "$P" "$T/page.html" > "$T/local.json"
+printf '{"dream_products":["shop|%s|file://%s|acme/shop"]}' "$P" "$T/page.html" > "$T/local.json"
 : > "$T/services.env"
 E=(env HOME="$T/home" EBDA_OS_LOCAL_ENV="$T/none.env" EBDA_OS_LOCAL_JSON="$T/local.json" OS_STATE_DIR="$T/state" OS_SERVICES_ENV="$T/services.env" OS_PROJECTS_DIR="$T/proj" \
    DREAM_SCAN_AUDIT_JSON="$T/audit.json" DREAM_SCAN_CI_JSON="$T/ci.json" DREAM_SCAN_NO_NET=1)
@@ -38,6 +38,14 @@ chk "sys.exit(0 if 'shop:lockfile-drift' in keys else 1)" && pass "lockfile drif
 chk "sys.exit(0 if 'shop:untested:src/cart.ts' in keys else 1)" && pass "untested path found with file:line evidence" || fail "untested"
 chk "sys.exit(0 if 'shop:ci:CI' in keys else 1)" && pass "failing CI (latest run of the workflow) found" || fail "ci"
 chk "sys.exit(0 if {'shop:seo:title','shop:a11y:lang','shop:a11y:img-alt','shop:seo:h1'} <= keys else 1)" && pass "live probe: title, lang, alt, h1" || fail "live probes"
+# I-3: every finding carries the owner/name the hands need; a repo inside the brain's orgs skips the duplicate sources (I-7)
+chk "sys.exit(0 if fs and all(f.get('repo')=='acme/shop' for f in fs) else 1)" && pass "I-3: every finding carries repo owner/name" || fail "I-3 repo missing"
+printf '{"dream_products":["shop|%s|file://%s|Ebda-AI-Studio/shop"]}' "$P" "$T/page.html" > "$T/local-cov.json"
+"${E[@]}" EBDA_OS_LOCAL_JSON="$T/local-cov.json" OS_STATE_DIR="$T/state-cov" bash "$OPS/dream-scan.sh" >/dev/null 2>&1
+python3 -I -c "
+import json,sys
+fs=json.load(open(sys.argv[1]))['findings']
+sys.exit(0 if fs and not any(f['class'] in ('dependency-advisory','failing-gate') for f in fs) and any(f['class']=='lockfile-drift' for f in fs) and all(f['repo']=='Ebda-AI-Studio/shop' for f in fs) else 1)" "$T/state-cov/dream-findings.json" && pass "I-7: a repo in the brain's orgs gets no npm-audit / CI findings from the dream scan (the brain already covers them)" || fail "I-7 duplicate sources not skipped"
 cp "$F" "$T/first.json"; "${E[@]}" bash "$OPS/dream-scan.sh" >/dev/null 2>&1
 python3 -I -c "
 import json,sys; a={f['key'] for f in json.load(open(sys.argv[1]))['findings']}; b={f['key'] for f in json.load(open(sys.argv[2]))['findings']}
@@ -56,7 +64,7 @@ cp "$OPS/dream-scan.sh" "$OPS/dream-research.sh" "$T/fake/" 2>/dev/null
 python3 -I -c "
 import json,sys
 rows=[json.loads(l) for l in open(sys.argv[1])]
-sys.exit(0 if len(rows)>=6 and any(r['source']=='dream' and r['detail'].get('product')=='shop' and r['detail'].get('evidence') for r in rows) and any(r['kind']=='improvement' for r in rows) else 1)" "$T/state/brain-spool.ndjson" && pass "scan + improvement findings spooled for the brain with product + evidence" || fail "spool content"
+sys.exit(0 if len(rows)>=6 and any(r['source']=='dream' and r['detail'].get('product')=='shop' and r['detail'].get('evidence') for r in rows) and any(r['kind']=='improvement' for r in rows) and all(r.get('repo')=='acme/shop' for r in rows) else 1)" "$T/state/brain-spool.ndjson" && pass "scan + improvement findings spooled for the brain with product + evidence" || fail "spool content"
 [ ! -e "$T/notify.called" ] && pass "no chat message" || fail "notify called"
 
 # no targets: exit 3, loud

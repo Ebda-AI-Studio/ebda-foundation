@@ -135,7 +135,7 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | workspace-hygiene | KEEP-MAC | workspace-hygiene | local worktrees, disk and Umbra prune |
 | world-watch | PORT-BRAIN | world-watch | HTTP poll of external sources |
 | dream | KEEP-MAC | dream | dream cycle runs the Claude CLI over local memory; findings go to the brain job queue, no messages |
-| dream-scan | KEEP-MAC | dream | Ebda product scan (deps, npm audit, untested paths, failing CI, live probes) runs as the first phase of the dream job; `ops/dream-scan.sh`, targets from `dream_products` |
+| dream-scan | KEEP-MAC | dream | Ebda product scan (deps, npm audit, untested paths, failing CI, live probes) runs as the first phase of the dream job; `ops/dream-scan.sh`, targets from `dream_products` (fields name, path, url, owner/name; repos in the brain orgs skip npm audit + CI, which the brain already watches) |
 | dream-research | KEEP-MAC | dream | ranks the week's scan history into `improvement` findings per product; `ops/dream-research.sh`, second phase of the dream job |
 | dream-act | REPLACED-BY | cloud/brain/src/brain-do.ts | the brain job queue: dream findings are POSTed to /findings and the hands do the work |
 | dream-fix | REPLACED-BY | cloud/brain/src/brain-do.ts | the hands (nightly run) apply the fix, replacing the local auto-fix dispatcher |

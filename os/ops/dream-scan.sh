@@ -3,7 +3,10 @@
 # Ebda AI OS - dream-scan.sh   (dream phase SCAN: find what to improve in the Ebda products)
 #
 # Targets (Ebda-only, Ahmad 2026-11-06) come from the per-machine ~/.ebda-os.local.json list `dream_products`, one item per product:
-#     name|/abs/path/to/checkout|https://live.url     (the URL may be empty)
+#     name|/abs/path/to/checkout|https://live.url|owner/name     (the URL may be empty; owner/name is the GitHub repo the hands work on: without
+#     it the brain cannot hand a finding to the hands and files it in the digest, so a missing one is reported loudly)
+# Repos whose owner is one of OS_BILLED_ORGS are already covered by the brain's advisory + CI watchers, so the scan SKIPS npm audit and
+# the last-CI check for them (one issue raised by two sources would become two jobs and two PRs).
 # Per product, cheap checks only (no GitHub Actions minutes, no heavy browser):
 #   deps      lockfile older than package.json (lockfile-drift); `npm audit --json` high/critical (dependency-advisory)
 #   tests     source files no test file mentions (kind test, up to 5, file:1); last CI run on the repo failing (failing-gate, read
@@ -42,13 +45,18 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 emit() {
   python3 -I -c '
 import json, sys
+import os
 p, cls, sev, key, title, file, line, ev, fix, auto = sys.argv[1:11]
-print(json.dumps({"product": p, "class": cls, "severity": sev, "key": p + ":" + key, "title": ("[" + p + "] " + title)[:480],
+print(json.dumps({"repo": os.environ.get("DREAM_REPO", ""), "product": p, "class": cls, "severity": sev, "key": p + ":" + key, "title": ("[" + p + "] " + title)[:480],
                   "file": file, "line": int(line or 0), "evidence": ev, "detail": ev, "fix": fix, "autofixable": auto == "true"}))' "$@" >> "$TMP/f.ndjson"
 }
 
-while IFS='|' read -r name path url; do
+while IFS='|' read -r name path url repo; do
   [ -n "$name" ] && [ -n "$path" ] || continue
+  export DREAM_REPO="${repo:-}"
+  # the brain already covers repos in its orgs (Dependabot alerts + CI webhooks): skip the duplicate sources for them
+  covered=0; case "${repo:-}" in */*) for _o in ${OS_BILLED_ORGS:-}; do [ "${repo%%/*}" = "$_o" ] && covered=1; done ;; esac
+  [ -n "${repo:-}" ] || _log "WARNING: $name has no owner/name in dream_products; its findings go to the digest only (the hands cannot work on a repo they are not told)"
   if [ ! -d "$path" ]; then emit "$name" scan-target-missing low "target-missing" "checkout not found: $path" "" 0 "path $path does not exist" "fix the dream_products entry" false; continue; fi
   _log "scanning $name"
 
@@ -63,7 +71,8 @@ while IFS='|' read -r name path url; do
       emit "$name" lockfile-drift P3 "lockfile-missing" "no package-lock.json" "package.json" 1 "package.json present, package-lock.json absent" "commit a lockfile" true
     fi
     aj="${DREAM_SCAN_AUDIT_JSON:-}"
-    if [ -z "$aj" ] && [ "${DREAM_SCAN_NO_NET:-0}" != 1 ] && [ -f "$path/package-lock.json" ] && command -v npm >/dev/null 2>&1; then
+    [ "$covered" = 1 ] && aj=""
+    if [ "$covered" != 1 ] && [ -z "$aj" ] && [ "${DREAM_SCAN_NO_NET:-0}" != 1 ] && [ -f "$path/package-lock.json" ] && command -v npm >/dev/null 2>&1; then
       aj="$TMP/audit-$name.json"; ( cd "$path" && npm audit --json > "$aj" 2>/dev/null ) || true
     fi
     if [ -n "$aj" ] && [ -s "$aj" ]; then
@@ -94,7 +103,8 @@ PY
 
   # ---- last CI result (API read; no Actions minutes) ----
   cj="${DREAM_SCAN_CI_JSON:-}"
-  if [ -z "$cj" ] && [ "${DREAM_SCAN_NO_NET:-0}" != 1 ] && command -v gh >/dev/null 2>&1; then
+  [ "$covered" = 1 ] && cj=""
+  if [ "$covered" != 1 ] && [ -z "$cj" ] && [ "${DREAM_SCAN_NO_NET:-0}" != 1 ] && command -v gh >/dev/null 2>&1; then
     slug="$(git -C "$path" remote get-url origin 2>/dev/null | sed -E 's#^.*github.com[:/]##; s#\.git$##')"
     if [ -n "$slug" ]; then cj="$TMP/ci-$name.json"; gh run list -R "$slug" -L 10 --json name,conclusion,url,headBranch > "$cj" 2>/dev/null || cj=""; fi
   fi
@@ -157,7 +167,7 @@ if dry == "1":
     print("[dream-scan] DRY_RUN: %d finding(s), nothing written" % len(fs)); sys.exit(0)
 json.dump({"generated_at": now, "script": "dream-scan.sh", "count": len(fs), "findings": fs}, open(out, "w"), indent=2)
 with open(hist, "a") as h:
-    for f in fs: h.write(json.dumps({"at": now, "product": f["product"], "class": f["class"], "key": f["key"], "severity": f["severity"], "title": f["title"], "evidence": f["evidence"]}) + "\n")
+    for f in fs: h.write(json.dumps({"at": now, "repo": f.get("repo", ""), "product": f["product"], "class": f["class"], "key": f["key"], "severity": f["severity"], "title": f["title"], "evidence": f["evidence"]}) + "\n")
 print("[dream-scan] %d finding(s) -> %s" % (len(fs), out))
 PY
 exit 0
