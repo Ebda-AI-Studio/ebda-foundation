@@ -21,6 +21,8 @@ os_config_load() {
   for _cand in "${OS_CONFIG_FILE:-}" "$_here/../../config/os.env" "$_here/../os.env" "$HOME/.claude/os.env"; do
     if [ -n "$_cand" ] && [ -f "$_cand" ]; then _f="$_cand"; break; fi
   done
+  local _allexport=0
+  case $- in *a*) _allexport=1 ;; esac
   set -a
   # shellcheck source=/dev/null
   [ -n "$_f" ] && . "$_f"
@@ -38,13 +40,12 @@ os_config_load() {
   : "${OS_UMBRA_VMS:=fwb-ci6}"
   : "${OS_SENTRY_ORG:=org-lingering-river-25973882}"
   : "${OS_PERSONAL_OWNER:=voidengineer-911}"
-  : "${OS_NEON_ORG:=org-lingering-river-25973882}"
   : "${OS_NONFORCE_BUSINESS_DIRS:=Ebda-AI-Studio Whisky-11 Personal}"
   OS_ORG="${OS_ORGS%% *}"
   OS_BILLED_ORGS=""   # the orgs only (OS_ORGS minus the personal account): what billing and GHAS checks iterate
   for _o in $OS_ORGS; do [ "$_o" = "$OS_PERSONAL_OWNER" ] || OS_BILLED_ORGS="${OS_BILLED_ORGS:+$OS_BILLED_ORGS }$_o"; done
   OS_VM="${OS_UMBRA_VMS%% *}"
-  set +a
+  [ "$_allexport" = 1 ] || set +a
   return 0
 }
 

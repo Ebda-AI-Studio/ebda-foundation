@@ -146,7 +146,14 @@ for p in "$LA/$PREFIX".*.plist; do
   label="$(basename "$p" .plist)"
   case "$wanted" in *" $label "*) continue ;; esac
   say "remove $p (not a Mac-local job)"
-  [ "$DRY" = 1 ] || { launchctl bootout "gui/$U/$label" 2>/dev/null || true; rm -f "$p"; }
+  if [ "$DRY" != 1 ]; then
+    # a failed bootout other than "not loaded" must NOT be ignored: removing the plist of a job that is still running leaves it
+    # running with no file to unload it later
+    if ! bo="$(launchctl bootout "gui/$U/$label" 2>&1)"; then
+      case "$bo" in *"No such process"*|*"Could not find"*|*"not found"*|*"not loaded"*) ;; *) say "ERROR: could not unload $label ($bo); plist kept"; FAILS=$((FAILS+1)); continue ;; esac
+    fi
+    rm -f "$p"
+  fi
 done
 
 # --- 5. Claude Code hooks (settings.json merge) -------------------------------------------------------------------------------
