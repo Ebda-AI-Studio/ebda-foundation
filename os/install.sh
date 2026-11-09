@@ -131,10 +131,16 @@ while IFS=$'\t' read -r name tmpl; do
     say "bootstrap $label"
     if [ "$DRY" != 1 ]; then
       cp "$tmp" "$target"
-      launchctl bootout "gui/$U/$label" 2>/dev/null || true
+      # the OLD definition must really be gone before the new one is bootstrapped: a bootout that fails for any reason except
+      # "not loaded" leaves it running, and bootstrap would then fail (already loaded) or, worse, be mistaken for success
+      if ! bo="$(launchctl bootout "gui/$U/$label" 2>&1)"; then
+        case "$bo" in *"No such process"*|*"Could not find"*|*"not found"*|*"not loaded"*) ;; *) say "ERROR: could not unload $label ($bo); the old definition is still loaded"; FAILS=$((FAILS+1)); rm -f "$tmp"; continue ;; esac
+      fi
       for _ in 1 2 3 4 5 6; do launchctl print "gui/$U/$label" >/dev/null 2>&1 || break; sleep 0.5; done
-      if ! { launchctl bootstrap "gui/$U" "$target" 2>/dev/null || launchctl print "gui/$U/$label" >/dev/null 2>&1; }; then
+      if ! launchctl bootstrap "gui/$U" "$target" 2>/dev/null; then
         say "ERROR: bootstrap failed $label - retry: launchctl bootstrap gui/$U $target"; FAILS=$((FAILS+1))
+      elif ! launchctl print "gui/$U/$label" 2>/dev/null | grep -qF "$target"; then
+        say "ERROR: $label is loaded but not from the new plist ($target)"; FAILS=$((FAILS+1))
       fi
     fi
   fi

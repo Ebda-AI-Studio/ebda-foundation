@@ -2,6 +2,9 @@
 #
 # agent-dispatch.sh — run a free-text request from Telegram as a real agent job.
 #
+# NOTE (2026-11-09): its only caller, the Telegram polling daemon, was removed: the OS shares one bot with the tg-relay session, which is
+# the only consumer of the bot's inbound updates (ruling RR-tg-send-only). Inbound text now reaches an agent only through that relay.
+#
 # THE GAP THIS CLOSES
 # -------------------
 # auto-fix-telegram-daemon.sh has long-polled Telegram since 2026-07-19 with

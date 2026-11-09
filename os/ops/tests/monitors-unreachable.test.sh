@@ -24,9 +24,14 @@ cd "$(dirname "$0")/.."   # -> ops/
 OPS="$(pwd)"
 
 TMP="$(mktemp -d)"
-SERVER_PIDS=""
+# start_fixture runs inside $(...) (a subshell), so a shell variable cannot carry the PIDs out: they are appended to a FILE instead.
+# (Before this, SERVER_PIDS stayed empty, nothing was ever killed, and every run leaked 3 python servers.)
+PID_FILE="$TMP/fixture-pids"; : > "$PID_FILE"
 cleanup() {
-  for p in $SERVER_PIDS; do kill "$p" 2>/dev/null; done
+  while read -r p; do [ -n "$p" ] && kill "$p" 2>/dev/null; done < "$PID_FILE"
+  # verify by PID, never by name pattern: every server this run started must be gone
+  sleep 0.2
+  while read -r p; do [ -n "$p" ] && kill -0 "$p" 2>/dev/null && { kill -9 "$p" 2>/dev/null; echo "cleanup: had to SIGKILL fixture $p" >&2; }; done < "$PID_FILE"
   rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -47,7 +52,7 @@ start_fixture() {   # <script> [mode]
   local script="$1" mode="${2:-}" port
   port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
   python3 "$OPS/tests/fixtures/$script" "$port" $mode > "$TMP/fixture-$port.log" 2>&1 &
-  SERVER_PIDS="$SERVER_PIDS $!"
+  echo "$!" >> "$PID_FILE"
   disown 2>/dev/null || true   # keep bash job control quiet on cleanup
   local i=0
   while [ "$i" -lt 60 ]; do

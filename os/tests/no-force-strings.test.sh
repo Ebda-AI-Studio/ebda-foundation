@@ -22,4 +22,11 @@ if [ -n "$hits" ]; then
   echo "($(printf '%s\n' "$hits" | wc -l | tr -d ' ') hits)"
   exit 1
 fi
-echo "PASS: no predecessor strings outside docs/history/"
+# .superpowers/ is the controller's scratch (reviews, reports, diffs, the SDD ledger) and is exempt above ONLY because it is not part of the repo:
+# nothing under it may be tracked, or the exemption becomes a hole that carries predecessor names into main.
+if git rev-parse --git-dir >/dev/null 2>&1 && [ -n "$(git ls-files .superpowers)" ]; then
+  echo "FAIL: tracked files under .superpowers/ (scratch must stay untracked and git-ignored):"
+  git ls-files .superpowers
+  exit 1
+fi
+echo "PASS: no predecessor strings outside docs/history/ (and nothing tracked under .superpowers/)"

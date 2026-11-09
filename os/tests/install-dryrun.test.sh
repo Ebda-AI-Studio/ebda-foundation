@@ -10,15 +10,18 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin"
 cat > "$T/bin/launchctl" <<'STUB'
 #!/usr/bin/env bash
+# stateful stub: a bootstrapped label is "loaded" (file under $LOADED_DIR holding the plist path) until a bootout removes it
+L="${LOADED_DIR:-/nonexistent}"; label() { printf '%s' "${1##*/}"; }
 case "$1" in
   list) [ -n "${FAKE_LOADED:-}" ] && printf '123\t0\t%s\n' "$FAKE_LOADED"; printf '%s\t0\t%s\n' 1 com.apple.fake; exit 0 ;;
-  print) exit 1 ;;
-  bootstrap) [ -n "${FAKE_BOOTSTRAP_FAIL:-}" ] && exit 5; exit 0 ;;
-  bootout) [ -n "${FAKE_BOOTOUT_ERR:-}" ] && { echo "$FAKE_BOOTOUT_ERR" >&2; exit 5; }; exit 0 ;;
+  print) [ -f "$L/$(label "$2")" ] || exit 1; [ -n "${FAKE_PRINT_WRONG:-}" ] && { echo "path = /elsewhere/old.plist"; exit 0; }; echo "path = $(cat "$L/$(label "$2")")"; exit 0 ;;
+  bootstrap) [ -n "${FAKE_BOOTSTRAP_FAIL:-}" ] && exit 5; [ -n "${FAKE_ALREADY_LOADED_FAILS:-}" ] && [ -f "$L/$(label "$3" | sed 's/\.plist$//')" ] && exit 5; [ -d "$L" ] && printf '%s' "$3" > "$L/$(label "$3" | sed 's/\.plist$//')"; exit 0 ;;
+  bootout) [ -n "${FAKE_BOOTOUT_ERR:-}" ] && { echo "$FAKE_BOOTOUT_ERR" >&2; exit 5; }; rm -f "$L/$(label "$2")"; exit 0 ;;
   *) exit 0 ;;
 esac
 STUB
 chmod +x "$T/bin/launchctl"
+mkdir -p "$T/loaded"; export LOADED_DIR="$T/loaded"
 export PATH="$T/bin:$PATH"
 export EBDA_OS_LOCAL_ENV="$T/none.env"
 want="$(grep -vcE '^(#|$)' "$ROOT/os/launchd/mac-local.list")"
@@ -67,6 +70,17 @@ FAKE_BOOTSTRAP_FAIL=1 bash "$INSTALL" --home "$H4" >/dev/null 2>&1; rc=$?
 H5="$T/h5"; mkdir -p "$H5/.claude"; echo '{not json' > "$H5/.claude/settings.json"
 bash "$INSTALL" --home "$H5" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] && ok "install exits non-zero when hook registration fails (rc=$rc)" || no "hook failure ignored"
+# final review 9: a failed bootout + a failed bootstrap (the OLD definition is still loaded) must fail the install; so must a bootstrap that
+# "succeeds" but leaves a different plist loaded
+H7="$T/h7"; mkdir -p "$H7" "$T/loaded7"
+LOADED_DIR="$T/loaded7" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H7" >/dev/null 2>&1; rc=$?
+[ "$rc" = 0 ] && ok "stateful stub: a clean install still exits 0" || no "clean install with the stateful stub rc=$rc"
+LA7="$H7/Library/LaunchAgents"; victim="$(ls "$LA7"/com.ebda.os.*.plist | head -1)"; echo "<!-- changed -->" >> "$victim"
+LOADED_DIR="$T/loaded7" FAKE_ALREADY_LOADED_FAILS=1 FAKE_BOOTOUT_ERR="Boot-out failed: 5: Input/output error" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H7" >"$T/h7.out" 2>&1; rc=$?
+[ "$rc" != 0 ] && grep -q "could not unload $(basename "$victim" .plist)" "$T/h7.out" && ok "failed bootout + loaded old job: install fails, names the job (rc=$rc)" || { no "bootout failure on a changed plist ignored (rc=$rc)"; tail -3 "$T/h7.out"; }
+echo "<!-- changed again -->" >> "$victim"
+LOADED_DIR="$T/loaded7" FAKE_PRINT_WRONG=1 OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H7" >"$T/h7b.out" 2>&1; rc=$?
+[ "$rc" != 0 ] && grep -q "not from the new plist" "$T/h7b.out" && ok "bootstrap ok but another plist is loaded: install fails (rc=$rc)" || { no "wrong loaded plist ignored (rc=$rc)"; tail -3 "$T/h7b.out"; }
 # M-10: a stale plist whose job FAILS to unload is kept and fails the install; "not loaded" is fine and the plist goes
 H6="$T/h6"; mkdir -p "$H6"
 OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H6" >/dev/null 2>&1
