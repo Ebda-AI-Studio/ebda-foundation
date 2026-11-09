@@ -1,0 +1,30 @@
+# The launchd jobs that run on the Mac (Amendment A): every KEEP-MAC row of the disposition table in os/MANIFEST.md.
+# Format: label-suffix <TAB> template path relative to os/. Read by os/install.sh; the label is $OS_LAUNCHD_PREFIX.<label-suffix>.
+ci-runner-guard	ops/launchd/com.ebda.os.ci-runner-guard.plist
+guest-wedge-watch	ops/launchd/com.ebda.os.guest-wedge-watch.plist
+hung-job-guard	ops/launchd/com.ebda.os.hung-job-guard.plist
+mac-maintenance	ops/launchd/com.ebda.os.mac-maintenance.plist
+workspace-hygiene	ops/launchd/com.ebda.os.workspace-hygiene.plist
+usage-sentinel	ops/launchd/com.ebda.os.usage-sentinel.plist
+graph-backfill	ops/launchd/com.ebda.os.graph-backfill.plist
+instinct-extract	ops/launchd/com.ebda.os.instinct-extract.plist
+session-mining	ops/launchd/com.ebda.os.session-mining.plist
+ebda-cf-backup	ops/launchd/com.ebda.os.ebda-cf-backup.plist
+os-selftest	ops/launchd/com.ebda.os.os-selftest.plist
+hands-mac-local	cloud/hands/providers/launchd/com.ebda.os.hands-mac-local.plist
+acceptance-feedback	ops/launchd/com.ebda.os.acceptance-feedback.plist
+audit-pack-daily	ops/launchd/com.ebda.os.audit-pack-daily.plist
+dead-gate-detect	ops/launchd/com.ebda.os.dead-gate-detect.plist
+docs-scan	ops/launchd/com.ebda.os.docs-scan.plist
+drift-watch	ops/launchd/com.ebda.os.drift-watch.plist
+ebda-foundation-bump	ops/launchd/com.ebda.os.ebda-foundation-bump.plist
+fleet-dep-audit	ops/launchd/com.ebda.os.fleet-dep-audit.plist
+gate-guard	ops/launchd/com.ebda.os.gate-guard.plist
+os-watch	ops/launchd/com.ebda.os.os-watch.plist
+code-health	ops/launchd/com.ebda.os.code-health.plist
+runner-hook-health	ops/launchd/com.ebda.os.runner-hook-health.plist
+dream	ops/launchd/com.ebda.os.dream.plist
+reflect	ops/launchd/com.ebda.os.reflect.plist
+heal-watch	ops/launchd/com.ebda.os.heal-watch.plist
+app-error-heal	ops/launchd/com.ebda.os.app-error-heal.plist
+restore-drill	ops/launchd/com.ebda.os.restore-drill.plist

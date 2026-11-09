@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy to ~/.ebda-os.local.json and fill in. Per-machine fleet list for the monitors that watch live stores (fleet-dep-audit, fleet domains, deploy drift). The real list never enters the repo. Scripts that need a fleet do nothing (exit 0, one log line) while ~/.ebda-os.local.json is absent.",
+  "stores": [
+    { "domain": "store.example.invalid", "label": "custom" }
+  ]
+}

@@ -2,3 +2,10 @@ node_modules/
 dist/
 .DS_Store
 coverage/
+
+__pycache__/
+*.pyc
+os/ARCHITECTURE.md
+
+# controller scratch (SDD reviews, reports, diffs, ledger): never part of the repo
+.superpowers/

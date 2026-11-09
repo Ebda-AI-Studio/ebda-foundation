@@ -1,0 +1,8 @@
+{
+  "name": "ebda-os-hands-claude-cli",
+  "private": true,
+  "description": "Pins the Claude Code CLI for the hands image by version AND integrity (package-lock.json, installed with npm ci).",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.309"
+  }
+}

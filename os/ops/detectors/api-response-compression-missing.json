@@ -1,0 +1,14 @@
+{
+  "name": "api-response-compression-missing",
+  "class": "perf-wire",
+  "severity": "high",
+  "title": "Express API serves JSON without compression middleware",
+  "detail": "An Express entrypoint with no compression() registration ships uncompressed JSON to every client — pure added latency on list endpoints (direct-origin APIs only; CDN-fronted apps compress at the edge).",
+  "fix": "npm i compression; app.use(compression()) early in the middleware chain (before routes).",
+  "globs": ["**/src/index.ts", "**/src/server.ts", "**/src/app.ts"],
+  "match_mode": "file-present-absent",
+  "include_regex": "express\\(\\)",
+  "absent_regex": "compression\\(",
+  "cap": 5,
+  "source_lesson": "reference-builder-reality-audit.md (Lens P)"
+}

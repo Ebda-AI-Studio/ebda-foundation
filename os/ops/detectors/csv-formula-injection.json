@@ -1,0 +1,18 @@
+{
+  "name": "csv-formula-injection",
+  "class": "security-injection",
+  "severity": "medium",
+  "title": "CSV export without formula-injection sanitization (=,+,-,@)",
+  "detail": "Code emitting CSV without escaping cells that start with = + - @ lets a crafted cell execute as a spreadsheet formula on open.",
+  "fix": "prefix leading =,+,-,@ cells with a quote, or use a csvSanitize helper before stringify.",
+  "globs": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js"
+  ],
+  "match_mode": "file-present-absent",
+  "include_regex": "Content-Type[^\\n]*csv|Content-Disposition[^\\n]*csv|csv-stringify|toCsv|exportCsv|new Blob\\([^)]*text/csv",
+  "absent_regex": "csvSanitize|sanitizeCsv|formulaGuard|\\^\\[=\\+|escapeCsv|neutralize|neutralise|csvField|BulkService|xlsxBufferToImportCsv",
+  "cap": 20,
+  "source_lesson": "feedback-store-browser-attack-surface-hardening.md"
+}

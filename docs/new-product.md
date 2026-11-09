@@ -1,6 +1,6 @@
 # How to build a new Ebda product
 
-1. Gate questions: does the audience already exist? Which named buyer's KWD/month cost do we delete? Whose one workflow is it? Is it depth on an existing bet? A "no" on the first two is a STOP.
+1. Gate questions: does the audience already exist? Which named buyer's monthly cost do we delete? Whose one workflow is it? Is it depth on an existing bet? A "no" on the first two is a STOP.
 2. Name and brand: "Ebda <X>", Arabic "ابدأ <X>", host `<x>.ebda.app`. Add the product to `brand` and the host to `RESERVED_SLUGS` in a foundation PR first.
 3. `new` refuses unless the slug is already in `RESERVED_SLUGS` (otherwise a store could claim `<x>.ebda.app` first): land that foundation PR and tag first. `node bin/ebda-foundation.mjs new ebda-<x>` from a clean tagged foundation checkout (`npx --yes github:Ebda-AI-Studio/ebda-foundation new ebda-<x>` once the repo is fetchable). You get a Hono Worker, D1 + Durable Object bindings, CI, the vendored foundation and its parity test.
 4. Identity: register the client with accounts.ebda.app (contract), audience, scopes.

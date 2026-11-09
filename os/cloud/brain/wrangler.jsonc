@@ -1,0 +1,81 @@
+// Ebda OS brain. This file is the TEMPLATE: the values written as __PLACEHOLDER__ are filled by scripts/deploy.sh from
+// os/config/os.env and ~/.ebda-os.local.env into wrangler.deploy.jsonc (gitignored). Never put ids or secrets here.
+// account_id is NOT set here: deploy.sh exports CLOUDFLARE_ACCOUNT_ID from OS_CF_ACCOUNT_ID (the personal account).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ebda-os-brain",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "observability": { "enabled": true, "head_sampling_rate": 0.2 },
+
+  // F-18: a fan-out bug becomes a thrown error, not 10,000 subrequests or a runaway CPU bill (test/config.test.ts asserts both).
+  "limits": { "cpu_ms": 30000, "subrequests": 500 },
+
+  // Dashboard: static files under public/dash/ (served at /dash/). /api/* and every machine path reach the Worker.
+  "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "none", "run_worker_first": ["/api/*", "/github/*", "/telegram/*", "/hands/*", "/findings", "/pending", "/health"] },
+
+  // One SQLite-backed Durable Object holds the pipeline: findings, jobs, runs, questions, messages, counters.
+  "durable_objects": { "bindings": [{ "name": "BRAIN", "class_name": "BrainDO" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BrainDO"] }],
+
+  // KV only where eventual consistency is fine: the Mac fallback queue (/pending) and the advisory ETag/KEV cache.
+  "kv_namespaces": [{ "binding": "EVENTS", "id": "__BRAIN_KV_ID__" }],
+
+  // Cron Triggers (UTC). Keep in sync with CRONS in src/schedule.ts (test/config.test.ts enforces it).
+  // No weekday field is used: on Cloudflare 1 = Sunday and 0 is rejected, so a weekday cron needs care.
+  "triggers": { "crons": ["*/5 * * * *", "2-59/15 * * * *", "7 * * * *", "17 */6 * * *", "30 21 * * *", "0 5 * * *"] },
+
+  "vars": {
+    "OS_ORGS": "__OS_ORGS__",
+    // owner/name list of repos whose code is deployed (from OS_BRAIN_DEPLOYED_REPOS); an advisory is urgent only there
+    "DEPLOYED_REPOS": "__DEPLOYED_REPOS__",
+    // live public endpoints only (both answered 200 on 2026-11-05); override with OS_BRAIN_HEALTH_TARGETS at deploy
+    "HEALTH_TARGETS": "[{\"url\":\"https://api.ebda.app/health\",\"kind\":\"api\"},{\"url\":\"https://ebda.app/\",\"kind\":\"page\"}]",
+    "HEALTH_FAIL_BUDGET": "3",
+    // Cloud watchers (src/watchers/*): a var left unset makes that watcher raise ONE monitor-unconfigured finding instead of
+    // running. Set them at deploy with OS_BRAIN_<NAME> (scripts/deploy.sh); the Ebda repo that holds the restore drill is the
+    // only default.
+    "DR_DRILL_REPO": "Ebda-AI-Studio/ebda-store",
+    "MESSAGE_BUDGET_PER_DAY": "3",
+    "URGENT_MESSAGE_BUDGET_PER_DAY": "3",
+    "URGENT_RUNS_PER_DAY": "3",
+    "URGENT_RUN_CAP_MIN": "30",
+    "QUESTION_DEADLINE_HOURS": "24",
+    "USAGE_WEEKLY_THRESHOLD_PCT": "80",
+    // stub until Task 7: then cloudflare-sandbox (needs the containers block, see os/cloud/hands/README.md). mac-local is
+    // pull-only; github-actions is refused unless HANDS_GITHUB_ACTIONS_ENABLED=true (Actions minutes are CI only).
+    "HANDS_PROVIDER": "stub",
+    "HANDS_NIGHTLY_RUN_CAP_MIN": "90",
+    // F-01: "1" halts every container start (the DO `halt` key, set by cost-stop and POST /api/halt, is the first line of defence)
+    "HANDS_HALT": "0",
+    // RR-hands-api-auth: the cloud hands run on a Console API key (ANTHROPIC_API_KEY secret, hands container only), paid from the $200/month
+    // API credit. 'max' stays selectable. HANDS_API_SPEND_LIMIT_USD is the hard limit Ahmad set in the Console ($200); api mode refuses to start
+    // without a positive value, and the monthly budget below must stay under it (config test).
+    "HANDS_CLAUDE_AUTH": "api",
+    "HANDS_API_SPEND_LIMIT_USD": "200",
+    // the pessimistic charge for a Claude run nothing metered (never $0) and the per-job hard budget the forwarder enforces
+    "HANDS_JOB_PESSIMISTIC_USD": "2",
+    "HANDS_JOB_BUDGET_USD": "5",
+    // LEAN mode: sonnet by default, haiku for triage / summaries, opus only for jobs flagged security-design or money-design, capped per day
+    "HANDS_DEFAULT_MODEL": "sonnet",
+    "HANDS_OPUS_JOBS_PER_DAY": "2",
+    // dollar budgets: monthly stays well under the $200 credit (warn 80 %, halt 100 %), daily blocks new runs until tomorrow
+    "HANDS_MONTHLY_BUDGET_USD": "150",
+    "HANDS_DAILY_BUDGET_USD": "10",
+    "HANDS_MAC_JOBS_PER_DAY": "5",
+    "INGEST_PER_DAY": "1000",
+    // the footprint watcher halts the hands when the estimated Cloudflare month reaches CF_STOP_USD: Ahmad's own alerts are $10 (warn) and $20 (stop)
+    "CF_WARN_USD": "10",
+    "CF_STOP_USD": "20",
+    // the brain's own public URL the hands container calls back (rendered from OS_BRAIN_HOST)
+    "HANDS_BRAIN_URL": "__HANDS_BRAIN_URL__",
+    "ACCESS_TEAM_DOMAIN": "__ACCESS_TEAM_DOMAIN__",
+    "ACCESS_AUD": "__ACCESS_AUD__"
+  }
+  // Secrets (wrangler secret put, never here): GH_WEBHOOK_SECRET, RELAY_SECRET, GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
+  // TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, HANDS_TOKEN, INGEST_TOKEN, CF_API_TOKEN, SENTRY_AUTH_TOKEN (GITHUB_TOKEN also feeds
+  // deploy-drift, pr-shepherd, cost-guard); hands container (Task 7): CLAUDE_CODE_OAUTH_TOKEN,
+  // HANDS_GH_TOKEN, HANDS_CONFIG_JSON, HANDS_GIT_NAME, HANDS_GIT_EMAIL. See README.md and os/cloud/hands/README.md.
+}

@@ -1,0 +1,14 @@
+{
+  "name": "cache-wrap-missing-single-flight",
+  "class": "perf-cache",
+  "severity": "high",
+  "title": "read-through cache helper without single-flight (stampede risk)",
+  "detail": "A file defines/calls a read-through cache wrapper (getCached/cacheService.wrap/cache.wrap) but has no in-flight promise guard. Concurrent misses on the same key each rebuild independently — a cache-stampede: N callers, N rebuilds, N DB hits. Approximation note: file-present-absent scope is per-file, so a guard defined in a sibling module (not re-exported or re-implemented in the flagged file) won't be detected as covering it — verify manually before treating a finding as confirmed.",
+  "fix": "wrap the miss path in an in-flight promise map (Map<key, Promise>) so concurrent callers for the same key share one fetch: check inFlight.get(key) before calling the fetcher, inFlight.set(key, promise) before awaiting, inFlight.delete(key) in a finally.",
+  "globs": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs"],
+  "match_mode": "file-present-absent",
+  "include_regex": "(export\\s+)?(async\\s+)?function\\s+getCached\\b|getCached\\s*[:=]\\s*(async\\s*)?(function\\s*)?\\(|function\\s+wrap\\s*\\(\\s*key",
+  "absent_regex": "inFlight|inflight|pendingPromises|singleFlight|promiseMap",
+  "cap": 20,
+  "source_lesson": "cache-stampede reel audit 2026-07-13 (store/whatsapp): stampede = concurrent misses -> N rebuilds; single-flight promise map is the standard fix"
+}

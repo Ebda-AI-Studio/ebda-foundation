@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Ebda OS operations</title>
+  <link rel="stylesheet" href="/dash/dash.css">
+  <script src="/dash/dash.js" defer></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <div>
+        <h1 data-i18n="title">Ebda OS operations</h1>
+        <p class="sub" data-i18n="subtitle">What the OS noticed, what it did about it, and what is waiting for you.</p>
+      </div>
+    </div>
+    <div class="tools">
+      <span class="stamp" id="stamp" aria-live="polite"></span>
+      <button type="button" class="lang" id="lang" lang="ar">عربي</button>
+    </div>
+  </header>
+
+  <main>
+    <p class="alert" id="error" role="alert" hidden></p>
+    <p class="alert" id="halt" role="alert" hidden></p>
+
+    <section class="tiles" aria-labelledby="h-now">
+      <h2 id="h-now" class="visually-hidden" data-i18n="now">Right now</h2>
+      <article class="tile hero">
+        <h3 data-i18n="acted">Acted on</h3>
+        <p class="big" id="acted7">–</p>
+        <p class="note" id="acted1"></p>
+      </article>
+      <article class="tile"><h3 data-i18n="open">Open findings</h3><p class="big" id="open">–</p></article>
+      <article class="tile"><h3 data-i18n="queue">Queue</h3><p class="big" id="queue">–</p><p class="note" id="queueNote"></p></article>
+      <article class="tile"><h3 data-i18n="messages">Messages today</h3><p class="big" id="msgs">–</p><p class="note" id="msgsNote"></p></article>
+      <article class="tile" id="bugsTile"><h3 data-i18n="bugs">Unacted after 24 h</h3><p class="big" id="bugs">–</p><p class="note" data-i18n="bugsNote">Each one is a bug in the OS.</p></article>
+      <article class="tile"><h3 data-i18n="usage">Hands usage guard</h3><p class="big" id="usage">–</p><p class="note" id="usageNote"></p></article>
+    </section>
+
+    <section aria-labelledby="h-q">
+      <h2 id="h-q" data-i18n="decisions">Decisions waiting for you</h2>
+      <ul class="questions" id="questions"></ul>
+      <p class="empty" id="questionsEmpty" data-i18n="noDecisions" hidden>Nothing is waiting for you. The OS is handling everything else on its own.</p>
+    </section>
+
+    <section aria-labelledby="h-f">
+      <h2 id="h-f" data-i18n="findings">Recent findings</h2>
+      <div class="scroll" tabindex="0" role="region" aria-labelledby="h-f">
+        <table>
+          <thead><tr><th data-i18n="colFinding">Finding</th><th data-i18n="colLane">Lane</th><th data-i18n="colStatus">Status</th><th data-i18n="colRaised">Raised</th></tr></thead>
+          <tbody id="findings"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="split">
+      <section aria-labelledby="h-r">
+        <h2 id="h-r" data-i18n="runs">Hands runs</h2>
+        <ul class="list" id="runs"></ul>
+      </section>
+      <section aria-labelledby="h-h">
+        <h2 id="h-h" data-i18n="health">Production health</h2>
+        <ul class="list" id="health"></ul>
+      </section>
+    </div>
+  </main>
+  <footer><span data-i18n="footer">Ebda AI Studio · Ebda OS brain</span></footer>
+</body>
+</html>

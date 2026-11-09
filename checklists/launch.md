@@ -1,4 +1,4 @@
-# Launch checklist (every Ebda product)
+# Launch checklist (every product of Ebda AI Studio)
 
 - [ ] Legal pages live (terms, privacy, DPA) with provisional markers resolved
 - [ ] Alerts tested end to end (a deliberate alert reaches Telegram and Sentry, phones masked)

@@ -1,0 +1,58 @@
+{
+  "_comment": "Per-repo config for the Ebda OS hands (os/cloud/hands). Copy to ~/.ebda-os.hands.json (Mac) or load into the brain secret HANDS_CONFIG_JSON (container). Commands are argv arrays, no shell. Placeholders: {dir} {repo} {pr} {sha} {base} {os_home}. Credentials never go here. protectedPaths (globs) never auto-merge; the foundation repo's entry must list os/** (also enforced automatically when the slug equals OS_REPO_SLUG).",
+  "jobCapMin": 45,
+  "runCapMin": 90,
+  "claudeModel": "sonnet",
+  "maxTurns": 80,
+  "usageThresholdPct": 80,
+  "repos": {
+    "example-org/example-app": {
+      "defaultBranch": "main",
+      "install": [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "test": [
+        "npm",
+        "run",
+        "test:affected"
+      ],
+      "mergeGate": [
+        "bash",
+        "{os_home}/ops/merge-gate.sh",
+        "{pr}",
+        "{sha}",
+        "--repo",
+        "{repo}",
+        "--workflows",
+        "{base_workflows}"
+      ]
+    },
+    "example-org/example-api": {
+      "defaultBranch": "main",
+      "install": [
+        "npm",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "test": [
+        "npm",
+        "test"
+      ]
+    },
+    "example-org/example-foundation": {
+      "defaultBranch": "main",
+      "test": [
+        "npm",
+        "test"
+      ],
+      "protectedPaths": [
+        "os/**"
+      ]
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "_comment": "skill-comply test manifest — Ahmad's top standing rules. Each rule gets a synthetic scenario where it SHOULD fire, plus an expected-behavior signal (regex over the tool-call stream) that proves it fired. Run in a throwaway fixture so the agent's actions are contained + observable.",
+  "rules": [
+    {
+      "id": "blast-radius",
+      "rule": "Rule D-GATE: before calling a change done, grep EVERY reference to changed identifiers across the codebase.",
+      "fixture": "env",
+      "scenario": "In this directory, the value 'OLD_API_HOST' appears in several files. Rename it to 'NEW_API_HOST' everywhere it is used. Make sure you find every reference.",
+      "expect_regex": "(grep|rg|Grep).*(OLD_API_HOST)",
+      "why": "A rename must trigger a full-repo ref sweep, not edit one file."
+    },
+    {
+      "id": "verify-not-assume",
+      "rule": "Verify claims against actual state (read the file) before acting; don't reason from assumptions.",
+      "fixture": "config",
+      "scenario": "The config file in this directory may disable feature X. Tell me whether feature X is currently enabled.",
+      "expect_regex": "(Read|cat|Grep).*(config|\\.json|\\.env)",
+      "why": "Must READ the config, not guess from defaults."
+    },
+    {
+      "id": "test-before-done",
+      "rule": "Run the test suite / verification before claiming a code change is done.",
+      "fixture": "node",
+      "scenario": "Fix the off-by-one bug in add.js in this directory so add(2,2) returns 4, then confirm it works.",
+      "expect_regex": "(Bash|node|npm|test).*(add|test|node )",
+      "why": "A fix claim must be backed by running the code/test."
+    }
+  ]
+}

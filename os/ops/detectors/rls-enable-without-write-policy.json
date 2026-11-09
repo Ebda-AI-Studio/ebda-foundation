@@ -1,0 +1,14 @@
+{
+  "name": "rls-enable-without-write-policy",
+  "class": "security-rls",
+  "severity": "high",
+  "title": "RLS enabled but no write policy (FOR INSERT/UPDATE/DELETE/ALL)",
+  "detail": "ENABLE ROW LEVEL SECURITY with only a SELECT/USING policy denies ALL writes (42501). Verify a per-command write policy exists.",
+  "fix": "add FOR INSERT/UPDATE/DELETE ... WITH CHECK policies (or FOR ALL) alongside the enable.",
+  "globs": ["**/*.sql"],
+  "match_mode": "file-present-absent",
+  "include_regex": "ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY",
+  "absent_regex": "FOR\\s+(INSERT|UPDATE|DELETE|ALL)",
+  "cap": 20,
+  "source_lesson": "feedback-rls-enable-needs-policy-per-command.md"
+}

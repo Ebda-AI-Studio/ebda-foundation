@@ -1,0 +1,35 @@
+# mobile — Mobile (iOS/Android) Rubric
+
+tags: [MOBILE]
+sources: reference-mobile-ios-android-build-methodology.md, CLAUDE.md (rule 4 — mobile app store rejection-proofing), reference-iceberg-audit.md (rule 4)
+
+> AUTHOR-ONLY concern. This rubric applies to native iOS/Android apps (Expo React Native + EAS on a Node/managed Postgres backend). It is **N/A for web-only repos** (previous products) — those have no `apps/mobile/**`. Grade only a repo that ships a native app.
+
+## What "solid" looks like
+App-store compliance baked in at design-time (Sign in with Apple, ≤2-tap account deletion + public web delete URL, IAP + Restore Purchases, anti-steering CI lint, `PrivacyInfo.xcprivacy`, bilingual privacy strings, Android `blockedPermissions`); MASVS-grade secret storage + TLS + cert pinning on auth/payment; push notifications post-value-moment via OneSignal with a timeout guard; OTA staged rollout via EAS Update; Sentry + crash-free/ANR SLOs from day 1.
+
+## Criteria
+| # | Criterion | Solid (grade 2) | Gap detection | Severity |
+|---|---|---|---|---|
+| 1 | Sign in with Apple | Present the moment any other social sign-in exists (Apple Guideline 4.8), with hide-email support | grep `apps/mobile/**` for `expo-apple-authentication`/`AppleAuthentication`; if any other social provider (`expo-auth-session`/Google/Facebook) is present and Apple is not → gap | Critical |
+| 2 | Account deletion ≤2 taps + public web delete URL | In-app delete in ≤2 taps AND a no-install web deletion URL; server anonymizes email→`deleted-<id>-<ts>@deleted.local`, wipes PII/comments/push subs, returns 401 on old creds (deleted-check BEFORE bcrypt) | grep server for a delete-account route + the `deleted-` anonymization sentinel; grep mobile for a delete-account screen; confirm a public `/delete-account` web URL exists | Critical |
+| 3 | IAP + Restore Purchases for digital goods | Apple IAP / Google Billing (RevenueCat abstraction) for digital goods + a Restore Purchases button laid out in M1 | grep `apps/mobile/**` for `react-native-purchases`/RevenueCat or `expo-in-app-purchases`; grep for a `Restore` purchases control | Critical |
+| 4 | Anti-steering CI lint | No web-checkout/marketing/pricing references in `apps/mobile/**`, enforced by a CI grep lint that exits 1 on match | file-exists `scripts/check-anti-steering.sh`; confirm it is wired into CI (grep `.github/workflows/*` for the script); confirm exit-1-on-match | High |
+| 5 | PrivacyInfo.xcprivacy present | `PrivacyInfo.xcprivacy` generated + verified for the app AND every 3rd-party SDK ships its own (binary rejection since Feb 2025) | `npx expo prebuild --platform ios --clean && ls ios/*/PrivacyInfo.xcprivacy` — file must exist | Critical |
+| 6 | Bilingual privacy strings + ATS | en+ar privacy usage strings in `app.json` `infoPlist`; `ITSAppUsesNonExemptEncryption=false`; `NSAllowsArbitraryLoads=false` | grep `app.json`/`app.config.*` for `infoPlist` privacy `NS*UsageDescription` keys (en+ar), `ITSAppUsesNonExemptEncryption`, and `NSAllowsArbitraryLoads` set to `false` | High |
+| 7 | Android permission lockdown | `blockedPermissions` for everything non-core (CONTACTS/LOCATION/SMS/CALENDAR); explicit `<queries>` instead of blanket `Linking.canOpenURL` (avoids QUERY_ALL_PACKAGES rejection) | grep `app.json`/`app.config.*` for `blockedPermissions`; grep mobile for `canOpenURL` without a corresponding `<queries>` declaration | High |
+| 8 | ATT-free MVP | No ATT-triggering SDKs (Facebook SDK / Adjust / Branch / Singular) in the MVP | grep `apps/mobile/package.json` for `react-native-fbsdk`/`adjust`/`branch`/`singular` → any match is a gap | Medium |
+| 9 | Secure token storage (MASVS-STORAGE) | Tokens/PII only in Keychain/Keystore via Expo SecureStore; `android:allowBackup=false`; no secrets in logs/SQLite/prefs | grep mobile for `expo-secure-store`; confirm NO tokens in `AsyncStorage`; grep `app.json`/manifest for `allowBackup` `false` | High |
+| 10 | Certificate pinning on auth/payment (MASVS-NETWORK) | Public-key-hash pin + 1 backup pin on auth + payment endpoints | grep mobile for a cert-pinning config (e.g. `react-native-ssl-pinning`/Expo network-security config with pin hashes) on auth/payment hosts | High |
+| 11 | Push notifications discipline (OneSignal) | Custom branded prompt fired AFTER first value-moment (shown once via SecureStore flag), never auto-prompt; OneSignal SDK calls raced with a ~5s timeout; subscriptions tagged (locale/role/userId) | grep mobile for OneSignal init; confirm no auto-prompt at launch (a value-moment gate + SecureStore "shown" flag); grep for a `Promise.race`/timeout around OneSignal/`getExpoPushTokenAsync` | Medium |
+| 12 | Push token fetch timeout guard | `getExpoPushTokenAsync` wrapped in `Promise.race` with a ~10s timeout (hangs in EAS builds); `google-services.json` in `extraBuildFiles` | grep mobile for `getExpoPushTokenAsync` and confirm a surrounding timeout race; grep `app.json` for `extraBuildFiles` with `google-services.json` | Medium |
+| 13 | OTA staged rollout (EAS Update) | EAS Update (not retired CodePush); staged rollout staging→beta 5-10%→prod 5%→25%→100% with crash-spike auto-rollback; OTA = JS only (payment/financial changes ship as a binary) | grep for `expo-updates`/EAS Update config; confirm no `react-native-code-push`; confirm a staged-rollout / channel config exists | High |
+| 14 | Runtime version policy for OTA | `runtimeVersion.policy: appVersion` (or `eas fingerprint:compare` in CI) to prevent OTA fingerprint mismatch bricking | grep `app.json`/`eas.json` for `runtimeVersion`; confirm `policy` set or a `fingerprint:compare` CI step | Medium |
+| 15 | Sentry + crash-free/ANR SLOs | Sentry RN day 1 (`enableInExpoDevelopment:false`, dSYMs/source maps shipped); SLOs set+alerted: crash-free session ≥99.95% (red <99.8%), ANR <0.47%, cold-start ≤400ms iOS / ≤5s Android | grep mobile for `@sentry/react-native` init; grep docs for a documented crash-free/ANR/cold-start SLO with alert thresholds | High |
+| 16 | RTL native restart (Arabic-first) | `forceRTL` applied at AppDelegate/MainActivity startup (native, not JS); "restart required" banner on in-app locale change; tested on a real Arabic-locale Android device | grep mobile for `forceRTL`/`I18nManager.forceRTL`; confirm a native-startup application point + a locale-change restart banner | High |
+| 17 | EAS dev-build acceptance + device farm | Maestro E2E on EAS dev builds (not Expo Go) + device farm (BrowserStack/Firebase Test Lab) on ≥3 real devices (latest iOS, latest Android, one mid-range Android) | file-exists Maestro flows (`.maestro/`/`*.yaml`); grep CI for a device-farm step (BrowserStack/Firebase Test Lab) | Medium |
+| 18 | Payment idempotency (mobile channel) | `(channel, externalOrderId)` unique constraint so app-killed-mid-purchase replay is safe; ACK Google Play purchases within 3 days; refund→revoke entitlement | grep Prisma schema / migrations for a `@@unique([channel, externalOrderId])` (or equivalent) on the purchases table | High |
+
+## Evidence (filled during audit, per repo)
+- a previous storefront product: …
+- an earlier messaging product: …
