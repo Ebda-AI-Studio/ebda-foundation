@@ -193,7 +193,10 @@ export class BrainDO extends DurableObject<Env> {
       }
       const urgentClass = existing.lane === 'urgent' || c.lane === 'urgent';
       const cooled = now - Number(existing.closed_at ?? 0) >= (urgentClass ? URGENT_COOLDOWN_MS : COOLDOWN_MS);
-      if (status === 'held' || !cooled || evidence === String(existing.evidence)) {
+      // N-1: a watcher's "config missing" note that was resolved (it ran configured) and is raised again means the config is gone AGAIN:
+      // no cool-down, no evidence check, or the post-deploy gate would read a regression as clear
+      const gapAgain = f.kind === 'monitor-unconfigured' && status === 'resolved';
+      if (status === 'held' || (!gapAgain && (!cooled || evidence === String(existing.evidence)))) {
         seen();
         return { fp, deduped: true, reopened: false, lane: existing.lane as Lane, reason: String(existing.reason), jobId: null };
       }
@@ -284,6 +287,25 @@ export class BrainDO extends DurableObject<Env> {
     for (const kind of ['dr-drill-stale', 'dr-drill-overdue']) await this.resolveFinding({ source: 'watcher', kind, key: `dr-drill:ebda-store:${kind === 'dr-drill-stale' ? 'stale' : 'overdue'}` }, 'restore drill passed', now);
   }
 
+  /**
+   * The hands container refused to run (exit 3: it could not lock down egress, e.g. no CAP_NET_ADMIN on the platform). That is not a
+   * monitor note: no auto-fix will run at all until it is fixed, so it is a P1 message (once a day). The run counts as failed and its
+   * jobs go back to the queue; an unknown run id still raises the message.
+   */
+  async handsRefused(runId: string, reason: string, now: number = Date.now()): Promise<{ ok: boolean }> {
+    const run = this.row('SELECT status FROM runs WHERE id = ?', runId);
+    if (run?.status === 'running') {
+      this.sql.exec(`UPDATE runs SET status = 'failed', finished_at = ? WHERE id = ?`, now, runId);
+      for (const j of this.rows(`SELECT id, fp FROM jobs WHERE run_id = ? AND status = 'running'`, runId)) {
+        this.sql.exec(`UPDATE jobs SET status = 'queued', run_id = NULL, started_at = NULL WHERE id = ?`, j.id);
+        this.sql.exec(`UPDATE findings SET status = 'queued' WHERE fp = ? AND status = 'dispatched'`, j.fp);
+      }
+    }
+    this.setMeta('hands:refused', { at: now, runId, reason: reason.slice(0, 200) });
+    await this.emit({ dedupeKey: `hands-refused:${dayKey(now)}`, kind: 'p1-unhealed', text: `Ebda OS: the hands container refused to run: ${reason.slice(0, 200)}\nNo auto-fix or nightly work runs until this is fixed (the egress lock needs CAP_NET_ADMIN on the container platform). Jobs stay queued.` }, now);
+    return { ok: true };
+  }
+
   /** Newest PASS of the weekly restore drill (posted by the Mac), or null. The signature keeps the watcher Sink shape. */
   lastPassAt(_source: string, _kind: string): number | null {
     return this.getMeta<number>('drill:last-pass');
@@ -303,6 +325,11 @@ export class BrainDO extends DurableObject<Env> {
   // ---------- CI events (from the relay webhook) ----------
   /** A green default-branch run: close the workflow's CI finding, and remember when (M-4: a red event older than this is stale). */
   async resolveCi(slug: string, workflow: string, runKey: string, now: number = Date.now()): Promise<boolean> {
+    // M-3: the signed run id + attempt is the identity of a green; a replay of one already applied changes nothing, so it can never
+    // close a NEWER red that opened after it
+    const seen = this.getMeta<string[]>('ci:green:seen') ?? [];
+    if (seen.includes(runKey)) return false;
+    this.setMeta('ci:green:seen', [...seen, runKey].slice(-500));
     const greens = this.getMeta<Record<string, number>>('ci:green') ?? {};
     greens[`${slug}:${workflow}`] = now;
     // bounded: keep the 500 newest
@@ -516,6 +543,8 @@ export class BrainDO extends DurableObject<Env> {
       `INSERT INTO runs (id, kind, provider, external_id, status, day, started_at, cap_min) VALUES (?, ?, ?, NULL, 'running', ?, ?, ?)`,
       runId, kind, provider.name, dayKey(now), now, capMin,
     );
+    // N-2: the stuck-run cap is 45 min x the jobs CLAIMED, fixed here; the count of jobs still running shrinks as they report
+    this.setMeta(`run:jobs:${runId}`, jobs.length);
     for (const j of jobs) {
       this.sql.exec(`UPDATE jobs SET status = 'running', run_id = ?, started_at = ? WHERE id = ?`, runId, now, j.id);
       this.sql.exec(`UPDATE findings SET status = 'dispatched', acted_at = COALESCE(acted_at, ?) WHERE fp = ?`, now, j.fingerprint);
@@ -551,7 +580,7 @@ export class BrainDO extends DurableObject<Env> {
       const urgent = run.kind === 'urgent';
       const jobs = this.rows(`SELECT id FROM jobs WHERE run_id = ? AND status = 'running'`, run.id);
       // the nightly container's run cap, or 45 min per claimed job (the Mac), whichever is longer
-      const capMin = urgent ? this.policy.urgentRunCapMin : Math.max(nightlyCap, Number(run.cap_min) * jobs.length);
+      const capMin = urgent ? this.policy.urgentRunCapMin : Math.max(nightlyCap, Number(run.cap_min) * (this.getMeta<number>(`run:jobs:${run.id}`) ?? jobs.length));
       if (Number(run.started_at) >= now - (capMin + 10) * 60000) continue;
       this.sql.exec(`UPDATE runs SET status = 'timed_out', finished_at = ? WHERE id = ? AND status = 'running'`, now, run.id);
       swept++;

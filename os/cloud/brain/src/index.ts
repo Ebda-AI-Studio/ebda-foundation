@@ -5,7 +5,7 @@
 //   GET  /pending         Mac fallback drain of signed relay events (Bearer RELAY_SECRET), wire format unchanged.
 //   POST /findings        Mac watchers / dreaming cycle / self-heal report findings (Bearer INGEST_TOKEN).
 //   POST /drill           the Mac's weekly restore drill result {result:'pass'|'fail'} (Bearer INGEST_TOKEN, ruling F-I6).
-//   GET  /hands/runs/:id  POST /hands/jobs/:id/outcome  POST /hands/usage  POST /hands/claim   (Bearer HANDS_TOKEN)
+//   GET  /hands/runs/:id  POST /hands/jobs/:id/outcome  POST /hands/usage  POST /hands/claim  POST /hands/refused   (Bearer HANDS_TOKEN)
 //   POST /telegram/webhook  inline-button answers (X-Telegram-Bot-Api-Secret-Token / TELEGRAM_WEBHOOK_SECRET)
 //   GET  /health
 // Human routes (behind Cloudflare Access at the edge AND verified here): GET /api/state, POST /api/questions/:id/answer,
@@ -153,6 +153,10 @@ async function handleHands(request: Request, env: Env, path: string): Promise<Re
     const o: JobOutcome = { status: body.status, ...(typeof body.prUrl === 'string' ? { prUrl: body.prUrl.slice(0, 500) } : {}), ...(typeof body.note === 'string' ? { note: body.note.slice(0, 1000) } : {}) };
     const r = await brain.recordOutcome(m[1]!, o);
     return json(r, r.ok ? 200 : 409);
+  }
+  if (path === '/hands/refused') {
+    if (typeof body?.runId !== 'string' || !/^[\w-]{1,64}$/.test(body.runId)) return json({ error: 'runId required' }, 400);
+    return json(await brain.handsRefused(body.runId, typeof body?.reason === 'string' ? body.reason : 'unknown reason'));
   }
   if (path === '/hands/usage') {
     const err = validateUsage(body);

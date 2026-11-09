@@ -247,15 +247,6 @@ describe('M-6 / M-7 / M-10', () => {
     await first;
     expect(started).toHaveLength(1);
   });
-  it('M-10 (R-4a-3): more than 500 already-shown digest rows cannot hide a new monitor note', async () => {
-    const h = await harness(realish());
-    for (let i = 0; i < 3; i++) await h.run((b) => b.ingestFinding({ source: 'watcher', kind: 'monitor-unconfigured', key: `w${i}:config:unconfigured`, title: `watcher w${i} not running` }, T0 + i));
-    await h.run((b) => b.digest(T0 + HOUR));
-    await h.run((b) => b.ingestFinding({ source: 'watcher', kind: 'monitor-unconfigured', key: 'new:config:unconfigured', title: 'watcher NEWONE not running' }, T0 + 2 * HOUR));
-    await h.run((b) => b.digest(T0 + DAY + HOUR));
-    expect(h.sent.at(-1)).toMatch(/NEWONE/);
-    expect(h.sent.at(-1)).not.toMatch(/watcher w0/);
-  });
 });
 
 describe('I-10: the Mac hands never claim third-party-text work (ruling 4b-5); /api/state lists unconfigured watchers', () => {

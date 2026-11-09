@@ -452,7 +452,7 @@ describe('runner + real Durable Object', () => {
   it('every group member exists and ids are unique', () => {
     const ids = Object.values(GROUPS).flat().map((w) => w.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.sort()).toEqual(['cf-workers', 'cost-guard', 'deploy-drift', 'dr-drill', 'journey-monitor', 'page-load', 'pr-shepherd', 'sentry-stale', 'services', 'world-watch']);
+    expect(ids.sort()).toEqual(['cf-workers', 'ci-catchup', 'cost-guard', 'deploy-drift', 'dr-drill', 'journey-monitor', 'page-load', 'pr-shepherd', 'sentry-stale', 'services', 'world-watch']);
   });
   it('a quarter run with nothing configured raises the three monitor-unconfigured findings in the brain, and does not rerun within its cadence', async () => {
     await fresh('wd:last:services', 'wd:last:page-load', 'wd:last:journey-monitor');
