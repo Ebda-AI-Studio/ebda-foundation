@@ -44,6 +44,24 @@ async function exists(p) {
   }
 }
 
+/** Dotfiles through which a previous job's code (a postinstall, a test) could steer the NEXT job's Claude or install: Claude's own
+ *  settings / hooks / memory / CLAUDE.md, and the package-manager and shell config. Container only: on the Mac the home is Ahmad's. */
+const HOME_PLANTS = ['.claude', '.claude.json', '.npmrc', '.yarnrc', '.yarnrc.yml', '.bashrc', '.profile', '.bash_profile', '.gitconfig', '.config', '.npm', '.cache'];
+
+/** Remove the planted-file candidates from every unprivileged home and verify they are gone. Returns a reason or null. */
+export async function scrubSandboxHomes(cfg) {
+  if (!cfg.sandboxUser) return null;
+  const homes = [...new Set([cfg.sandboxHome, cfg.testHome, cfg.testUser ? `/home/${cfg.testUser}` : ''].filter(Boolean))];
+  for (const h of homes) {
+    for (const n of HOME_PLANTS) {
+      const p = join(h, n);
+      await rm(p, { recursive: true, force: true }).catch(() => {});
+      if (await exists(p)) return `could not clean ${p} between jobs`;
+    }
+  }
+  return null;
+}
+
 export async function runJob(job, ctx) {
   const { cfg, exec, usage, log = () => {}, now = () => Date.now(), env = process.env, creds = {} } = ctx;
   const slug = job.finding?.repo;
@@ -76,7 +94,7 @@ export async function runJob(job, ctx) {
   const safe = cfg.allowFileRemote ? SAFE_GIT.map((a) => (a === 'protocol.file.allow=never' ? 'protocol.file.allow=always' : a)) : SAFE_GIT;
   const sandboxHome = cfg.sandboxHome ?? env.HOME;
   // role 'claude' = Claude Code and the dependency install; role 'tests' = the repo's test / format commands (another uid, F-I8)
-  const testHome = cfg.testUser ? `/home/${cfg.testUser}` : sandboxHome;
+  const testHome = cfg.testUser ? (cfg.testHome || `/home/${cfg.testUser}`) : sandboxHome;
   const runUntrusted = (cmd, args, o = {}) => {
     const role = o.role ?? 'claude';
     const [c, a] = asSandbox(cfg, cmd, args, role);
@@ -87,6 +105,9 @@ export async function runJob(job, ctx) {
   try {
     await rm(jobDir, { recursive: true, force: true });
     await mkdir(jobDir, { recursive: true, mode: 0o755 });
+    // N-3b: what the previous job's code left in the unprivileged homes must not steer this job's Claude or install
+    const dirty = await scrubSandboxHomes(cfg);
+    if (dirty) return { status: 'could_not_fix', note: dirty };
     const secrets = await prepareJobSecrets(T);
     const git = (cwd, args, o = {}) => exec('git', [...safe, ...args], { cwd, timeoutMs: step(), env: gitEnv(env, secrets, { token: creds.ghToken, auth: o.auth }) });
     const url = cloneUrl(cfg.gitHost ?? 'https://github.com', slug, creds.ghToken);
@@ -174,7 +195,10 @@ export async function runJob(job, ctx) {
     // 5. the repo's own install + affected tests, in the work tree, no credential
     if (repoCfg.install) {
       const a = fill(repoCfg.install, { dir: W, repo: slug, base });
-      r = await runUntrusted(a[0], a.slice(1), { timeoutMs: left() });
+      // N-3b: a postinstall is the repo's (or a dependency's) code, so it runs as the tests uid with the tree handed to it first,
+      // never as Claude's uid (which would let it plant ~/.claude settings or hooks for the next run)
+      if (cfg.testUser) await chownTo(cfg.testUser);
+      r = await runUntrusted(a[0], a.slice(1), { timeoutMs: left(), role: 'tests' });
       if (r.timedOut) return { status: 'timed_out', note: 'install hit the cap' };
       if (r.code !== 0) return { status: 'could_not_fix', note: `install failed: ${oneLine(r.stderr || r.stdout)}` };
     }
@@ -237,6 +261,8 @@ export async function runJob(job, ctx) {
     if (why) return { status: 'pr_opened', prUrl, note: `question: ${why}; needs your review` };
     if (!(await clean())) return { status: 'pr_opened', prUrl, note: 'question: commit tree changed after the commit; not merging' };
     const gate = fill(repoCfg.mergeGate, { repo: slug, base, os_home: cfg.osHome, pr, sha, base_workflows: BW });
+    // I-8: a hands PR is same-repo, so its CI gets the repo secrets; --hands makes the gate refuse where a PR-triggered workflow lets PR code reach one
+    if (gate.some((a) => /merge-gate\.sh$/.test(a)) && !gate.includes('--hands')) gate.push('--hands');
     log(`job ${job.id}: merge gate ${gate.join(' ')}`);
     // the gate may overrun the job cap by up to 60 s (it needs a few polls); accepted, documented in the README
     r = await exec(gate[0], gate.slice(1), { cwd: T, env: ghEnv, timeoutMs: Math.max(left(), 60_000) });
@@ -244,6 +270,7 @@ export async function runJob(job, ctx) {
     return { status: 'pr_opened', prUrl, note: `question: merge gate not green (exit ${r.code}${r.timedOut ? ', timed out' : ''}): ${oneLine(r.stderr || r.stdout, 200)}` };
   } finally {
     if (!ctx.keepWorkdir) await rm(jobDir, { recursive: true, force: true }).catch(() => {});
+    await scrubSandboxHomes(cfg).catch(() => {});
   }
 }
 

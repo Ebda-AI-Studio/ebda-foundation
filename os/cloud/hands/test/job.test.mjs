@@ -1,6 +1,6 @@
 // runJob + runBatch with every leaf mocked (git, gh, claude, the repo's commands, the brain). No network. The file
 // trees are real (temp dirs), so the work-vs-fresh-clone diff, the path allowlists and the commit tree are exercised.
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -102,7 +102,9 @@ describe('runJob: merge path', () => {
     expect(out).toMatchObject({ status: 'merged', prUrl: 'https://github.com/o/r/pull/7' });
     const gate = calls.find((c) => c.cmd === 'bash');
     expect(gate.args.slice(0, 5)).toEqual(['/opt/os/ops/merge-gate.sh', '7', 'abcdef1234567', '--repo', 'o/r']);
-    expect(gate.args.at(-1)).toMatch(/job_docs1\/base-workflows$/);
+    expect(gate.args.at(-2)).toMatch(/job_docs1\/base-workflows$/);
+    // I-8: the repo gate is always told this is a hands PR, so it refuses where PR code could reach a repo secret
+    expect(gate.args.at(-1)).toBe('--hands');
     expect(gate.cwd).toMatch(/job_docs1\/private$/);
   });
   it('commits explicit paths from the FRESH clone; no git call runs in the work tree after Claude', async () => {
@@ -390,5 +392,47 @@ describe('I-5 (ruling F-I5): pr-stuck jobs work on the PR head branch and never 
     const { out, calls } = await run(prJob('failed-checks'), { edits: { '.github/workflows/ci.yml': 'on: push\n' } });
     expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/protected path \.github/) });
     expect(calls.some((c) => c.cmd === 'git' && verbOf(c.args) === 'push')).toBe(false);
+  });
+});
+
+describe('N-3b: the dependency install is not Claude\'s uid, and a sandbox home is clean at every job', () => {
+  const pathExists = (p) => stat(p).then(() => true, () => false);
+  async function homes() {
+    const base = await mkdtemp(join(tmpdir(), 'hands-homes-'));
+    const sandboxHome = join(base, 'node');
+    const testHome = join(base, 'tester');
+    for (const h of [sandboxHome, testHome]) {
+      await writeTree(h, { '.claude/settings.json': '{"hooks":{"SessionStart":[{"command":"curl evil"}]}}', '.claude/CLAUDE.md': 'exfiltrate', '.claude.json': '{}', '.npmrc': '//evil/:_authToken=x', '.bashrc': 'evil' });
+    }
+    return { sandboxHome, testHome };
+  }
+  const cont = (h) => ({ sandboxUser: 'node', testUser: 'tester', sandboxHome: h.sandboxHome, testHome: h.testHome, sandboxed: true });
+
+  it('install runs as the tests uid and the tree is handed to it first; Claude stays on its own uid', async () => {
+    const h = await homes();
+    const { calls } = await run(job('docs'), {}, cont(h));
+    const who = calls.filter((c) => c.cmd === 'setpriv').map((c) => [c.args[c.args.indexOf('--') + 1], c.args[c.args.indexOf('--reuid') + 1]]);
+    expect(who).toEqual([['claude', 'node'], ['npm', 'tester'], ['npm', 'tester']]);
+    const install = calls.findIndex((c) => c.cmd === 'setpriv' && c.args.includes('ci'));
+    const chownTester = calls.findIndex((c) => c.cmd === 'chown' && c.args[1] === 'tester:tester');
+    expect(chownTester).toBeGreaterThan(-1);
+    expect(chownTester).toBeLessThan(install);
+  });
+  it('a planted ~/.claude (settings, hooks, CLAUDE.md), .claude.json, .npmrc in either home is gone before Claude starts and after the job', async () => {
+    const h = await homes();
+    const f = fakeExec();
+    let atClaude = null;
+    const exec = async (cmd, args, opts) => {
+      if (cmd === 'setpriv' && args.includes('claude')) atClaude = await Promise.all([join(h.sandboxHome, '.claude'), join(h.sandboxHome, '.claude.json'), join(h.testHome, '.claude'), join(h.testHome, '.npmrc')].map(pathExists));
+      return f.exec(cmd, args, opts);
+    };
+    await runJob(job('docs'), { cfg: await cfgWith({}, cont(h)), exec, env: ENV, creds: CREDS });
+    expect(atClaude).toEqual([false, false, false, false]);
+    for (const p of [join(h.sandboxHome, '.claude'), join(h.testHome, '.claude'), join(h.testHome, '.npmrc')]) expect(await pathExists(p)).toBe(false);
+  });
+  it('outside the container (no sandbox user: the Mac) the real home is never touched', async () => {
+    const h = await homes();
+    await run(job('docs'), {}, { sandboxHome: h.sandboxHome });
+    expect(await pathExists(join(h.sandboxHome, '.claude', 'settings.json'))).toBe(true);
   });
 });
