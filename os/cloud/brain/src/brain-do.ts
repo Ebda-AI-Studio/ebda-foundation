@@ -107,6 +107,12 @@ export interface BrainState {
   spend: { day: number; month: number; dailyBudget: number; monthlyBudget: number; byModel: Record<string, number> };
   /** F-05: last Cloudflare footprint reading (null = never read) */
   footprint: Footprint | null;
+  /** the footprint watcher's warn / stop levels for the estimated Cloudflare month (CF_WARN_USD / CF_STOP_USD) */
+  cfLimits: { warnUsd: number; stopUsd: number };
+  /** each watcher that is not running and what it is missing (from its monitor-unconfigured finding) */
+  gaps: Array<{ id: string; missing: string }>;
+  /** the text the next 05:00 digest would send if it ran now (built, never sent) */
+  digestPreview: string;
 }
 
 export interface Footprint {
@@ -1012,8 +1018,9 @@ export class BrainDO extends DurableObject<Env> {
     return { osBugs: this.selfCheck(now).length };
   }
 
-  /** The one daily digest: outcomes (not noticings), acted-on ratio, decisions waiting, rolled-up messages. */
-  async digest(now: number = Date.now()): Promise<string> {
+  /** Build (never send) the daily digest: shared by the 05:00 send and the dashboard's preview. The preview writes nothing
+   *  (the self-check's last result is read instead of re-run), so polling the dashboard costs no DO row writes. */
+  private buildDigest(now: number, preview = false) {
     const since = now - DAY;
     const outcomes: Array<{ title: string; status: string; prUrl: string | null }> = this.rows(`SELECT f.title, j.outcome FROM jobs j JOIN findings f ON f.fp = j.fp WHERE j.finished_at > ? AND j.outcome IS NOT NULL ORDER BY j.finished_at`, since).map((r) => {
       const o = JSON.parse(String(r.outcome)) as JobOutcome;
@@ -1042,13 +1049,19 @@ export class BrainDO extends DurableObject<Env> {
       rolledUp: rolled.map((r) => ({ text: String(r.text), failed: r.status === 'undelivered' })),
       monitorNotes: rendered.map((r) => String(r.title)),
       monitorMore: watchRows.length - rendered.length,
-      osBugs: this.selfCheck(now).length,
+      osBugs: preview ? (this.getMeta<{ fps: string[] }>('os:bugs')?.fps.length ?? 0) : this.selfCheck(now).length,
       usageNote: refused && now - refused.at < DAY ? refused.reason : null,
       halted: this.halted(),
       budget: (() => { const sp = this.spent(now); const b = this.budgets(); return `Hands spend: $${sp.month.toFixed(2)} of $${b.monthly} this month ($${sp.day.toFixed(2)} today of $${b.daily}).`; })(),
       footprint: (() => { const f = this.getMeta<Footprint>('footprint:last'); if (!f) return null; if (f.unknown) return `Footprint (24 h): unknown (${f.note ?? 'read failed'}).`; return `Footprint (24 h): containers ${Math.round(f.containerMin ?? 0)} min, DO requests ${f.doRequests ?? 0}, DO rows written ${f.doRowsWritten ?? 0}, KV writes ${f.kvWrites ?? 0}${f.estUsd === undefined ? '' : `; est $${f.estUsd.toFixed(2)}/month`}.`; })(),
       requeued: (() => { const q = this.getMeta<{ at: number; n: number }>('sweep:requeued'); return q && now - q.at < DAY ? q.n : 0; })(),
     });
+    return { msg, shown, rendered, rolled, pending };
+  }
+
+  /** The one daily digest: outcomes (not noticings), acted-on ratio, decisions waiting, rolled-up messages. */
+  async digest(now: number = Date.now()): Promise<string> {
+    const { msg, shown, rendered, rolled, pending } = this.buildDigest(now);
     const r = await this.emit(msg, now);
     if (r === 'sent') {
       if (rendered.length) this.setMeta('digest:shown', [...shown, ...rendered.map((x) => String(x.fp))].slice(-1000));
@@ -1094,6 +1107,9 @@ export class BrainDO extends DurableObject<Env> {
       halt: this.halted(),
       spend: { ...this.spent(now), dailyBudget: this.budgets().daily, monthlyBudget: this.budgets().monthly, byModel: this.getMeta<Record<string, number>>(`spend:model:${monthKey(now)}`) ?? {} },
       footprint: this.getMeta<Footprint>('footprint:last'),
+      cfLimits: (() => { const stop = numberVar(this.env.CF_STOP_USD, 20); return { warnUsd: Math.min(numberVar(this.env.CF_WARN_USD, 10), stop), stopUsd: stop }; })(),
+      gaps: this.rows(`SELECT key, title FROM findings WHERE kind = 'monitor-unconfigured' AND status NOT IN ('resolved') ORDER BY key`).map((r) => ({ id: String(r.key).split(':')[0]!, missing: String(r.title).replace(/^watcher \S+ is not running: /, '').replace(/ is not set$/, '') })),
+      digestPreview: this.buildDigest(now, true).msg.text,
     };
   }
 
