@@ -23,4 +23,10 @@ mkdir -p "$TMP/lonely"; cp "$ROOT/lib/os-config.sh" "$TMP/lonely/"
 out="$(env -i HOME="$TMP/home" PATH="$PATH" bash -c ". '$TMP/lonely/os-config.sh' && os_config_load && echo \"\$OS_REPO_SLUG|\$OS_VM|\$OS_ORG\"")"
 [ "$out" = "Ebda-AI-Studio/ebda-foundation|$(sed -n 's/.*OS_UMBRA_VMS:-\([^}]*\)}.*/\1/p' "$(dirname "$0")/../../../config/os.env")|Ebda-AI-Studio" ] && pass "no os.env anywhere: built-in defaults apply" || fail "built-in defaults: $out"
 
+# M-10: os_config_load must not switch off allexport for a caller that had it on (and must not leave it on for one that did not)
+out="$(env -i HOME="$TMP/home" PATH="$PATH" bash -c ". '$ROOT/lib/os-config.sh'; set -a; os_config_load; case \$- in *a*) echo kept;; *) echo lost;; esac")"
+[ "$out" = "kept" ] && pass "caller's set -a survives os_config_load" || fail "allexport lost: $out"
+out="$(env -i HOME="$TMP/home" PATH="$PATH" bash -c ". '$ROOT/lib/os-config.sh'; os_config_load; case \$- in *a*) echo leaked;; *) echo clean;; esac")"
+[ "$out" = "clean" ] && pass "allexport is not left on for a caller that had it off" || fail "allexport leaked: $out"
+
 echo "os-config: $_pass passed, $_fail failed"; [ "$_fail" -eq 0 ]

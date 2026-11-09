@@ -14,6 +14,7 @@ case "$1" in
   list) [ -n "${FAKE_LOADED:-}" ] && printf '123\t0\t%s\n' "$FAKE_LOADED"; printf '%s\t0\t%s\n' 1 com.apple.fake; exit 0 ;;
   print) exit 1 ;;
   bootstrap) [ -n "${FAKE_BOOTSTRAP_FAIL:-}" ] && exit 5; exit 0 ;;
+  bootout) [ -n "${FAKE_BOOTOUT_ERR:-}" ] && { echo "$FAKE_BOOTOUT_ERR" >&2; exit 5; }; exit 0 ;;
   *) exit 0 ;;
 esac
 STUB
@@ -66,5 +67,14 @@ FAKE_BOOTSTRAP_FAIL=1 bash "$INSTALL" --home "$H4" >/dev/null 2>&1; rc=$?
 H5="$T/h5"; mkdir -p "$H5/.claude"; echo '{not json' > "$H5/.claude/settings.json"
 bash "$INSTALL" --home "$H5" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] && ok "install exits non-zero when hook registration fails (rc=$rc)" || no "hook failure ignored"
+# M-10: a stale plist whose job FAILS to unload is kept and fails the install; "not loaded" is fine and the plist goes
+H6="$T/h6"; mkdir -p "$H6"
+OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H6" >/dev/null 2>&1
+touch "$H6/Library/LaunchAgents/com.ebda.os.stale-job.plist"
+FAKE_BOOTOUT_ERR="Boot-out failed: 5: Input/output error" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H6" >"$T/h6.out" 2>&1; rc=$?
+[ -e "$H6/Library/LaunchAgents/com.ebda.os.stale-job.plist" ] && ok "stale plist KEPT when its job could not be unloaded" || no "plist removed although bootout failed"
+[ "$rc" != 0 ] && grep -q "could not unload com.ebda.os.stale-job" "$T/h6.out" && ok "  ...and the install fails loudly (rc=$rc)" || no "bootout failure not reported (rc=$rc)"
+FAKE_BOOTOUT_ERR="Boot-out failed: 3: No such process" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H6" >/dev/null 2>&1; rc=$?
+[ ! -e "$H6/Library/LaunchAgents/com.ebda.os.stale-job.plist" ] && [ "$rc" = 0 ] && ok "a job that was not loaded: plist removed, install clean" || no "not-loaded stale plist mishandled (rc=$rc)"
 [ "$fail" = 0 ] && echo "install-dryrun: PASS" || echo "install-dryrun: FAIL"
 exit "$fail"
