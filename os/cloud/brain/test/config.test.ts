@@ -20,13 +20,15 @@ describe('wrangler.jsonc', () => {
     expect(cfg.account_id).toBeUndefined();
     expect(cfg.kv_namespaces[0].id).toBe('__BRAIN_KV_ID__');
     const names = Object.keys(cfg.vars);
-    for (const s of ['GH_WEBHOOK_SECRET', 'RELAY_SECRET', 'GITHUB_TOKEN', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_WEBHOOK_SECRET', 'HANDS_TOKEN', 'INGEST_TOKEN']) expect(names).not.toContain(s);
+    for (const s of ['DASH_BASIC_PASSWORD', 'GH_WEBHOOK_SECRET', 'RELAY_SECRET', 'GITHUB_TOKEN', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_WEBHOOK_SECRET', 'HANDS_TOKEN', 'INGEST_TOKEN']) expect(names).not.toContain(s);
     expect(cfg.vars.OS_ORGS).toBe('__OS_ORGS__');
     expect(cfg.vars.DEPLOYED_REPOS).toBe('__DEPLOYED_REPOS__');
   });
-  it('the Durable Object is SQLite-backed and assets let machine paths reach the Worker first', () => {
+  it('the Durable Object is SQLite-backed and EVERY path reaches the Worker first (RR-dash-auth: no asset is served before the gate)', () => {
     expect(cfg.migrations[0].new_sqlite_classes).toEqual(['BrainDO']);
-    for (const p of ['/api/*', '/github/*', '/hands/*', '/pending', '/findings']) expect(cfg.assets.run_worker_first).toContain(p);
+    expect(cfg.assets.run_worker_first).toBe(true);
+    expect(cfg.vars.DASH_BASIC_AUTH).toBe('on');
+    expect(cfg.vars.DASH_BASIC_USER).toBe('ahmad');
   });
 });
 
@@ -57,8 +59,8 @@ describe('cost and abuse limits in the deploy config', () => {
     expect(cfg.limits.cpu_ms).toBeLessThanOrEqual(30000);
     expect(cfg.limits.subrequests).toBeLessThanOrEqual(500);
   });
-  it('the hands start un-halted, on the API key, with the declared Console spend limit ($200) under which the monthly budget sits', () => {
-    expect(vars.HANDS_HALT).toBe('0');
+  it('the hands deploy HALTED (RR-halt: a deploy from main never switches them on), on the API key, with the declared Console spend limit ($200) under which the monthly budget sits', () => {
+    expect(vars.HANDS_HALT).toBe('1');
     expect(vars.HANDS_CLAUDE_AUTH).toBe('api');
     expect(Number(vars.HANDS_API_SPEND_LIMIT_USD)).toBe(200);
     expect(Number(vars.HANDS_MONTHLY_BUDGET_USD)).toBeLessThan(Number(vars.HANDS_API_SPEND_LIMIT_USD));

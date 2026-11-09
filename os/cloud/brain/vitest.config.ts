@@ -15,6 +15,9 @@ export default defineConfig({
           HANDS_MAC_TOKEN: 'test-mac-token',
           // the legacy tests exercise the weekly-plan (max) guard; the api-mode tests set their own env
           HANDS_CLAUDE_AUTH: 'max',
+          // the committed config deploys with HANDS_HALT=1 (RR-halt); the pipeline tests exercise the un-halted paths
+          // (the halt itself is covered by cost-abuse F-01, which sets it explicitly)
+          HANDS_HALT: '0',
           INGEST_TOKEN: 'test-ingest-token',
           TELEGRAM_WEBHOOK_SECRET: 'test-tg-secret',
           TELEGRAM_CHAT_ID: '4242',
