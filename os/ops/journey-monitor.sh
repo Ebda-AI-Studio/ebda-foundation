@@ -27,10 +27,15 @@
 # Deps: bash 3.2+, node 18+ (optional — fail-open if absent). python3 stdlib.
 #
 # shellcheck source=lib/os-config.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+# no external `dirname` anywhere before the node check: with a stripped PATH (the missing-node test, a minimal launchd environment) it is absent, the
+# os-config source silently fell through to an installed copy that CI does not have (OS_SERVICES_ENV unbound, exit 1) and `cd ""` fails on newer bash.
+# The runner must stay fail-open. Parameter expansion needs no binary.
+_here="${BASH_SOURCE[0]%/*}"; [ "$_here" = "${BASH_SOURCE[0]}" ] && _here=.
+_here="$(cd "$_here" && pwd)"
+. "$_here/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
 command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
-cd "$(dirname "$0")" || exit 1
+cd "$_here" || exit 1
 
 . ./lib/os-state.sh 2>/dev/null || true
 . ./lib/net-probe.sh 2>/dev/null || true   # host pre-flight (2026-09-16)

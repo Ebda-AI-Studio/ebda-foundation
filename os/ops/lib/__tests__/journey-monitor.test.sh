@@ -148,6 +148,12 @@ done
 EXIT_NONODE=0
 PATH="$NONODE_DIR" JOURNEY_DIR="$FIXTURES" DRY_RUN=0 bash "$RUNNER" >/dev/null 2>&1 || EXIT_NONODE=$?
 assert "missing node exits 0 (fail-open)" "[ '$EXIT_NONODE' -eq 0 ]"
+# the runner must not need an external `dirname` before the node check: on CI a stripped PATH made it fall through to a missing installed os-config
+# (OS_SERVICES_ENV unbound, exit 1; it passed on a Mac that has ~/.claude/scripts installed). Pin the shape and prove it with HOME pointed at nothing.
+assert "runner does not call dirname before the node check" "! sed -n '1,/command -v node/p' '$RUNNER' | grep -v '^#' | grep -q 'dirname'"
+EXIT_NOHOME=0
+HOME="$FIXTURES/nohome" PATH="$NONODE_DIR" JOURNEY_DIR="$FIXTURES" DRY_RUN=0 bash "$RUNNER" >/dev/null 2>&1 || EXIT_NOHOME=$?
+assert "missing node AND no installed copy of the OS: still exits 0 (fail-open)" "[ '$EXIT_NOHOME' -eq 0 ]"
 
 # ---- test 8: findings schema — 9 required fields ----
 run_monitor >/dev/null
