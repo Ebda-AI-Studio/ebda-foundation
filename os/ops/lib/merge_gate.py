@@ -9,13 +9,22 @@
 pr.json is `gh pr view --json headRefOid,mergeable,statusCheckRollup`.
 
 `required` is DERIVED from the repo's own workflows so it cannot drift: a job is required when its workflow runs on
-pull_request AND the job always runs on a PR (no job-level `if`, or exactly `github.event_name == 'pull_request'`),
-and everything it `needs` is itself such a job. Conditional jobs may legitimately be SKIPPED, so they are only
-checked for "completed and not failing". Jobs whose name is a matrix expression are skipped.
+EVERY pull_request (no `paths` / `paths-ignore` filter on that trigger) AND the job always runs on a PR (no job-level
+`if`, or exactly `github.event_name == 'pull_request'`, or exactly the fork guard), and everything it `needs` is itself
+such a job. Conditional jobs may legitimately be SKIPPED, so they are only checked for "completed and not failing".
+Jobs whose name is a matrix expression are skipped. A path-filtered workflow creates NO check run for a PR outside its
+filter, so it can never be required; when it does run, its checks still have to finish and not fail.
+
+`evaluate` judges the LATEST run of each check name: the rollup keeps superseded runs of the same name on the same
+head (a run cancelled by a concurrency group, then re-run green), and an old run must not decide the verdict.
 """
 import json, os, re, sys
 
-ALWAYS_IF = re.compile(r"^github\.event_name == 'pull_request'$")
+# the fork guard skips only fork PRs, so on a same-repo PR the job always runs (same rule as ops/merge-gate-required.mjs)
+ALWAYS_IF = re.compile(
+    r"^(github\.event_name == 'pull_request'"
+    r"|github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository)$"
+)
 # an aggregator that runs even when the jobs it needs were legitimately skipped: always required on a PR
 ALWAYS_RUN_IF = re.compile(r"^always\(\) && github\.event_name == 'pull_request'$")
 OK_CONCLUSIONS = ("SUCCESS", "SKIPPED", "NEUTRAL")
@@ -62,13 +71,36 @@ def parse_workflow(text):
     return on_pr, jobs
 
 
+def pr_path_filtered(text):
+    """True when the pull_request trigger itself carries `paths` / `paths-ignore` (block or inline form). GitHub then
+    creates no check run for a PR that touches nothing inside the filter. A filter on `push` only does not count."""
+    if re.search(r"^(on|'on'|\"on\"):.*pull_request\s*:\s*\{[^}]*\bpaths(-ignore)?\s*:", text, re.M):
+        return True
+    lines = text.split("\n")
+    i = next((k for k, l in enumerate(lines) if re.match(r"^\s+pull_request\s*:", l)), None)
+    if i is None:
+        return False
+    if re.search(r"\bpaths(-ignore)?\s*:", lines[i]):
+        return True
+    indent = len(lines[i]) - len(lines[i].lstrip())
+    for l in lines[i + 1:]:
+        if not l.strip() or l.lstrip().startswith("#"):
+            continue
+        if len(l) - len(l.lstrip()) <= indent:
+            break
+        if re.match(r"^\s+paths(-ignore)?\s*:", l):
+            return True
+    return False
+
+
 def required_checks(wf_dir):
     out = set()
     for f in sorted(os.listdir(wf_dir)):
         if not re.search(r"\.ya?ml$", f):
             continue
-        on_pr, jobs = parse_workflow(open(os.path.join(wf_dir, f), encoding="utf-8").read())
-        if not on_pr:
+        text = open(os.path.join(wf_dir, f), encoding="utf-8").read()
+        on_pr, jobs = parse_workflow(text)
+        if not on_pr or pr_path_filtered(text):
             continue
 
         def always(jid, seen=()):
@@ -147,10 +179,29 @@ def _conclusion(c):
     return c.get("conclusion") or ""
 
 
+def _name(c):
+    return c.get("name") or c.get("context") or "?"
+
+
+def latest_runs(checks):
+    """One entry per check name: its LATEST run, by startedAt // createdAt // completedAt; a tie keeps rollup order (the
+    later entry wins). `gh` prints a null timestamp as the year-1 zero time, which counts as missing. A run that is not
+    finished and has no start time has not started yet, so it is the newest: it can never lose to an older green run."""
+    best = {}
+    for i, c in enumerate(checks):
+        ts = next((t for t in (c.get("startedAt"), c.get("createdAt"), c.get("completedAt")) if t and not t.startswith("0001-")), "")
+        if not ts and _status(c) != "COMPLETED":
+            ts = "~"  # sorts after every ISO timestamp
+        k = _name(c)
+        if k not in best or (ts, i) >= best[k][0]:
+            best[k] = ((ts, i), c)
+    return [c for _, c in sorted(best.values(), key=lambda b: b[0][1])]
+
+
 def evaluate(pr, want, required):
-    checks = pr.get("statusCheckRollup") or []
+    checks = latest_runs(pr.get("statusCheckRollup") or [])
     head = pr.get("headRefOid") or ""
-    name = lambda c: c.get("name") or c.get("context") or "?"
+    name = _name
     if not head.startswith(want):
         return f"refuse:head moved to {head[:9]} (expected {want})"
     if pr.get("mergeable") == "CONFLICTING":
