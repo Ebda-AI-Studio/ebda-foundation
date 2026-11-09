@@ -80,6 +80,7 @@ export interface Env {
   TELEGRAM_CHAT_ID?: string;
   /** user id allowed to press the question buttons; defaults to TELEGRAM_CHAT_ID (a private chat's id is the owner's user id) */
   TELEGRAM_OWNER_ID?: string;
+  /** shared secret the tg-relay sends (X-Telegram-Bot-Api-Secret-Token) when it forwards a button answer to POST /telegram/webhook; NOT a Telegram webhook secret */
   TELEGRAM_WEBHOOK_SECRET?: string;
   HANDS_TOKEN?: string;
   INGEST_TOKEN?: string;

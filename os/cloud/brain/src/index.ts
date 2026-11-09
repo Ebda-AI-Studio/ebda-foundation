@@ -6,7 +6,8 @@
 //   POST /findings        Mac watchers / dreaming cycle / self-heal report findings (Bearer INGEST_TOKEN).
 //   POST /drill           the Mac's weekly restore drill result {result:'pass'|'fail'} (Bearer INGEST_TOKEN, ruling F-I6).
 //   GET  /hands/runs/:id  POST /hands/jobs/:id/outcome  POST /hands/usage  POST /hands/claim  POST /hands/refused   (Bearer HANDS_TOKEN)
-//   POST /telegram/webhook  inline-button answers (X-Telegram-Bot-Api-Secret-Token / TELEGRAM_WEBHOOK_SECRET)
+//   POST /telegram/webhook  inline-button answers FORWARDED BY THE tg-relay SESSION (it polls @EbdaAIStudiobot; the brain is send-only and
+//                           never registers this URL with Telegram). Auth: X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
 //   GET  /health
 // Human routes (behind Cloudflare Access at the edge AND verified here): GET /api/state, POST /api/questions/:id/answer,
 // and the static dashboard at /dash/ (Workers Static Assets).
