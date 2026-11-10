@@ -17,6 +17,8 @@ import { admit, dayKey, digestMessage, MONITOR_NOTES_PER_DIGEST, questionMessage
 import { usageGuard } from './usage';
 import type { AdvisoryRunSummary } from './watchers/advisories';
 
+/** HANDS-COORD: the longest a controller lease may run before it must be renewed. */
+export const LEASE_MAX_MIN = 240;
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
 export const NIGHTLY_MAX_JOBS = 25;
@@ -89,6 +91,10 @@ export interface ActedOn { raised: number; acted: number; ratio: number | null }
 /** GET /api/state: everything the dashboard shows. */
 export interface BrainState {
   generatedAt: number;
+  /** HANDS-COORD controller leases that are live now */
+  leases: Row[];
+  /** last time each external monitor reported (epoch ms, null = never) */
+  sources: { prodWatchSeenAt: number | null };
   findings: { open: number; recent: FindingRow[] };
   jobs: { queuedUrgent: number; queuedNightly: number; awaitingAnswer: number; running: number };
   runs: RunRow[];
@@ -190,6 +196,7 @@ export class BrainDO extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS auth_fail (ip TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS auth_fail_ip ON auth_fail(ip, at);
+      CREATE TABLE IF NOT EXISTS leases (repo TEXT PRIMARY KEY, holder TEXT NOT NULL, note TEXT, claimed_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
     `);
   }
 
@@ -349,6 +356,55 @@ export class BrainDO extends DurableObject<Env> {
   /** Newest PASS of the weekly restore drill (posted by the Mac), or null. The signature keeps the watcher Sink shape. */
   lastPassAt(_source: string, _kind: string): number | null {
     return this.getMeta<number>('drill:last-pass');
+  }
+
+  // ---------- controller leases (launch-map row HANDS-COORD) ----------
+  // A controller (a Claude session or Ahmad) that is working in a repo holds a lease on it. While a lease is live the brain hands NO
+  // job for that repo to any provider (the jobs stay queued), and the hands re-check the lease before they touch the repo. A lease
+  // always expires (max LEASE_MAX_MIN), so a crashed controller cannot freeze the hands for longer than that.
+  async claimLease(repo: string, holder: string, ttlMin: number, note: string | undefined, now: number = Date.now()): Promise<{ ok: boolean; holder: string; expiresAt: number }> {
+    const r = repo.toLowerCase();
+    const cur = this.row(`SELECT holder, expires_at FROM leases WHERE repo = ?`, r);
+    if (cur && Number(cur.expires_at) > now && String(cur.holder) !== holder) return { ok: false, holder: String(cur.holder), expiresAt: Number(cur.expires_at) };
+    const exp = now + Math.max(1, Math.min(LEASE_MAX_MIN, Math.floor(ttlMin))) * 60_000;
+    this.sql.exec(`INSERT INTO leases (repo, holder, note, claimed_at, expires_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(repo) DO UPDATE SET holder = excluded.holder, note = excluded.note, claimed_at = excluded.claimed_at, expires_at = excluded.expires_at`, r, holder, note?.slice(0, 200) ?? null, now, exp);
+    return { ok: true, holder, expiresAt: exp };
+  }
+
+  async releaseLease(repo: string, holder: string): Promise<boolean> {
+    const r = repo.toLowerCase();
+    const cur = this.row(`SELECT holder FROM leases WHERE repo = ?`, r);
+    if (!cur || String(cur.holder) !== holder) return false;
+    this.sql.exec(`DELETE FROM leases WHERE repo = ?`, r);
+    return true;
+  }
+
+  async activeLeases(now: number = Date.now()): Promise<Array<{ repo: string; holder: string; expiresAt: number; note?: string }>> {
+    this.sql.exec(`DELETE FROM leases WHERE expires_at <= ?`, now);
+    return this.rows(`SELECT repo, holder, note, expires_at FROM leases ORDER BY repo`).map((r) => ({ repo: String(r.repo), holder: String(r.holder), expiresAt: Number(r.expires_at), ...(r.note ? { note: String(r.note) } : {}) }));
+  }
+
+  /** Queued jobs minus those whose repo has a live controller lease (they stay queued for a later tick). */
+  private unleased(jobs: HandsJob[], now: number): HandsJob[] {
+    const leased = new Set(this.rows(`SELECT repo FROM leases WHERE expires_at > ?`, now).map((r) => String(r.repo)));
+    return leased.size ? jobs.filter((j) => !leased.has(String(j.finding.repo ?? '').toLowerCase())) : jobs;
+  }
+
+  // ---------- external monitors (prod-watch) ----------
+  /**
+   * Resolve every open finding of `source` (any kind) whose key is not in `openKeys`, except keys starting with one of
+   * `keepPrefixes` (the monitor could not evaluate them this run, so their state is unknown, not clear). Records the heartbeat.
+   */
+  async reconcileSource(source: string, openKeys: string[], keepPrefixes: string[], now: number = Date.now()): Promise<number> {
+    const open = new Set(openKeys);
+    let n = 0;
+    for (const r of this.rows(`SELECT kind, key FROM findings WHERE source = ? AND status != 'resolved'`, source)) {
+      const key = String(r.key);
+      if (open.has(key) || keepPrefixes.some((p) => key.startsWith(p))) continue;
+      if (await this.resolveFinding({ source, kind: String(r.kind), key }, 'cleared at the source', now)) n++;
+    }
+    this.setMeta(`source:seen:${source}`, now);
+    return n;
   }
 
   /** Resolve every open finding of source+kind whose key is not in `openKeys` (complete advisory listing only). */
@@ -782,7 +838,7 @@ export class BrainDO extends DurableObject<Env> {
   /** Urgent lane: one run at a time, URGENT_RUNS_PER_DAY a day, one job per run, URGENT_RUN_CAP_MIN cap. */
   private async dispatchUrgent(now: number): Promise<void> {
     await this.sweepStuckRuns(now);
-    const queued = this.jobsFor(`j.status = 'queued' AND j.lane = 'urgent' ORDER BY j.created_at`);
+    const queued = this.unleased(this.jobsFor(`j.status = 'queued' AND j.lane = 'urgent' ORDER BY j.created_at`), now);
     if (!queued.length) return;
     if (this.halted() || this.budgetBlock(now)) return; // F-01: halted -> nothing starts; the findings stay queued
     if (this.row(`SELECT 1 FROM runs WHERE kind = 'urgent' AND status = 'running'`)) return; // one at a time; the rest wait
@@ -816,7 +872,7 @@ export class BrainDO extends DurableObject<Env> {
       return { started: false, jobs: 0, reason: `vendor outage: ${outage}` };
     }
     const limit = this.unknownUsageLimit(this.usage(now), NIGHTLY_MAX_JOBS);
-    const jobs = this.jobsFor(`j.status = 'queued' AND j.lane = 'nightly' ORDER BY j.created_at LIMIT ${limit}`);
+    const jobs = this.unleased(this.jobsFor(`j.status = 'queued' AND j.lane = 'nightly' ORDER BY j.created_at LIMIT ${limit}`), now);
     if (!jobs.length) return { started: false, jobs: 0, reason: 'queue empty: no container started' };
     if (this.hands.pullOnly) return { started: false, jobs: jobs.length, reason: `hands provider ${this.hands.name} is pull-only: the Mac claims the queue` };
     const guard = this.usage(now);
@@ -864,7 +920,7 @@ export class BrainDO extends DurableObject<Env> {
     // Ruling 4b-5 (I-10): the Mac runs as Ahmad with his files in reach, so it never claims work whose text comes from third parties
     // (advisories, PR titles, world-watch pages); those wait for the container
     const mac = providerName === 'mac-local' ? ` AND f.source != 'advisory' AND f.kind != 'pr-stuck' AND f.key NOT LIKE 'world-watch:%'` : '';
-    const jobs = this.jobsFor(`j.status = 'queued' AND j.lane = 'nightly'${mac} ORDER BY j.created_at LIMIT ${n}`);
+    const jobs = this.unleased(this.jobsFor(`j.status = 'queued' AND j.lane = 'nightly'${mac} ORDER BY j.created_at LIMIT ${n}`), now);
     if (!jobs.length) return { refused: 'queue empty' };
     const recorder: HandsProvider = { name: providerName, start: async (b) => ({ runId: b.runId, provider: providerName, startedAt: now }) };
     return (await this.startRun('nightly', jobs, 45, now, recorder)) ?? { refused: 'could not record the run' };
@@ -1080,6 +1136,8 @@ export class BrainDO extends DurableObject<Env> {
     const bugs = this.getMeta<{ at: number; fps: string[] }>('os:bugs');
     return {
       generatedAt: now,
+      leases: this.rows(`SELECT repo, holder, note, expires_at FROM leases WHERE expires_at > ? ORDER BY repo`, now),
+      sources: { prodWatchSeenAt: this.getMeta<number>('source:seen:prod-watch') },
       findings: {
         open: count(`SELECT COUNT(*) AS n FROM findings WHERE status NOT IN ('done','failed','held','resolved')`),
         recent: this.rows(`SELECT fp, source, kind, title, repo, url, lane, reason, status, raised_at, acted_at, seen_count FROM findings ORDER BY last_seen DESC LIMIT 50`) as unknown as FindingRow[],

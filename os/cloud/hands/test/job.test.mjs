@@ -9,6 +9,10 @@ import { validateConfig } from '../lib/config.mjs';
 import { CLAUDE_ISOLATION, claudePermissionArgs, killUntrustedProcesses, runJob } from '../lib/job.mjs';
 import { runBatch } from '../lib/run.mjs';
 import { UsageGuard } from '../lib/usage-guard.mjs';
+// HANDS-COORD: a brain with no controller leases (the lease check fails closed without one)
+/** the HANDS-COORD open-PR listing is a read, not a push */
+const isPrList = (c) => { const a = c.args ?? []; const i = a.indexOf('gh'); const r = i >= 0 ? a.slice(i + 1) : a; return r[0] === 'pr' && r[1] === 'list'; };
+const NO_LEASES = { leases: async () => ({ leases: [] }) };
 
 const RESET = Math.floor(Date.now() / 1000) + 86400;
 const rl = (u) => JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', rateLimitType: 'seven_day', utilization: u, resetsAt: RESET, unifiedWindows: { seven_day: { utilization: u, resetsAt: RESET } } } });
@@ -64,6 +68,7 @@ function fakeExec(o = {}) {
     }
     if (real === 'pgrep') return { code: o.survivors ? 0 : 1, stdout: o.survivors ? '4242\n' : '', stderr: '', timedOut: false };
     if (real === 'python3') return o.exposure === undefined ? ok('[]\n') : o.exposure === 'error' ? { code: 1, stdout: '', stderr: 'boom', timedOut: false } : ok(JSON.stringify(o.exposure));
+    if (real === 'gh' && rargs[0] === 'pr' && rargs[1] === 'list') return ok(JSON.stringify(o.openPrs ?? []));
     if (real === 'gh') return ok('https://github.com/o/r/pull/7\n');
     if (real === 'claude') {
       const c = o.claude ?? {};
@@ -94,7 +99,7 @@ const ENV = { PATH: '/bin', HOME: '/home/u' };
 const CREDS = { ghToken: 'gh-secret', claudeToken: 'c-secret' };
 const run = async (j, o = {}, cfgExtra = {}, repo = {}) => {
   const f = fakeExec(o);
-  const out = await runJob(j, { cfg: await cfgWith(repo, cfgExtra), exec: f.exec, env: ENV, creds: CREDS });
+  const out = await runJob(j, { brain: NO_LEASES, allowMerge: true, cfg: await cfgWith(repo, cfgExtra), exec: f.exec, env: ENV, creds: CREDS });
   return { out, calls: f.calls };
 };
 
@@ -250,7 +255,7 @@ describe('runJob: refusals', () => {
       if (cmd === 'claude') await import('node:fs/promises').then((fs) => fs.symlink('/etc/passwd', join(opts.cwd, 'leak.md')));
       return r;
     };
-    const out = await runJob(job('docs'), { cfg: await cfgWith(), exec, env: ENV, creds: CREDS });
+    const out = await runJob(job('docs'), { brain: NO_LEASES, allowMerge: true, cfg: await cfgWith(), exec, env: ENV, creds: CREDS });
     expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/leak\.md is a symlink/) });
   });
   it('tests fail: could_not_fix, nothing pushed; claude timeout / cannot / no change', async () => {
@@ -264,7 +269,7 @@ describe('runJob: refusals', () => {
   it('repo without hands config, or a destructive class without proceed: nothing runs at all', async () => {
     const f = fakeExec();
     expect(await runJob(job('docs', { finding: { repo: 'x/unknown' } }), { cfg: await cfgWith(), exec: f.exec, env: ENV })).toMatchObject({ note: expect.stringMatching(/no hands config/) });
-    expect(await runJob(job('data-deletion'), { cfg: await cfgWith(), exec: f.exec, env: ENV })).toMatchObject({ note: expect.stringMatching(/destructive/) });
+    expect(await runJob(job('data-deletion'), { brain: NO_LEASES, allowMerge: true, cfg: await cfgWith(), exec: f.exec, env: ENV })).toMatchObject({ note: expect.stringMatching(/destructive/) });
     expect(f.calls).toHaveLength(0);
   });
   it('a proceed-answered destructive job may get a PR but is never merged', async () => {
@@ -274,7 +279,7 @@ describe('runJob: refusals', () => {
   });
   it('the job dir is removed afterwards', async () => {
     const cfg = await cfgWith();
-    await runJob(job('docs'), { cfg, exec: fakeExec().exec, env: ENV, creds: CREDS });
+    await runJob(job('docs'), { brain: NO_LEASES, allowMerge: true, cfg, exec: fakeExec().exec, env: ENV, creds: CREDS });
     await expect(readFile(join(cfg.workdir, 'job_docs1', 'work', 'README.md'))).rejects.toThrow();
   });
 });
@@ -305,7 +310,7 @@ describe('runBatch', () => {
     const brain = recordingBrain(batch);
     const usage = new UsageGuard({ thresholdPct: 80, probe: async () => [JSON.parse(rl(0.1))] });
     const res = await runBatch(batch, { brain, cfg: await cfgWith(), exec, usage, env: ENV, creds: CREDS });
-    expect(res.map((r) => r.status)).toEqual(['merged', 'skipped_usage', 'skipped_usage']);
+    expect(res.map((r) => r.status)).toEqual(['pr_opened', 'skipped_usage', 'skipped_usage']); // HANDS-COORD: never merged
     expect(n).toBe(1);
     expect(brain.usageReports[0]).toMatchObject({ weeklyUsedPct: 85, resetsAt: RESET * 1000 });
   });
@@ -373,7 +378,7 @@ describe('I-5 (ruling F-I5): pr-stuck jobs work on the PR head branch and never 
     }
     const push = calls.find((c) => c.cmd === 'git' && verbOf(c.args) === 'push');
     expect(push.args.slice(push.args.indexOf('push'))).toEqual(['push', 'origin', 'HEAD:refs/heads/os/fix-job_old']);
-    expect(calls.some((c) => c.cmd === 'gh' || c.cmd === 'bash')).toBe(false);
+    expect(calls.some((c) => (c.cmd === 'gh' && !isPrList(c)) || c.cmd === 'bash')).toBe(false);
     expect(calls.some((c) => c.cmd === 'git' && verbOf(c.args) === 'checkout')).toBe(false);
   });
   it('conflicting: the base is fetched and merged (no commit) in BOTH trees before the diff', async () => {
@@ -428,7 +433,7 @@ describe('N-3b: the dependency install is not Claude\'s uid, and a sandbox home 
       if (cmd === 'setpriv' && args.includes('claude')) atClaude = await Promise.all([join(h.sandboxHome, '.claude'), join(h.sandboxHome, '.claude.json'), join(h.testHome, '.claude'), join(h.testHome, '.npmrc')].map(pathExists));
       return f.exec(cmd, args, opts);
     };
-    await runJob(job('docs'), { cfg: await cfgWith({}, cont(h)), exec, env: ENV, creds: CREDS });
+    await runJob(job('docs'), { brain: NO_LEASES, allowMerge: true, cfg: await cfgWith({}, cont(h)), exec, env: ENV, creds: CREDS });
     expect(atClaude).toEqual([false, false, false, false]);
     for (const p of [join(h.sandboxHome, '.claude'), join(h.testHome, '.claude'), join(h.testHome, '.npmrc')]) expect(await pathExists(p)).toBe(false);
   });
@@ -451,7 +456,7 @@ describe('RR-egress-roles: each role gets its own proxy env', () => {
 });
 
 describe('I-8 (final review): the secrets-exposure check runs BEFORE anything is pushed', () => {
-  const pushed = (calls) => calls.some((c) => c.cmd === 'git' && verbOf(c.args) === 'push') || calls.some((c) => c.cmd === 'gh');
+  const pushed = (calls) => calls.some((c) => c.cmd === 'git' && verbOf(c.args) === 'push') || calls.some((c) => c.cmd === 'gh' && !isPrList(c));
   it('an exposed secret in the base workflows: a question, no push, no PR (the PR\'s CI would have run with the secret)', async () => {
     const { out, calls } = await run(job('docs'), { exposure: ['deploy.yml:preview:CLOUDFLARE_API_TOKEN'] });
     expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/^question: .*CLOUDFLARE_API_TOKEN.*nothing pushed/) });
@@ -535,5 +540,62 @@ describe('N-3b pin (final review 5): the end-of-job kill is by uid, bounded, ver
     const calls = [];
     expect(await killUntrustedProcesses({}, async (...a) => (calls.push(a), { code: 0 }))).toBeNull();
     expect(calls).toEqual([]);
+  });
+});
+
+describe('HANDS-COORD (launch map): open PRs only, leases, open-PR files, money/auth goes to Ahmad', () => {
+  const ctxOf = async (o = {}, brain = NO_LEASES) => {
+    const f = fakeExec(o);
+    return { f, ctx: { brain, cfg: await cfgWith(), exec: f.exec, env: ENV, creds: CREDS } };
+  };
+  const gateRan = (calls) => calls.some((c) => (c.args ?? []).some((a) => String(a).includes('merge-gate')));
+
+  it('the real path (no allowMerge) never merges and never runs the merge gate, even for a pre-approved docs fix', async () => {
+    const { f, ctx } = await ctxOf();
+    const out = await runJob(job('docs'), ctx);
+    expect(out.status).toBe('pr_opened');
+    expect(out.note).toMatch(/^question: HANDS-COORD: .*open PRs only/);
+    expect(gateRan(f.calls)).toBe(false);
+  });
+
+  it('a live controller lease on the repo: back to the queue, nothing cloned (must fire); a lease on another repo does not block (must not fire)', async () => {
+    const leased = { leases: async () => ({ leases: [{ repo: 'O/R', holder: 'session-1', expiresAt: Date.now() + 60_000 }] }) };
+    const a = await ctxOf({}, leased);
+    const out = await runJob(job('docs'), a.ctx);
+    expect(out).toMatchObject({ status: 'skipped_usage', note: expect.stringMatching(/HANDS-COORD: o\/r is leased by controller session-1/i) });
+    expect(a.f.calls.length).toBe(0);
+    const other = { leases: async () => ({ leases: [{ repo: 'o/other', holder: 's', expiresAt: Date.now() + 60_000 }, { repo: 'o/r', holder: 'old', expiresAt: Date.now() - 1 }] }) };
+    const b = await ctxOf({}, other);
+    expect((await runJob(job('docs'), b.ctx)).status).toBe('pr_opened');
+  });
+
+  it('leases unreadable or no brain: fail closed, nothing touched', async () => {
+    const down = { leases: async () => { throw new Error('brain GET /hands/leases -> 503'); } };
+    const a = await ctxOf({}, down);
+    expect((await runJob(job('docs'), a.ctx)).note).toMatch(/HANDS-COORD: controller leases unreadable/);
+    expect(a.f.calls.length).toBe(0);
+    const b = await ctxOf({}, undefined);
+    b.ctx.brain = undefined;
+    expect((await runJob(job('docs'), b.ctx)).status).toBe('skipped_usage');
+  });
+
+  it('an open PR already changing the same file: nothing pushed (must fire); an open PR on other files: PR opened (must not fire)', async () => {
+    const a = await ctxOf({ openPrs: [{ number: 42, headRefName: 'feat/x', files: [{ path: 'README.md' }] }] });
+    const out = await runJob(job('docs'), a.ctx);
+    expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/open PR #42 already changes README\.md; nothing pushed/) });
+    expect(a.f.calls.some((c) => c.cmd === 'git' && (c.args ?? []).includes('push'))).toBe(false);
+    const b = await ctxOf({ openPrs: [{ number: 43, headRefName: 'feat/y', files: [{ path: 'src/a.ts' }] }] });
+    expect((await runJob(job('docs'), b.ctx)).status).toBe('pr_opened');
+  });
+
+  it('money / auth / deploy-config findings are a question for Ahmad, nothing cloned; an explicit proceed lets the hands open a PR', async () => {
+    for (const touches of [['money'], ['auth'], ['deploy-config'], ['prod-data']]) {
+      const a = await ctxOf();
+      const out = await runJob(job('ci-failure', { finding: { source: 'w', kind: 'ci-failure', key: 'k', title: 't', repo: 'o/r', touches } }), a.ctx);
+      expect(out.note).toMatch(/^question: (HANDS-COORD: touches money|destructive)/);
+      expect(a.f.calls.length).toBe(0);
+    }
+    const p = await ctxOf();
+    expect((await runJob(job('ci-failure', { finding: { source: 'w', kind: 'ci-failure', key: 'k', title: 't', repo: 'o/r', touches: ['auth'] }, answer: 'proceed' }), p.ctx)).status).toBe('pr_opened');
   });
 });

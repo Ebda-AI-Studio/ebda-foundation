@@ -1,8 +1,25 @@
 # Ebda OS hands
 
 The part of Ebda OS that writes fixes (Amendment A + A.1). The brain (`os/cloud/brain/`) notices, classifies and queues;
-the hands pull a batch, fix each job with Claude Code headless, open PRs, merge only what they are allowed to, report
-every outcome back, and exit. Nothing here runs on GitHub Actions: Actions minutes are for CI only.
+the hands pull a batch, fix each job with Claude Code headless, open PRs, report every outcome back, and exit. Nothing here
+runs on GitHub Actions: Actions minutes are for CI only.
+
+## HANDS-COORD (2026-11-10: the AI OS is the primary DevOps operator, Ahmad the human backup)
+
+- **PRs only.** The hands never merge and never deploy. `lib/policy.mjs` `HANDS_MAY_MERGE = false` is checked in `lib/job.mjs`
+  step 10 before the merge gate would run; flipping it is a reviewed code change. The class/diff/gate merge code below stays
+  (tested through a test-only `allowMerge` context flag that `lib/run.mjs` never sets) for the day Ahmad decides otherwise.
+- **Controller leases.** A session or Ahmad working in a repo runs `os/ops/controller-lease.sh claim <owner/name> [min]`
+  (max 240, renew by claiming again; `release` when done). The brain hands out no job for a leased repo, and the hands re-read
+  `GET /hands/leases` before touching it. Leases unreadable = skip (fail closed).
+- **Open PRs.** After Claude's change is known and before anything is pushed, `gh pr list` is read; a change to a file another
+  open PR already changes is dropped (`could_not_fix`, nothing pushed). Listing unreadable = nothing pushed.
+- **Money / auth / deploy config / production data** (`SENSITIVE` + `DESTRUCTIVE` in `lib/policy.mjs`) are never worked on
+  without an explicit `proceed` answer: the job becomes one Telegram question for Ahmad instead.
+- **Caps and the kill switch.** Per-day: `URGENT_RUNS_PER_DAY`, `HANDS_MAC_JOBS_PER_DAY`, `HANDS_DAILY_BUDGET_USD`,
+  `HANDS_OPUS_JOBS_PER_DAY` (brain vars). Kill switch: `HANDS_HALT=1` (committed default) or `POST /api/halt` from the dashboard.
+- **Dry run on a real finding:** `node run-batch.mjs --dry-run --fixture fixtures/ebda-semgrep-main-red.json` (Semgrep red on
+  ebda-store main, 2026-11-10): one PR, never merged; the auth variant is a question.
 
 ```
 brain cron 21:30 UTC (nightly, 1/day) ─┐                          ┌─ GET  /hands/runs/:id      (the batch)

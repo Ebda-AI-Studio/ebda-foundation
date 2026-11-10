@@ -136,3 +136,15 @@ describe('classifyFinding: monitor self-reports are digest-only from ANY source 
     }
   });
 });
+
+describe('classifyFinding: prod-watch production state (AI OS primary operator)', () => {
+  it('a prod-watch outage with no repo is recorded as digest: no hands job, no second message (must fire)', () => {
+    const c = classifyFinding(f({ source: 'prod-watch', kind: 'prod-outage', key: 'probe:api', selfHealExhausted: true }));
+    expect(c.lane).toBe('digest');
+    expect(c.alert).toBeUndefined();
+  });
+  it('the same outage from another source keeps the outage rules (must not fire)', () => {
+    expect(classifyFinding(f({ source: 'health', kind: 'prod-outage', selfHealExhausted: true })).lane).toBe('urgent');
+    expect(classifyFinding(f({ source: 'prod-watch', kind: 'prod-outage', repo: 'o/r', selfHealExhausted: true })).lane).toBe('urgent');
+  });
+});

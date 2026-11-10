@@ -30,8 +30,11 @@ if command -v require_projects_access >/dev/null 2>&1; then require_projects_acc
 
 # Resolve the foundation checkout (source of truth) — this script may run from
 # the INSTALLED copy in ~/.claude/scripts, so never assume $HERE is the repo.
+# the OS lives under os/ in ebda-foundation (os/ops, os/launchd/mac-local.list); $OS_HOME/ops does not exist, so the old
+# "$F/ops" made every run exit 0 at "ops dir missing" (a silently dead watcher, found 2026-11-10)
 F="$OS_HOME"
-OPS="$F/ops"; INST="$HOME/.claude/scripts"
+OPS="$F/os/ops"; INST="$HOME/.claude/scripts"
+MAC_LIST="$F/os/launchd/mac-local.list"
 issues=()
 
 if [ ! -d "$OPS" ]; then
@@ -51,16 +54,20 @@ done < <(cd "$INST" && find . lib -maxdepth 1 \( -name '*.sh' -o -name '*.py' \)
 
 # --- 2. foundation repo push/commit state ---
 git -C "$F" fetch -q origin 2>/dev/null || true
-unpushed=$(git -C "$F" rev-list --count origin/master..master 2>/dev/null || echo 0)
-[ "${unpushed:-0}" -gt 0 ] && issues+=("UNPUSHED: foundation master is $unpushed commit(s) ahead of origin — a new Mac clones a stale OS")
+unpushed=$(git -C "$F" rev-list --count origin/main..main 2>/dev/null || echo 0)
+[ "${unpushed:-0}" -gt 0 ] && issues+=("UNPUSHED: foundation main is $unpushed commit(s) ahead of origin — a new Mac clones a stale OS")
 dirty=$(git -C "$F" status --porcelain --untracked-files=no 2>/dev/null | wc -l | tr -d ' ')
 [ "${dirty:-0}" -gt 0 ] && issues+=("DIRTY: foundation has $dirty uncommitted tracked change(s)")
 
 # --- 3. plists vs templates ---
 BREW="$(command -v brew >/dev/null 2>&1 && brew --prefix 2>/dev/null || echo /opt/homebrew)"
-for tmpl in "$OPS/launchd/"${OS_LAUNCHD_PREFIX}.*.plist; do
-  [ -f "$tmpl" ] || continue
-  label=$(basename "$tmpl" .plist)
+# only the Mac-local set (os/launchd/mac-local.list, what os/install.sh installs) is expected on this Mac; the other templates are
+# jobs the brain runs now and must NOT be reported missing
+while IFS=$'\t' read -r _name _rel; do
+  case "$_name" in ''|'#'*) continue ;; esac
+  tmpl="$F/os/$_rel"
+  [ -f "$tmpl" ] || { issues+=("TEMPLATE-MISSING: $_rel (listed in mac-local.list)"); continue; }
+  label="${OS_LAUNCHD_PREFIX}.$_name"
   inst_plist="$HOME/Library/LaunchAgents/$label.plist"
   [ -f "$inst_plist" ] || { issues+=("PLIST-MISSING: $label not installed"); continue; }
   # compare with tokens substituted, but PATH varies by machine — strip PATH lines
@@ -71,7 +78,7 @@ for tmpl in "$OPS/launchd/"${OS_LAUNCHD_PREFIX}.*.plist; do
     i_sig=$(grep -E 'Label|Program|Integer|integer' "$inst_plist" | tr -d ' \t' | sed "s#$HOME#__HOME__#g")
     [ "$t_sig" = "$i_sig" ] || issues+=("PLIST-DRIFT: $label (schedule/program differs from template)")
   fi
-done
+done < <([ -f "$MAC_LIST" ] && cat "$MAC_LIST")
 
 echo "== drift-watch =="
 if [ "${#issues[@]}" -eq 0 ]; then

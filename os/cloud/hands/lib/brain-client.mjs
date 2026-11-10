@@ -3,6 +3,7 @@
 //   POST /hands/claim {provider,max} -> HandsBatch | {refused}
 //   POST /hands/jobs/:jobId/outcome  {status, prUrl?, note?}
 //   POST /hands/usage                {weeklyUsedPct, resetsAt?}   (resetsAt epoch ms)
+//   GET  /hands/leases[?run=id]      -> {leases}  HANDS-COORD controller leases
 export function brainClient({ url, token, runId, fetchImpl = fetch }) {
   if (!url || !token) throw new Error('BRAIN_URL and HANDS_TOKEN are required (or use --dry-run)');
   const base = url.replace(/\/+$/, '');
@@ -28,6 +29,8 @@ export function brainClient({ url, token, runId, fetchImpl = fetch }) {
     claim: (provider, max) => call('POST', '/hands/claim', { provider, max }),
     outcome: (jobId, o) => call('POST', `/hands/jobs/${encodeURIComponent(jobId)}/outcome`, o),
     usage: (u) => call('POST', '/hands/usage', u),
+    /** HANDS-COORD: the live controller leases ({leases:[{repo, holder, expiresAt}]}) */
+    leases: () => call('GET', `/hands/leases${runId ? `?run=${encodeURIComponent(runId)}` : ''}`),
     /** the forwarder's meter: one API response's usage, or {jobId, started: true} when a job begins */
     meter: (m) => call('POST', '/hands/meter', m),
   };
@@ -42,6 +45,8 @@ export function recordingBrain(batch) {
     usageReports,
     getRun: async () => batch,
     claim: async () => batch,
+    // a fixture batch may carry `leases` to exercise HANDS-COORD offline
+    leases: async () => ({ leases: batch.leases ?? [] }),
     outcome: async (jobId, o) => {
       outcomes.push({ jobId, ...o });
       return { ok: true };

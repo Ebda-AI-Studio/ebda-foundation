@@ -94,6 +94,21 @@ job back in the queue. A merge happens only if `mergePolicy === 'auto-when-gate-
 Mac watchers, the dreaming cycle and self-heal recipes report with `POST /findings` (one finding or an array ≤ 100,
 `Authorization: Bearer $INGEST_TOKEN`), shape `src/findings.ts` (`source, kind, key, title` required).
 
+**A monitor's complete listing** (prod-watch, every 10 min from GitHub-hosted runners): `POST /findings` with
+`{ findings, reconcile: { source, keep? } }`. Findings of `source` absent from the listing resolve ("cleared at the source");
+keys under `keep` are left alone (the monitor could not evaluate them this run, e.g. the R2 logs were unreadable). The heartbeat
+is `sources.prodWatchSeenAt` in `GET /api/state`. Kinds: `prod-outage` (probe), `prod-5xx`, `prod-429`, `prod-exception`,
+`prod-logs-silent`, `alert-drill`. prod-watch already messages Telegram itself, so a prod-watch finding without a `repo` classifies as
+`digest` (recorded, no hands job, no second message; `src/classify.ts`).
+
+**Controller leases (HANDS-COORD).** `POST /leases {repo, holder, ttlMin≤240, note?}` / `DELETE /leases {repo, holder}`
+(Bearer `INGEST_TOKEN`; Mac helper `os/ops/controller-lease.sh`). 409 = another controller holds it. While a lease is live the
+brain hands no job for that repo to any provider; the hands read `GET /hands/leases` before touching a repo (fail closed).
+
+**Committed watcher config.** `os/config/brain-watchers.json` (page-load, journeys, npm deps, CF prefix, cost org) and
+`os/config/hands.ebda.json` (= `HANDS_CONFIG_JSON`, also the ci-catchup repo list) are rendered by `scripts/deploy.sh`; an
+`OS_BRAIN_<NAME>` in the environment or `~/.ebda-os.local.env` overrides a key.
+
 ## Frugality (Workers Paid, $5/month included limits)
 
 Estimates for a normal day (inferred from the schedule, not measured):
@@ -166,7 +181,7 @@ All on the **personal** Cloudflare account. Never put an id or secret in the rep
    (needs `admin:org_hook`; only `workflow_run`). Check: the hook's ping returns 204 in the org's webhook deliveries.
 6. Telegram answers (optional; the dashboard can answer too). Do **not** register a webhook. The relay session forwards each `callback_query` update it polls to `POST https://$OS_BRAIN_HOST/telegram/webhook` with header `X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_WEBHOOK_SECRET>`; the brain answers the button press (owner id checked) and acknowledges it with `answerCallbackQuery`. Without the relay forwarding, questions are still sent and the dashboard or the deadline default decides. Inbound text commands are not supported by the brain.
 7. Cloudflare Access (Zero Trust → Access → Applications, self-hosted), two path-scoped applications on `$OS_BRAIN_HOST`:
-   `/dash` and `/api`, policy = Ahmad's email only. Do **not** cover `/github`, `/telegram`, `/hands`, `/findings`,
+   `/dash` and `/api`, policy = Ahmad's email only. Do **not** cover `/github`, `/telegram`, `/hands`, `/findings`, `/leases`,
    `/pending`, `/health` (machines authenticate with their own secrets). Then add the team domain + the application AUD
    tag to `~/.ebda-os.local.env` as `OS_BRAIN_ACCESS_TEAM_DOMAIN=<team>.cloudflareaccess.com` and `OS_BRAIN_ACCESS_AUD=<aud>`
    and redeploy (step 3). From then on Access wins and Basic Auth is ignored; set `DASH_BASIC_AUTH` to `off` in

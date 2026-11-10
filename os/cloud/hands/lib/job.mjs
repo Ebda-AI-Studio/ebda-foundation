@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { fill } from './config.mjs';
 import { diffAllowsAutoMerge, FORMAT_KINDS, PROTECTED, protectedFor, scanSecrets } from './diffcheck.mjs';
 import { asSandbox, cloneUrl, gitEnv, prepareJobSecrets, SAFE_GIT, untrustedEnv } from './git.mjs';
-import { mayAutoMerge, mayWork } from './policy.mjs';
+import { HANDS_MAY_MERGE, mayAutoMerge, mayWork } from './policy.mjs';
 import { buildPrompt, CANNOT_FIX } from './prompt.mjs';
 import { applyChanges, treeDiff } from './tree.mjs';
 import { expectedApiKeySource } from './auth.mjs';
@@ -97,6 +97,38 @@ export function jobUsage(result, model, table) {
   return result.usage ? costOf(result.usage, model, table) : null;
 }
 
+/** HANDS-COORD: who holds a live controller lease on `slug` (a sentence), or null. Unreadable leases count as held (fail closed). */
+export async function leaseHolder(brain, slug, now = Date.now()) {
+  if (!brain?.leases) return 'the brain cannot list controller leases (old brain); not touching the repo';
+  let got;
+  try {
+    got = await brain.leases();
+  } catch (e) {
+    return `controller leases unreadable (${String(e?.message ?? e).slice(0, 120)})`;
+  }
+  const l = (got?.leases ?? []).find((x) => String(x.repo).toLowerCase() === String(slug).toLowerCase() && Number(x.expiresAt) > now);
+  return l ? `${slug} is leased by controller ${l.holder} until ${new Date(Number(l.expiresAt)).toISOString()}` : null;
+}
+
+/** HANDS-COORD: the first open PR (other than `ownHead`) that changes any of `paths`, as a sentence; null when none. Fail closed. */
+export async function openPrOverlap(exec, slug, paths, ownHead, o) {
+  const r = await exec('gh', ['pr', 'list', '--repo', slug, '--state', 'open', '--limit', '100', '--json', 'number,headRefName,files'], o);
+  if (r.code !== 0) return `cannot list open PRs (${oneLine(r.stderr || r.stdout, 120)})`;
+  let prs;
+  try {
+    prs = JSON.parse(r.stdout || '[]');
+  } catch {
+    return 'open PR listing is not JSON';
+  }
+  const mine = new Set(paths);
+  for (const pr of Array.isArray(prs) ? prs : []) {
+    if (ownHead && pr.headRefName === ownHead) continue;
+    const hit = (pr.files ?? []).map((f) => f.path).filter((p) => mine.has(p));
+    if (hit.length) return `open PR #${pr.number} already changes ${hit.slice(0, 3).join(', ')}${hit.length > 3 ? ` (+${hit.length - 3})` : ''}`;
+  }
+  return null;
+}
+
 export async function runJob(job, ctx) {
   const acc = {};
   let out;
@@ -125,6 +157,10 @@ async function runJobCore(job, ctx, acc) {
   if (!/^[\w-]{1,64}$/.test(String(job.id))) return { status: 'could_not_fix', note: 'malformed job id' };
   const work = mayWork(job);
   if (!work.ok) return { status: 'could_not_fix', note: `question: ${work.reason}` };
+  // HANDS-COORD: a controller (Claude session / Ahmad) holding a lease on this repo owns it; the job goes back to the queue.
+  // Fail closed: when the leases cannot be read, nothing is touched either.
+  const held = await leaseHolder(ctx.brain, slug);
+  if (held) return { status: 'skipped_usage', note: `HANDS-COORD: ${held}; back to the queue, nothing touched` };
 
   const kind = String(job.finding.kind ?? '').toLowerCase();
   // Ruling F-I5: a `pr-stuck` job works ON the stuck PR's own same-repo head branch (never a fork, never the default branch) and
@@ -260,6 +296,10 @@ async function runJobCore(job, ctx, acc) {
       changes = changes.filter((c) => !ignored.has(c.path));
     }
     if (!changes.length) return { status: 'could_not_fix', note: 'claude made no change' };
+    // HANDS-COORD: never push a change to files an open PR already changes (a controller or another job owns them). Fail closed.
+    const ghEnvEarly = { PATH: env.PATH, HOME: T, GH_CONFIG_DIR: secrets.ghConfigDir, ...(ghToken ? { GH_TOKEN: ghToken } : {}), GH_PROMPT_DISABLED: '1' };
+    const overlap = await openPrOverlap(exec, slug, changes.map((c) => c.path), prMode ? prHead : null, { cwd: T, env: ghEnvEarly, timeoutMs: step(60_000) });
+    if (overlap) return { status: 'could_not_fix', note: `HANDS-COORD: ${overlap}; nothing pushed` };
 
     if (prMode) {
       // PROTECTED paths and the repo's own protectedPaths never change on a PR branch either (CI, env, agent instructions, hands config)
@@ -347,6 +387,8 @@ async function runJobCore(job, ctx, acc) {
               ? 'the base branch has no workflows for the merge gate'
               : null;
     if (why) return { status: 'pr_opened', prUrl, note: `question: ${why}; needs your review` };
+    // HANDS-COORD: the hands never merge. ctx.allowMerge exists only so the tests keep exercising the dormant gate path; run.mjs never sets it.
+    if (!(ctx.allowMerge ?? HANDS_MAY_MERGE)) return { status: 'pr_opened', prUrl, note: `question: HANDS-COORD: pre-approved ${kind} and the diff fits the class; the hands open PRs only, merge it through ops/merge-gate.sh` };
     if (!(await clean())) return { status: 'pr_opened', prUrl, note: 'question: commit tree changed after the commit; not merging' };
     const gate = fill(repoCfg.mergeGate, { repo: slug, base, os_home: cfg.osHome, pr, sha, base_workflows: BW });
     // I-8: a hands PR is same-repo, so its CI gets the repo secrets; --hands makes the gate refuse where a PR-triggered workflow lets PR code reach one

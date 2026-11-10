@@ -14,6 +14,8 @@ import { overageSeen, readingFromStreamEvent } from '../lib/usage-guard.mjs';
 import { runBatch } from '../lib/run.mjs';
 import { recordingBrain } from '../lib/brain-client.mjs';
 import { main } from '../run-batch.mjs';
+// HANDS-COORD: a brain with no controller leases (the lease check fails closed without one)
+const NO_LEASES = { leases: async () => ({ leases: [] }) };
 
 describe('F-06: the billable-key tripwire', () => {
   const api = { ANTHROPIC_API_KEY: 'sk-x', HANDS_API_SPEND_LIMIT_USD: '150' };
@@ -285,6 +287,7 @@ function fake({ result = {}, init = null, edits = { 'README.md': 'new\n' }, file
       return ok();
     }
     if (real === 'python3') return ok('[]');
+    if (real === 'gh' && rargs.includes('list')) return ok('[]');
     if (real === 'gh') return ok('https://github.com/o/r/pull/7\n');
     if (real === 'claude') {
       for (const [p, v] of Object.entries({ ...edits, ...files })) await writeTree(opts.cwd, { [p]: v });
@@ -304,7 +307,7 @@ describe('RR-hands-api-auth: the job passes the routed model, caps output, keeps
     const f = fake();
     const meter = metered();
     const cfg = await cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:5555', anthropicPlaceholderKey: 'sk-ant-run-key' });
-    const out = await runJob(job({ model: 'haiku' }), { cfg, exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'sk-REAL', ghToken: 'g' }, meter, jobBudgetUsd: 3 });
+    const out = await runJob(job({ model: 'haiku' }), { brain: NO_LEASES, cfg, exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'sk-REAL', ghToken: 'g' }, meter, jobBudgetUsd: 3 });
     const claude = f.calls.find((c) => c.cmd === 'claude');
     expect(claude.args[claude.args.indexOf('--model') + 1]).toBe('claude-haiku-5-5');
     expect(claude.args[claude.args.indexOf('--max-budget-usd') + 1]).toBe('3.00'); // I2: the CLI's own cap, as a second line (the forwarder is the real one)
@@ -318,7 +321,7 @@ describe('RR-hands-api-auth: the job passes the routed model, caps output, keeps
   });
   it('C1: a job that ran Claude and was killed with NO meter reading says so (claudeRan, not metered): the brain charges the pessimistic amount', async () => {
     const f = fake({ result: { usage: undefined } });
-    const out = await runJob(job(), { cfg: await cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:1', anthropicPlaceholderKey: 'p' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' }, meter: metered(0, 0) });
+    const out = await runJob(job(), { brain: NO_LEASES, cfg: await cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:1', anthropicPlaceholderKey: 'p' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' }, meter: metered(0, 0) });
     expect(out).toMatchObject({ claudeRan: true, metered: false });
     expect(out.usage).toBeUndefined();
   });
@@ -329,44 +332,44 @@ describe('RR-hands-api-auth: the job passes the routed model, caps output, keeps
       if (cmd === 'git' && args.includes('clone')) { await writeTree(args.at(-1), BASE); return { code: 0, stdout: '', stderr: '', timedOut: false }; }
       throw new Error('boom');
     };
-    await expect(runJob(job(), { cfg: await cfgOf(), exec, env: { PATH: '/bin', HOME: '/h' }, creds: {}, meter })).rejects.toThrow('boom');
+    await expect(runJob(job(), { brain: NO_LEASES, cfg: await cfgOf(), exec, env: { PATH: '/bin', HOME: '/h' }, creds: {}, meter })).rejects.toThrow('boom');
     expect(meter.ends).toBeGreaterThan(0);
   });
   it('an unrouted job runs on the configured default alias (as its pinned id); an invalid model name is ignored', async () => {
     const f = fake();
-    await runJob(job({ model: 'gpt-9' }), { cfg: await cfgOf({ claudeModel: 'sonnet' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
+    await runJob(job({ model: 'gpt-9' }), { brain: NO_LEASES, cfg: await cfgOf({ claudeModel: 'sonnet' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
     const claude = f.calls.find((c) => c.cmd === 'claude');
     expect(claude.args[claude.args.indexOf('--model') + 1]).toBe('claude-sonnet-5-5');
   });
   it('no job budget (the Mac): no --max-budget-usd', async () => {
     const f = fake();
-    await runJob(job(), { cfg: await cfgOf({ claudeAuth: 'login' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
+    await runJob(job(), { brain: NO_LEASES, cfg: await cfgOf({ claudeAuth: 'login' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
     expect(f.calls.find((c) => c.cmd === 'claude').args).not.toContain('--max-budget-usd');
   });
   it('fallback (forwarder off): the cost comes from the result event, priced with the pinned table', async () => {
     const f = fake({ result: { usage: { input_tokens: 1_000_000, output_tokens: 0 } } });
-    const out = await runJob(job({ model: 'sonnet' }), { cfg: await cfgOf({ claudeAuth: 'api', anthropicPlaceholderKey: 'p' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
+    const out = await runJob(job({ model: 'sonnet' }), { brain: NO_LEASES, cfg: await cfgOf({ claudeAuth: 'api', anthropicPlaceholderKey: 'p' }), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
     expect(out.usage).toMatchObject({ model: 'claude-sonnet-5-5' });
     expect(out.usage.costUsd).toBeCloseTo(2, 6);
     expect(out.metered).toBe(false);
   });
   it('apiKeySource from the init event: a different source aborts the job (billable-credential tripwire); the expected one passes', async () => {
     const mk = async () => cfgOf({ claudeAuth: 'api', anthropicBaseUrl: 'http://127.0.0.1:1', anthropicPlaceholderKey: 'p' });
-    const bad = await runJob(job(), { cfg: await mk(), exec: fake({ init: { apiKeySource: 'ANTHROPIC_AUTH_TOKEN' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
+    const bad = await runJob(job(), { brain: NO_LEASES, cfg: await mk(), exec: fake({ init: { apiKeySource: 'ANTHROPIC_AUTH_TOKEN' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
     expect(bad).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/ANTHROPIC_AUTH_TOKEN.*expected 'ANTHROPIC_API_KEY'/) });
-    const good = await runJob(job(), { cfg: await mk(), exec: fake({ init: { apiKeySource: 'ANTHROPIC_API_KEY' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
+    const good = await runJob(job(), { brain: NO_LEASES, cfg: await mk(), exec: fake({ init: { apiKeySource: 'ANTHROPIC_API_KEY' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: { apiKey: 'k' } });
     expect(good.status).not.toBe('could_not_fix');
-    const mac = await runJob(job(), { cfg: await cfgOf({ claudeAuth: 'login' }), exec: fake({ init: { apiKeySource: 'ANTHROPIC_API_KEY' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
+    const mac = await runJob(job(), { brain: NO_LEASES, cfg: await cfgOf({ claudeAuth: 'login' }), exec: fake({ init: { apiKeySource: 'ANTHROPIC_API_KEY' } }).exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
     expect(mac.status).toBe('could_not_fix');
   });
   it('F-14: more than 200 changed files, or more than 1 MiB, is "not a targeted fix"; nothing is pushed', async () => {
     const many = Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`docs/f${i}.md`, 'x\n']));
     const f = fake({ files: many });
-    const out = await runJob(job(), { cfg: await cfgOf(), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
+    const out = await runJob(job(), { brain: NO_LEASES, cfg: await cfgOf(), exec: f.exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
     expect(out).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/20\d changed files is not a targeted fix/) });
-    expect(f.calls.some((c) => c.cmd === 'gh')).toBe(false);
+    expect(f.calls.some((c) => c.cmd === 'gh' && !(c.args ?? []).includes('list'))).toBe(false);
     const big = fake({ files: { 'docs/big.md': 'x'.repeat(1024 * 1024 + 10) } });
-    const out2 = await runJob(job(), { cfg: await cfgOf(), exec: big.exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
+    const out2 = await runJob(job(), { brain: NO_LEASES, cfg: await cfgOf(), exec: big.exec, env: { PATH: '/bin', HOME: '/h' }, creds: {} });
     expect(out2).toMatchObject({ status: 'could_not_fix', note: expect.stringMatching(/changed bytes/) });
   });
 });

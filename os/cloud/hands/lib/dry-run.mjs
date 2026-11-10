@@ -1,6 +1,7 @@
 // --dry-run: a scripted exec that answers git / gh / claude / the repo's commands without touching the network, a
 // remote, Claude or GitHub. It walks the real runJob pipeline end to end; it only fakes the leaves. Each call is logged.
-// Fixture knobs per job (finding.detail.dryRun): { claude: 'fix'|'cannot'|'nochange', tests: 'pass'|'fail', gate: 'green'|'red', usagePct }
+// Fixture knobs per job (finding.detail.dryRun): { claude: 'fix'|'cannot'|'nochange', tests: 'pass'|'fail', gate: 'green'|'red', usagePct,
+//   openPrs: [{number, headRefName, files:[{path}]}] }; a fixture batch may carry `leases` (HANDS-COORD).
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -29,6 +30,8 @@ export function dryRunExec({ batch, log = () => {}, usagePct = 12 }) {
       if (verb === 'rev-parse') return ok('0123456789abcdef0123456789abcdef01234567\n');
       return ok();
     }
+    // HANDS-COORD: the open-PR listing (fixture knob openPrs: [{number, headRefName, files:[{path}]}], default none)
+    if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list') return ok(JSON.stringify(k.openPrs ?? []));
     if (cmd === 'gh') return ok(`https://github.com/${args[args.indexOf('--repo') + 1]}/pull/101\n`);
     if (args.includes('stream-json')) {
       // the Claude Code CLI: a rate_limit_event (measured shape) then a result event

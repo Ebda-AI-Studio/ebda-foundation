@@ -36,7 +36,7 @@ ts(){ date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo now; }
 
 # Scan roots: the deployed runtime + (if present) the foundation ops source.
 ROOTS=("$HERE")
-[ -d "$OS_HOME/ops" ] && ROOTS+=("$OS_HOME/ops")
+[ -d "$OS_HOME/os/ops" ] && ROOTS+=("$OS_HOME/os/ops")
 [ -d "$OS_HOME/os/ops" ] && ROOTS+=("$OS_HOME/os/ops")
 
 IGNORE="${DEAD_GATE_IGNORE:-}"

@@ -3,7 +3,7 @@
 import assert from 'node:assert';
 import {
   parseKeyWindow, keysInWindow, dayPrefixes, normalizePath, matches, aggregate, callers,
-  evaluateLogAlerts, evaluateProbeAlerts, decide, digestText, DEFAULT_RULES, LOG_ALERT_PREFIXES,
+  evaluateLogAlerts, evaluateProbeAlerts, decide, digestText, DEFAULT_RULES, LOG_ALERT_PREFIXES, brainListing, brainKind,
 } from '../lib/ebda-logs-core.mjs';
 
 const T0 = Date.UTC(2026, 10, 10, 12, 0, 0);
@@ -123,5 +123,18 @@ d = decide([], d.state, T0 + 60000, { unknownPrefixes: LOG_ALERT_PREFIXES });
 assert.equal(d.messages.length, 0, 'unreadable logs do not resolve a log alert');
 assert.ok(d.state.open.includes('storefront-5xx'));
 assert.ok(DEFAULT_RULES.alwaysActive.includes('ebda-api'));
+
+// brain listing (AI OS primary operator): every alert maps to a brain kind; the listing reconciles prod-watch only
+assert.equal(brainKind('probe:api'), 'prod-outage');
+assert.equal(brainKind('storefront-5xx'), 'prod-5xx');
+assert.equal(brainKind('exceptions:ebda-api'), 'prod-exception');
+assert.equal(brainKind('logs-silent:all'), 'prod-logs-silent');
+assert.equal(brainKind('alert-drill:2026-11-10'), 'alert-drill');
+let bl = brainListing([{ key: 'probe:api', severity: 'P1', title: 'api down', detail: 'HTTP 503' }], { logsRead: true });
+assert.deepEqual(bl.reconcile, { source: 'prod-watch' }, 'logs read: everything absent resolves (must fire)');
+assert.deepEqual(bl.findings[0], { source: 'prod-watch', kind: 'prod-outage', key: 'probe:api', title: 'api down', severity: 'P1', detail: { text: 'HTTP 503' } });
+bl = brainListing([], { logsRead: false });
+assert.deepEqual(bl.findings, []);
+assert.deepEqual(bl.reconcile.keep, LOG_ALERT_PREFIXES, 'logs unread: log findings are kept, not resolved (must not fire)');
 
 console.log('ebda-logs: PASS');
