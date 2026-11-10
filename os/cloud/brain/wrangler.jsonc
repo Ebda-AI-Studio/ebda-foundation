@@ -9,6 +9,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "observability": { "enabled": true, "head_sampling_rate": 0.2 },
+  "logpush": true,
 
   // F-18: a fan-out bug becomes a thrown error, not 10,000 subrequests or a runaway CPU bill (test/config.test.ts asserts both).
   "limits": { "cpu_ms": 30000, "subrequests": 500 },
