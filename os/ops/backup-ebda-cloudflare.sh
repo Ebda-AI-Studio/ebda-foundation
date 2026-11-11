@@ -6,7 +6,8 @@
 # What it does
 #   1. rclone copy (never sync/delete) R2 ebda-private/{store-do-backups,d1-backups,ops-reports} -> MIRROR
 #   2. VERIFY every manifest of the last 2 days (rule N11): per table, line count (minus the header line)
-#      == manifest rows AND sha256 == manifest sha256. A day folder without manifest.json is incomplete.
+#      == manifest rows AND sha256 == manifest sha256; a PAGED table (`parts`) is verified part by part (count, each
+#      part's sha256 + rows, summed rows, table digest). A day folder without manifest.json is incomplete.
 #   3. FRESHNESS: each store / D1 database must have a verified day <= 2 days old.
 #   4. COLLAPSE: total rows < half of the previous day's (and previous > 10) is an error, not a backup.
 #   5. SWEEP REPORT: the Worker's own ops-reports/backup-sweep/<day>.json must say ok:true.
@@ -115,6 +116,36 @@ today_epoch() { date -u +%s; }
 day_epoch() { date -u -j -f %Y-%m-%d "$1" +%s 2>/dev/null || date -u -d "$1" +%s; }
 NOW="$(today_epoch)"
 
+# verify_parts <manifest> <dir> <table> <rows> <table sha256>: a PAGED table (manifest.tables[t].parts, Worker
+# `<table>.part-NNNN.ndjson`, P2-4) is verified part by part, failing CLOSED: the part count in the manifest must
+# equal the part files on disk (a missing OR an extra part fails), every part's sha256 and body line count must
+# match, the part rows must add up to the table rows, and the table sha256 must equal the Worker's `tableDigest`
+# = sha256 of the part sha256s joined by "\n".
+verify_parts() {
+  local m="$1" dir="$2" t="$3" rows="$4" want_sha="$5" n on_disk f pr psha got body sum=0 shas="" listing
+  n="$(jq -r --arg t "$t" '.tables[$t].parts | if type == "array" then length else -1 end' "$m")"
+  [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -gt 0 ] || { stamp "  $m: $t parts is not a non-empty array" >&2; return 1; }
+  on_disk="$(find "$dir" -maxdepth 1 -type f -name "$t.part-*.ndjson" | grep -c .)" || on_disk=0
+  [ "$on_disk" -eq "$n" ] || { stamp "  $m: $t manifest lists $n parts but $on_disk part files are on disk" >&2; return 1; }
+  listing="$(jq -r --arg t "$t" '.tables[$t].parts[] | [(.file // ""), (.rows | tostring), (.sha256 // "")] | @tsv' "$m")" \
+    || { stamp "  $m: $t parts unreadable" >&2; return 1; }
+  while IFS=$'\t' read -r f pr psha; do
+    case "$f" in "$t".part-*.ndjson) ;; *) stamp "  $m: $t has an unsafe part file name '$f'" >&2; return 1 ;; esac
+    case "$f" in */*|*..*) stamp "  $m: $t has an unsafe part file name '$f'" >&2; return 1 ;; esac
+    [[ "$pr" =~ ^[0-9]+$ ]] || { stamp "  $m: $f rows '$pr' is not an integer" >&2; return 1; }
+    [[ "$psha" =~ ^[0-9a-f]{64}$ ]] || { stamp "  $m: $f sha256 is not 64 hex chars" >&2; return 1; }
+    [ -f "$dir/$f" ] || { stamp "  $m: $f missing" >&2; return 1; }
+    got="$(sha "$dir/$f")"
+    [ "$got" = "$psha" ] || { stamp "  $m: $f checksum differs" >&2; return 1; }
+    body="$(grep -c . "$dir/$f")"
+    [ "$((body - 1))" -eq "$pr" ] || { stamp "  $m: $f has $((body - 1)) rows, manifest says $pr" >&2; return 1; }
+    sum=$((sum + pr)); shas="${shas:+$shas$'\n'}$psha"
+  done <<<"$listing"
+  [ "$sum" -eq "$rows" ] || { stamp "  $m: $t parts hold $sum rows, manifest says $rows" >&2; return 1; }
+  got="$(printf '%s' "$shas" | shasum -a 256 | awk '{print $1}')"
+  [ "$got" = "$want_sha" ] || { stamp "  $m: $t table digest differs from its parts" >&2; return 1; }
+}
+
 # verify_manifest <manifest.json> -> prints total rows on success, returns 1 on any mismatch. Fails CLOSED:
 # a manifest with no tables, a non-integer row count or a malformed sha256 is a failure, never a vacuous pass.
 verify_manifest() {
@@ -130,11 +161,15 @@ verify_manifest() {
     case "$t" in ''|*/*|*..*) stamp "  $m: unsafe table name '$t'" >&2; return 1 ;; esac
     [[ "$rows" =~ ^[0-9]+$ ]] || { stamp "  $m: $t rows '$rows' is not an integer" >&2; return 1; }
     [[ "$want_sha" =~ ^[0-9a-f]{64}$ ]] || { stamp "  $m: $t sha256 is not 64 hex chars" >&2; return 1; }
-    [ -f "$dir/$t.ndjson" ] || { stamp "  $m: $t.ndjson missing" >&2; return 1; }
-    got="$(sha "$dir/$t.ndjson")"
-    [ "$got" = "$want_sha" ] || { stamp "  $m: $t checksum differs" >&2; return 1; }
-    body_lines="$(grep -c . "$dir/$t.ndjson")"
-    [ "$((body_lines - 1))" -eq "$rows" ] || { stamp "  $m: $t has $((body_lines - 1)) rows, manifest says $rows" >&2; return 1; }
+    if [ "$(jq -r --arg t "$t" '.tables[$t] | has("parts")' "$m")" = "true" ]; then
+      verify_parts "$m" "$dir" "$t" "$rows" "$want_sha" || return 1
+    else
+      [ -f "$dir/$t.ndjson" ] || { stamp "  $m: $t.ndjson missing" >&2; return 1; }
+      got="$(sha "$dir/$t.ndjson")"
+      [ "$got" = "$want_sha" ] || { stamp "  $m: $t checksum differs" >&2; return 1; }
+      body_lines="$(grep -c . "$dir/$t.ndjson")"
+      [ "$((body_lines - 1))" -eq "$rows" ] || { stamp "  $m: $t has $((body_lines - 1)) rows, manifest says $rows" >&2; return 1; }
+    fi
     total=$((total + rows))
   done <<<"$listing"
   [ "$n" -gt 0 ] || { stamp "  $m: zero tables verified" >&2; return 1; }
