@@ -17,6 +17,8 @@ Sequence every structural change as:
 
 Steps 1 and 4 are never in the same migration. If they are, it is a replacement, not a migration.
 
+Anything that REJECTS data (triggers, CHECK, NOT NULL, UNIQUE, FK) follows the stricter companion rule in `migrations-backward-compatible.md`: it never ships ahead of the code that stops writing the old shape.
+
 ## Grading criteria
 
 | # | Criterion | Severity |
