@@ -56,6 +56,11 @@ jobs:
 Y
 ok "always() aggregator is required, conditional matrix job is not" "$(python3 -I "$OPS/lib/merge_gate.py" required "$WF2")" '["App builds (affected)", "Detect"]'
 
+# --- the REAL repo workflows must yield a required list that includes the always-run PR sanity job (GATE-REQ):
+# an empty list is the "no always-run PR check to require" refusal.
+REAL="$(python3 -I "$OPS/lib/merge_gate.py" required "$HERE/../../../.github/workflows")"
+case "$REAL" in *'"PR sanity"'*) ok "real ci.yml requires the PR sanity job" 1 1 ;; *) ok "real ci.yml requires the PR sanity job" "$REAL" 'contains "PR sanity"' ;; esac
+
 # --- a path-filtered pull_request workflow contributes NO required check: GitHub creates no check run for a PR outside
 #     the filter, so requiring one waits the full --max-wait-min for a check that will never exist (ebda-store PR 490,
 #     blast-radius.yml, 2026-11-09). A filter on `push` only changes nothing. The fork guard counts as always-on. ---
