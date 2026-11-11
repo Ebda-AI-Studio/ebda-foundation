@@ -201,6 +201,7 @@ The numbered lenses below each become one file `standard/<id>.md`. `mobile` is N
 | 188 | `launch-checklist-missing` | No dated launch-day checklist with owners. Pack: business; probe J | Ebda master catalogue 2026-10-26 sec.7 L72 |
 | 189 | `wa-quality-not-gating` | Sender quality / account events do not gate sending. Pack: meta-whatsapp; probe S | Ebda master catalogue 2026-10-26 sec.7 L73 |
 | 190 | `umbra-guest-integrity` | Hard-killed CI guest => disk marked dirty, offline e2fsck (block device, two clean passes) before it may start; job semaphore fails closed with a light lane; prune idle guard treats any slot-*/light-* as busy | CI guest emergency_ro 2026-10-26 (memory `feedback-umbra-unclean-stop-fsck-before-runners`) |
+| 191 | `job-per-store-isolation` | A sweep over stores aborts on one store's error or visits them in a fixed order. Pack: reliability; probe S | Ebda issue #619, P1s 2026-11-11 |
 
 ## Source lens packs
 
