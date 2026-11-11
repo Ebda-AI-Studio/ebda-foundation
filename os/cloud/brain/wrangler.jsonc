@@ -80,10 +80,20 @@
     "DASH_BASIC_AUTH": "on",
     "DASH_BASIC_USER": "ahmad",
     "ACCESS_TEAM_DOMAIN": "__ACCESS_TEAM_DOMAIN__",
-    "ACCESS_AUD": "__ACCESS_AUD__"
+    "ACCESS_AUD": "__ACCESS_AUD__",
+    // Social posting (src/social/*): Facebook Pages + LinkedIn company pages of Whisky 11 and Ebda AI Studio. Every post goes to
+    // Ahmad on Telegram SOCIAL_APPROVAL_LEAD_HOURS ahead until SOCIAL_APPROVAL_DAYS after his first approval (per brand); then auto-post
+    // with one daily digest. Facebook keeps SOCIAL_FB_SPACING_MIN away from posts the OS did not make (his Instagram shares).
+    "SOCIAL_APPROVAL_DAYS": "14",
+    "SOCIAL_APPROVAL_LEAD_HOURS": "24",
+    "SOCIAL_FB_SPACING_MIN": "180",
+    "SOCIAL_FB_MAX_DEFER_HOURS": "24",
+    "SOCIAL_GRAPH_VERSION": "v27.0",
+    "SOCIAL_LINKEDIN_VERSION": "202610"
   }
   // Secrets (wrangler secret put, never here): DASH_BASIC_PASSWORD, GH_WEBHOOK_SECRET, RELAY_SECRET, GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
   // TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, HANDS_TOKEN, INGEST_TOKEN, CF_API_TOKEN, SENTRY_AUTH_TOKEN (GITHUB_TOKEN also feeds
   // deploy-drift, pr-shepherd, cost-guard); hands container (Task 7): CLAUDE_CODE_OAUTH_TOKEN,
-  // HANDS_GH_TOKEN, HANDS_CONFIG_JSON, HANDS_GIT_NAME, HANDS_GIT_EMAIL. See README.md and os/cloud/hands/README.md.
+  // HANDS_GH_TOKEN, HANDS_CONFIG_JSON, HANDS_GIT_NAME, HANDS_GIT_EMAIL. Social: SOCIAL_FACEBOOK, SOCIAL_LINKEDIN, SOCIAL_LINK_SECRET,
+  // SOCIAL_DECIDE_TOKEN (unset = that network / door is disabled). See README.md and os/cloud/hands/README.md.
 }

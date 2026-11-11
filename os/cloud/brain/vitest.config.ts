@@ -23,6 +23,8 @@ export default defineConfig({
           TELEGRAM_CHAT_ID: '4242',
           TELEGRAM_BOT_TOKEN: 'test-bot-token',
           OS_ORGS: 'org-a org-b',
+          SOCIAL_LINK_SECRET: 'test-social-link-secret',
+          SOCIAL_DECIDE_TOKEN: 'test-social-decide-token',
           HEALTH_TARGETS: '[{"url":"https://api.example.test/health","kind":"api"},{"url":"https://shop.example.test/checkout","kind":"money"}]',
         },
       },

@@ -136,6 +136,22 @@ export interface Env {
   HANDS_GIT_NAME?: string;
   HANDS_GIT_EMAIL?: string;
   HANDS_GITHUB_ACTIONS_TOKEN?: string;
+  // ---- social posting (src/social/*, docs/plans/2026-11-11-social-posting.md): Facebook Pages + LinkedIn company pages only ----
+  /** secret JSON {"whisky11":{"pageId","pageToken"},"ebda":{...}}: never-expiring Page tokens. Unset = Facebook disabled */
+  SOCIAL_FACEBOOK?: string;
+  /** secret JSON {"whisky11":{"orgUrn","token","expiresAt"},...}: needs an approved Community Management API app. Unset = LinkedIn disabled */
+  SOCIAL_LINKEDIN?: string;
+  /** secret: HMAC key of the signed approve / edit / skip links in the Telegram preview (unset = callback buttons only) */
+  SOCIAL_LINK_SECRET?: string;
+  /** secret: bearer for POST /social/decide and /social/brands (the controller forwarding Ahmad's Telegram text). NOT INGEST_TOKEN:
+   *  the Mac content job that writes drafts must never be able to approve them */
+  SOCIAL_DECIDE_TOKEN?: string;
+  SOCIAL_APPROVAL_DAYS?: string;
+  SOCIAL_APPROVAL_LEAD_HOURS?: string;
+  SOCIAL_FB_SPACING_MIN?: string;
+  SOCIAL_FB_MAX_DEFER_HOURS?: string;
+  SOCIAL_GRAPH_VERSION?: string;
+  SOCIAL_LINKEDIN_VERSION?: string;
 }
 
 /** Positive number var with a fallback. */

@@ -11,6 +11,8 @@
 //   GET  /hands/runs/:id  POST /hands/jobs/:id/outcome  POST /hands/usage  POST /hands/claim  POST /hands/refused   (Bearer HANDS_TOKEN)
 //   POST /telegram/webhook  inline-button answers FORWARDED BY THE tg-relay SESSION (it polls @EbdaAIStudiobot; the brain is send-only and
 //                           never registers this URL with Telegram). Auth: X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
+//   /social/*             social posting: drafts/edits/calendar (INGEST_TOKEN), decide/brands (SOCIAL_DECIDE_TOKEN), /social/d/:id signed
+//                         decision page (src/social/routes.ts)
 //   GET  /health
 // Human routes: GET /api/state, POST /api/halt, POST /api/questions/:id/answer, and the static dashboard at /dash/ (Workers Static
 // Assets, run Worker-first so the HTML/JS/CSS are never served before the gate). All of them go through gateHuman()
@@ -24,6 +26,7 @@ import { OUTCOME_STATUSES, type JobOutcome, type JobUsage } from './hands';
 import { runTokenValid } from './runtoken';
 import { checkBearerAuth, mapEvent, mapRunDetail, signEvent, timingSafeEqualStr, verifyGitHubSig, type RelayEvent } from './relay';
 import { cronName } from './schedule';
+import { handleSocial } from './social/routes';
 import { validateUsage } from './usage';
 import { watchAdvisories } from './watchers/advisories';
 import { checkAll, parseTargets } from './watchers/health';
@@ -135,8 +138,13 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
   // which in a private chat IS the owner's user id and in a group is negative and so never matches: fail closed)
   if (String(cb?.from?.id ?? '') !== String(env.TELEGRAM_OWNER_ID || env.TELEGRAM_CHAT_ID || '')) return new Response(null, { status: 200 });
   const m = String(cb.data ?? '').match(/^q:([\w-]+):([\w-]+)$/);
+  const sm = String(cb.data ?? '').match(/^s:([\w-]+):([aek])$/);
   let text = 'not understood';
-  if (m) {
+  if (sm) {
+    const decision = sm[2] === 'a' ? 'approve' : sm[2] === 'e' ? 'edit' : 'skip';
+    const r = await brainStub(env).socialDecide(sm[1]!, decision, 'telegram-button');
+    text = r.ok ? `recorded: ${r.status}` : r.reason ?? 'refused';
+  } else if (m) {
     const r = await brainStub(env).answerQuestion(m[1]!, m[2]!);
     text = r.ok ? `recorded: ${m[2]}` : r.reason ?? 'refused';
   }
@@ -355,6 +363,7 @@ export default {
         await brainStub(env).recordDrill(body.result, typeof body.note === 'string' ? body.note : undefined);
         return json({ ok: true });
       }
+      if (path.startsWith('/social/')) return await handleSocial(request, env, path, brainStub(env));
       if (path.startsWith('/api/')) return await handleApi(request, env, path);
       if (path === '/dash' || path.startsWith('/dash/')) return await handleDash(request, env, url);
       if (path === '/' && request.method === 'GET') return Response.redirect(new URL('/dash/', url).toString(), 302);
@@ -374,6 +383,8 @@ export default {
         const targets = parseTargets(env.HEALTH_TARGETS);
         if (targets.length) await brain.observeHealth(await checkAll(targets), now);
         await brain.tick(now);
+        // social: previews a day ahead, the approval gate, publishing at the slot (a social failure never blocks the OS tick)
+        await brain.socialTick(now).catch((e: Error) => console.error('social tick', e.message));
         return;
       }
       case 'quarter':
@@ -391,6 +402,7 @@ export default {
         return;
       case 'digest':
         await brain.digest(now);
+        await brain.socialDigest(now).catch((e: Error) => console.error('social digest', e.message));
         return;
       default:
         // an unknown cron means wrangler.jsonc and src/schedule.ts drifted: loud, never silent
