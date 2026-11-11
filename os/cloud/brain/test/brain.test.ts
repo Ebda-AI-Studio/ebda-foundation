@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { BrainDO } from '../src/brain-do';
 import type { Finding } from '../src/findings';
 import { StubHandsProvider } from '../src/hands';
+import { DIGEST_MAX_CHARS, DIGEST_MAX_LINES } from '../src/telegram';
 
 const T0 = Date.UTC(2026, 10, 5, 8, 0, 0);
 const MIN = 60_000;
@@ -250,7 +251,7 @@ describe('questions and the Telegram budget', () => {
     expect(await h.run((b) => b.digest(T0 + HOUR))).toBe('sent');
     expect(await h.run((b) => b.digest(T0 + 2 * HOUR))).toBe('duplicate');
     expect(h.sent).toHaveLength(4);
-    expect(h.sent[3]!.text).toMatch(/Waiting for you:/);
+    expect(h.sent[3]!.text).toMatch(/! Decision: /);
     expect(h.sent[3]!.text).toMatch(/payout fix 3/);
     const s = await h.run((b) => b.state(T0 + 2 * HOUR));
     expect(s.questions.every((q) => q.status === 'sent')).toBe(true);
@@ -383,7 +384,7 @@ describe('fix round 1: re-sighting, promotion, message ceiling, retries', () => 
     expect(nonDigest).toBeLessThanOrEqual(6);
     expect((await h.run((b) => b.state(T0 + HOUR))).messages.deferred).toBeGreaterThanOrEqual(7);
     expect(await h.run((b) => b.digest(T0 + 2 * HOUR))).toBe('sent');
-    expect(h.sent.at(-1)!.text).toMatch(/Rolled up/);
+    expect(h.sent.at(-1)!.text).toMatch(/! Message (held over budget|not delivered)/);
   });
 
   it('I-3: a nightly advisory newly listed in CISA KEV is promoted to urgent and gets one urgent run', async () => {
@@ -422,7 +423,7 @@ describe('fix round 1: re-sighting, promotion, message ceiling, retries', () => 
     expect(await h.run((b) => b.retryFailed(B + 16 * MIN))).toEqual({ sent: 0, undelivered: 1 }); // try 3 failed
     fail = false;
     await h.run((b) => b.digest(B + HOUR));
-    expect(h.sent.at(-1)!.text).toMatch(/\[delivery failed\] Ebda OS urgent: fix deployed/);
+    expect(h.sent.at(-1)!.text).toMatch(/! Message not delivered: Ebda OS urgent: fix deployed/);
   });
 
   it('I-5: a retry that succeeds is delivered once, and the DO alarm drives it', async () => {
@@ -461,35 +462,27 @@ describe('digest lane (monitor self-reports)', () => {
     expect(h.sent).toHaveLength(0);
     expect(h.hands.started).toHaveLength(0);
   });
-  it('the daily digest lists it exactly once, as the only message', async () => {
+  it('the daily digest is one short message: a monitor that is not set up is a name, a broken one is a "!" line', async () => {
     const h = await harness();
     await h.run((b) => b.ingestFinding(selfReport(), T0));
     await h.run((b) => b.ingestFinding(selfReport({ kind: 'watcher-error', key: 'cf-workers:cloudflare:error', title: 'watcher cf-workers could not read its source: HTTP 401' }), T0));
     await h.run((b) => b.digest(T0 + HOUR));
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0]!.text).toContain('Monitors needing attention');
-    expect(h.sent[0]!.text).toContain('SERVICE_TARGETS is not set');
-    expect(h.sent[0]!.text).toContain('HTTP 401');
-    await h.run((b) => b.digest(T0 + 25 * HOUR));
-    expect(h.sent).toHaveLength(2);
-    expect(h.sent[1]!.text).not.toContain('Monitors needing attention');
+    const t = h.sent[0]!.text;
+    expect(t).toContain('Not set up: services');
+    expect(t).not.toContain('SERVICE_TARGETS');
+    expect(t).toContain('! watcher cf-workers could not read its source: HTTP 401');
+    expect(t).toMatch(/Needs you 1 /);
+    expect(t.split('\n').length).toBeLessThanOrEqual(12);
   });
-  it('15 notes: digest 1 lists 10 + "+5 more", digest 2 lists the other 5; none lost, none repeated', async () => {
+  it('50 broken monitors still fit the size budget: top 5 plus a count', async () => {
     const h = await harness();
-    for (let i = 1; i <= 15; i++) await h.run((b) => b.ingestFinding(selfReport({ key: `w${i}:config:unconfigured`, title: `note-${String(i).padStart(2, '0')}` }), T0 + i));
+    for (let i = 1; i <= 50; i++) await h.run((b) => b.ingestFinding(selfReport({ kind: 'watcher-error', key: `w${i}:x:error`, title: `note-${String(i).padStart(2, '0')} ${'x'.repeat(300)}` }), T0 + i));
     await h.run((b) => b.digest(T0 + HOUR));
-    const d1 = h.sent[0]!.text;
-    const in1 = [...d1.matchAll(/note-(\d\d)/g)].map((m) => m[1]);
-    expect(in1).toHaveLength(10);
-    expect(d1).toContain('+5 more pending');
-    await h.run((b) => b.digest(T0 + 25 * HOUR));
-    const d2 = h.sent[1]!.text;
-    const in2 = [...d2.matchAll(/note-(\d\d)/g)].map((m) => m[1]);
-    expect(in2).toHaveLength(5);
-    expect(d2).not.toContain('more pending');
-    expect(new Set([...in1, ...in2]).size).toBe(15);
-    await h.run((b) => b.digest(T0 + 49 * HOUR));
-    expect(h.sent[2]!.text).not.toContain('Monitors needing attention');
+    const d = h.sent[0]!.text;
+    expect(d.split('\n').length).toBeLessThanOrEqual(DIGEST_MAX_LINES);
+    expect(d.length).toBeLessThanOrEqual(DIGEST_MAX_CHARS);
+    expect(d).toContain('(+45 more)');
   });
   it('a recurrence after resolution is news again in the next digest', async () => {
     const h = await harness();
@@ -498,6 +491,6 @@ describe('digest lane (monitor self-reports)', () => {
     await h.run((b) => b.resolveFinding(selfReport(), 'configured', T0 + 2 * HOUR));
     await h.run((b) => b.ingestFinding(selfReport({ detail: { n: 2 } }), T0 + 30 * HOUR));
     await h.run((b) => b.digest(T0 + 49 * HOUR));
-    expect(h.sent.at(-1)!.text).toContain('Monitors needing attention');
+    expect(h.sent.at(-1)!.text).toContain('Not set up: services');
   });
 });

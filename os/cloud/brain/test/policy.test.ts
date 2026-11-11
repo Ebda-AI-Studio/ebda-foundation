@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { admit, digestMessage, questionMessage } from '../src/telegram';
+import { admit, DIGEST_MAX_CHARS, DIGEST_MAX_LINES, digestMessage, questionMessage } from '../src/telegram';
 import { usageGuard, WEEK_MS } from '../src/usage';
 
 describe('telegram admission (hard ceiling: 3 normal + 3 urgent a day, plus one digest)', () => {
@@ -45,13 +45,27 @@ describe('message text', () => {
     const r = questionMessage({ id: 'q_2', text: 'x', options: ['proceed', 'hold'], defaultOption: 'proceed', deadline: Date.UTC(2026, 10, 6, 12), reversible: true });
     expect(r.text).toMatch(/Silence = "proceed" after 2026-11-06 12:00 UTC/);
   });
-  it('the digest reports outcomes and the acted-on ratio, not noticings', () => {
-    const d = digestMessage({ day: '2026-11-05', outcomes: [{ title: 'bump x', status: 'merged', prUrl: 'https://pr/1' }], raised24h: 4, acted24h: 3, ratio7d: 0.9, pendingQuestions: [], rolledUp: [{ text: 'Ebda OS urgent: could NOT fix\nx down', failed: true }], osBugs: 1, usageNote: null });
-    expect(d.dedupeKey).toBe('digest:2026-11-05');
-    expect(d.text).toMatch(/merged: bump x https:\/\/pr\/1/);
-    expect(d.text).toMatch(/Acted-on: 3\/4 in 24 h; 7-day ratio 90%/);
-    expect(d.text).toMatch(/OS bug: 1 finding/);
-    expect(d.text).toMatch(/\[delivery failed\] Ebda OS urgent: could NOT fix \/ x down/);
+  it('the digest is short: counts, top 5 that need Ahmad, one not-set-up line, social block, a link', () => {
+    const needs = Array.from({ length: 14 }, (_, i) => `PR Ebda-AI-Studio/ebda-store#${i} has failing checks: ${'long title '.repeat(20)}`);
+    const d = digestMessage({
+      day: '2026-11-11', fixed: 3, open: 21, resolved: 14, halted: 'HANDS_HALT is set on the Worker', needs,
+      notSetUp: ['services', 'deploy-drift', 'sentry-stale'], social: 'Social (48 h): 2 published\nModes: Ebda approval\nSocial issues: none\nEXTRA LINE', dashUrl: 'https://os.ebda.app/dash/',
+    });
+    const lines = d.text.split('\n');
+    expect(d.dedupeKey).toBe('digest:2026-11-11');
+    expect(lines.length).toBeLessThanOrEqual(DIGEST_MAX_LINES);
+    expect(d.text.length).toBeLessThanOrEqual(DIGEST_MAX_CHARS);
+    expect(lines[0]).toContain('HANDS HALTED');
+    expect(lines[1]).toBe('Fixed 3 | Open 21 | Needs you 14 | Resolved 14');
+    expect(lines.filter((l) => l.startsWith('! '))).toHaveLength(5);
+    expect(d.text).toContain('Not set up: services, deploy-drift, sentry-stale');
+    expect(d.text).not.toContain('EXTRA LINE');
+    expect(lines.at(-1)).toBe('Full list (+9 more): https://os.ebda.app/dash/');
+    expect(d.text).not.toMatch(/Done:|no longer reported|configured:/);
+  });
+  it('an empty day is still one tiny message', () => {
+    const d = digestMessage({ day: '2026-11-11', fixed: 0, open: 0, resolved: 0, needs: [], notSetUp: [], dashUrl: 'https://os.ebda.app/dash/' });
+    expect(d.text.split('\n')).toHaveLength(3);
   });
 });
 

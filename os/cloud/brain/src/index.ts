@@ -404,8 +404,7 @@ export default {
         await brain.runNightly(now);
         return;
       case 'digest':
-        await brain.digest(now);
-        await brain.socialDigest(now).catch((e: Error) => console.error('social digest', e.message));
+        await brain.digest(now); // the social block rides inside it: one message, not two
         return;
       default:
         // an unknown cron means wrangler.jsonc and src/schedule.ts drifted: loud, never silent
