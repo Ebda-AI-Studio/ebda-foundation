@@ -16,6 +16,7 @@ import * as prShepherd from './pr-shepherd';
 import * as sentryStale from './sentry-stale';
 import * as services from './services';
 import * as world from './world-watch';
+import { boundFetch } from '../bound-fetch';
 
 export type WatcherGroup = 'quarter' | 'hourly' | 'sixhourly';
 
@@ -47,7 +48,7 @@ export const GROUPS: Record<WatcherGroup, Entry[]> = {
   ],
 };
 
-export async function runWatchers(group: WatcherGroup, env: Env, brain: DurableObjectStub<BrainDO> | Sink, now: number, fetchImpl: typeof fetch = fetch): Promise<Record<string, 'ran' | 'skipped' | 'error'>> {
+export async function runWatchers(group: WatcherGroup, env: Env, brain: DurableObjectStub<BrainDO> | Sink, now: number, fetchImpl: typeof fetch = boundFetch): Promise<Record<string, 'ran' | 'skipped' | 'error'>> {
   const ctx: WatchCtx = { env, sink: brain as Sink, now, fetchImpl };
   const out: Record<string, 'ran' | 'skipped' | 'error'> = {};
   for (const w of GROUPS[group]) {

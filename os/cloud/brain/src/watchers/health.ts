@@ -2,6 +2,7 @@
 // Durable Object, so the DO is never kept awake waiting on the network. A JSON body with ok:false or status:"down"
 // counts as a failure even on HTTP 200 (a 200 is not proof of health).
 import type { HealthObservation } from '../brain-do';
+import { boundFetch } from '../bound-fetch';
 
 export interface HealthTarget {
   url: string;
@@ -20,7 +21,7 @@ export function parseTargets(raw: string | undefined): HealthTarget[] {
   }
 }
 
-export async function checkOne(t: HealthTarget, fetchImpl: typeof fetch = fetch, timeoutMs = 10000): Promise<HealthObservation> {
+export async function checkOne(t: HealthTarget, fetchImpl: typeof fetch = boundFetch, timeoutMs = 10000): Promise<HealthObservation> {
   const t0 = Date.now();
   try {
     const r = await fetchImpl(t.url, { method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(timeoutMs), headers: { 'user-agent': 'ebda-os-brain/health' } });
@@ -37,6 +38,6 @@ export async function checkOne(t: HealthTarget, fetchImpl: typeof fetch = fetch,
   }
 }
 
-export async function checkAll(targets: HealthTarget[], fetchImpl: typeof fetch = fetch): Promise<HealthObservation[]> {
+export async function checkAll(targets: HealthTarget[], fetchImpl: typeof fetch = boundFetch): Promise<HealthObservation[]> {
   return Promise.all(targets.map((t) => checkOne(t, fetchImpl)));
 }

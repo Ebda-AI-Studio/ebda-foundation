@@ -5,6 +5,7 @@ import type { BrainDO } from '../brain-do';
 import type { Env } from '../env';
 import { isPlaceholder } from '../env';
 import { GitHubHost, loadKev, type GitHost } from '../githost';
+import { boundFetch } from '../bound-fetch';
 
 export const ADVISORY_MIN_INTERVAL_MS = 55 * 60 * 1000;
 
@@ -25,7 +26,7 @@ export interface AdvisoryRunSummary {
   orgs: Array<{ org: string; notModified?: boolean; alerts?: number; raised?: number; resolved?: number; error?: string }>;
 }
 
-export async function watchAdvisories(env: Env, brain: DurableObjectStub<BrainDO>, now: number, fetchImpl: typeof fetch = fetch, host?: GitHost): Promise<AdvisoryRunSummary> {
+export async function watchAdvisories(env: Env, brain: DurableObjectStub<BrainDO>, now: number, fetchImpl: typeof fetch = boundFetch, host?: GitHost): Promise<AdvisoryRunSummary> {
   const summary: AdvisoryRunSummary = { at: now, orgs: [] };
   const last = Number((await env.EVENTS.get('adv:last-run')) ?? 0);
   if (now - last < ADVISORY_MIN_INTERVAL_MS) return { ...summary, skipped: 'ran less than an hour ago' };
