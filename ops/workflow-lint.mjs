@@ -6,7 +6,8 @@
 //   - every `runs-on:` is exactly ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}, except a job whose runs-on line is
 //     `runs-on: ubuntu-latest` directly under a `# hosted-only: <reason>` comment (a job that must NOT follow EBDA_RUNS_ON onto the
 //     self-hosted runner, e.g. an outside-in production watch); it may not run on pull_request
-//   - a job that can run on a pull_request carries the fork guard (head.repo.full_name == github.repository), because the
+//   - a job that can run on a pull_request carries the fork guard (or a `    # fork-guard-exempt: <reason>` comment line in the job, for a job that
+//     only inspects/labels a PR and never executes its content, e.g. the fork gate of ai-review.yml) (head.repo.full_name == github.repository), because the
 //     same runs-on may resolve to a self-hosted runner
 //   - setup-node `cache:` is only allowed when conditional on vars.EBDA_RUNS_ON (the remote cache is for hosted runners only)
 //   - every `uses:` is pinned to a 40-hex commit SHA
@@ -44,7 +45,7 @@ export function lintWorkflow(name, text) {
       if (hostedOnly && onPr) bad(j.start + ro + 1, `job ${j.id}: a hosted-only job may not run on pull_request`);
       else if (!hostedOnly && val !== RUNS_ON) bad(j.start + ro + 1, `job ${j.id}: runs-on must be exactly ${RUNS_ON}`);
     }
-    if (onPr && ro >= 0 && !block.some((l) => /head\.repo\.full_name\s*==\s*github\.repository/.test(l)) && !/needs:/.test(block.join('\n'))) {
+    if (onPr && ro >= 0 && !block.some((l) => /head\.repo\.full_name\s*==\s*github\.repository/.test(l)) && !block.some((l) => /^    # fork-guard-exempt: \S.{9,}/.test(l)) && !/needs:/.test(block.join('\n'))) {
       bad(j.start + 1, `job ${j.id}: pull_request job without the fork guard (github.event.pull_request.head.repo.full_name == github.repository)`);
     }
   }
