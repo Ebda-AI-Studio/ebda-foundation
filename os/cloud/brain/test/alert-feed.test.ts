@@ -2,10 +2,11 @@
 // through the authenticated GET /api/alerts?since=, and a P1 becomes a finding. Must not fire: no token / bad shape is refused, the
 // same alert inside 10 min is one row (count 2), an info alert makes no finding, and /api/alerts without auth is 401.
 import { env } from 'cloudflare:workers';
-import { createExecutionContext, SELF, waitOnExecutionContext } from 'cloudflare:test';
+import { createExecutionContext, runInDurableObject, SELF, waitOnExecutionContext } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import type { Env } from '../src/env';
 import worker, { brainStub } from '../src/index';
+import type { BrainDO } from '../src/brain-do';
 
 const PW = 'alert-feed-test-password';
 const ING = { Authorization: 'Bearer test-ingest-token' };
@@ -68,5 +69,44 @@ describe('failed default-branch workflow runs land in the feed (every workflow n
     const rows = (await brainStub(env).alertsSince(0, 500)).filter((x) => String(x.source).startsWith('github/'));
     expect(rows.length).toBe(before + 1);
     expect(rows[0]!.title).toBe('Cloudflare data backup failed on main (Ebda-AI-Studio/ebda-store)');
+  });
+});
+
+describe('LOOP-WATCH-2: an overdue-control finding also lands in the controller feed (alert-wait.sh reads only /api/alerts)', () => {
+  it('loop-main-red and loop-merge-stall each make ONE p1 feed row; a re-sighting adds none; a plain digest finding adds none', async () => {
+    const brain = brainStub(env);
+    const R = 'Ebda-AI-Studio/ebda-store';
+    const before = (await brain.alertsSince(0, 500)).length;
+    const red = { source: 'watcher', kind: 'loop-main-red', key: `loop-stall:${R}:red-101`, title: `main CI of ${R} has been red for 168 min (since run 101)`, repo: R, url: `https://github.com/${R}/actions/runs/101`, severity: 'P1' as const };
+    const stall = { source: 'watcher', kind: 'loop-merge-stall', key: `loop-stall:${R}:since-1`, title: `no merge in ${R} for 190 min while 17 approved PR(s) wait`, repo: R, severity: 'P1' as const };
+    await brain.ingestMany([red, stall], Date.now());
+    await brain.ingestMany([red, stall], Date.now() + 15 * 60_000); // next tick: same incident, deduped
+    await brain.ingestMany([{ source: 'watcher', kind: 'monitor-unconfigured', key: 'x:config:unconfigured', title: 'watcher x is not running', severity: 'P3' as const }], Date.now());
+    const feed = await brain.alertsSince(0, 500);
+    expect(feed.length - before).toBe(2); // must fire twice, must not fire for the re-sighting or the P3
+    const mine = feed.filter((x) => x.source.startsWith('brain/loop-'));
+    expect(mine.map((x) => [x.source, x.level, x.repo])).toEqual([['brain/loop-merge-stall', 'p1', R], ['brain/loop-main-red', 'p1', R]]);
+    // asFinding=false: the mirror must not create a second (platform-alert) finding for the same incident
+    const s = await brain.state();
+    expect(s.findings.recent.filter((f) => f.kind === 'platform-alert' && f.title.includes('has been red for 168 min'))).toEqual([]);
+  });
+
+  it('an incident already open before LOOP-WATCH-2 shipped is mirrored ONCE on the next tick, then never again', async () => {
+    const brain = brainStub(env);
+    const R = 'Ebda-AI-Studio/ebda-whatsapp';
+    const stall = { source: 'watcher', kind: 'loop-merge-stall', key: `loop-stall:${R}:since-7`, title: `no merge in ${R} for 432 min while 3 approved PR(s) wait`, repo: R, severity: 'P1' as const };
+    await brain.ingestMany([stall], Date.now());
+    // the pre-fix state: the finding is open but nothing was ever written to the feed for it
+    await runInDurableObject(brain, (b: BrainDO) => {
+      const sql = (b as unknown as { sql: SqlStorage }).sql;
+      sql.exec(`DELETE FROM meta WHERE k LIKE 'feed:%'`);
+      sql.exec(`DELETE FROM alerts WHERE source = 'brain/loop-merge-stall' AND repo = ?`, R);
+    });
+    const count = async () => (await brain.alertsSince(0, 500)).filter((x) => x.source === 'brain/loop-merge-stall' && x.repo === R).length;
+    expect(await count()).toBe(0);
+    await brain.ingestMany([{ ...stall, title: `no merge in ${R} for 447 min while 3 approved PR(s) wait` }], Date.now() + 15 * 60_000);
+    expect(await count()).toBe(1); // must fire once for the open incident
+    await brain.ingestMany([{ ...stall, title: `no merge in ${R} for 462 min while 3 approved PR(s) wait` }], Date.now() + 30 * 60_000);
+    expect(await count()).toBe(1); // must not fire every tick
   });
 });

@@ -5,7 +5,7 @@
 //   loop-main-red     the newest CI run is red and the red streak started more than LOOP_RED_MIN (30) minutes ago;
 //   loop-merge-stall  open PRs carry `ai-review-passed` (and not `hold`) but nothing merged for LOOP_STALL_MIN (60) minutes.
 // Keys carry the incident (first red run id / last merge time), so a new incident is a new alert and a long one stays one.
-// 3 GitHub reads per repo. An API failure is a watcher-error finding, never "healthy".
+// 3 GitHub reads per repo; 100 runs per read because gitleaks/deploy/schedule runs share the list and can push CI out of a short page. An API failure is a watcher-error finding, never "healthy".
 import { httpJson, isObj, isSet, numVar, reportError, reportUnconfigured, clearError, finding, settle, type WatchCtx } from './common';
 import { reposFrom } from './ci-catchup';
 
@@ -32,7 +32,7 @@ export async function watchLoopStall(ctx: WatchCtx): Promise<{ repos: number; re
   for (const slug of repos) {
     try {
       const api = `https://api.github.com/repos/${slug}`;
-      const runsRes = (await httpJson(ctx, `${api}/actions/runs?branch=main&status=completed&per_page=20`, { headers })) as { workflow_runs?: unknown };
+      const runsRes = (await httpJson(ctx, `${api}/actions/runs?branch=main&status=completed&per_page=100`, { headers })) as { workflow_runs?: unknown };
       const runs = (Array.isArray(runsRes?.workflow_runs) ? runsRes.workflow_runs.filter(isObj) : [])
         .filter((r) => String(r.name ?? '') === 'CI' && Number.isFinite(Date.parse(String(r.updated_at ?? ''))))
         .sort((a, b) => Date.parse(String(b.updated_at)) - Date.parse(String(a.updated_at)));

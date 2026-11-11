@@ -247,6 +247,7 @@ export class BrainDO extends DurableObject<Env> {
       const seen = () => this.sql.exec('UPDATE findings SET last_seen = ?, seen_count = seen_count + 1 WHERE fp = ?', now, fp);
       if (ACTIVE.has(status)) {
         seen();
+        if (c.alert && status === 'digest') await this.mirrorAlert(fp, f, c.reason, now); // an incident already open before LOOP-WATCH-2
         this.sql.exec('UPDATE findings SET data = ?, evidence = ? WHERE fp = ?', data, evidence, fp);
         const promoted = this.promote(fp, String(existing.lane), c, now);
         return { fp, deduped: true, reopened: false, lane: promoted ? 'urgent' : (existing.lane as Lane), reason: promoted ? c.reason : String(existing.reason), jobId: null };
@@ -276,7 +277,12 @@ export class BrainDO extends DurableObject<Env> {
     if (c.lane === 'digest') {
       // digest-only: no job, no question, no message. Counted as acted (the digest is the action) so self-check never flags it.
       this.sql.exec(`UPDATE findings SET status = 'digest', acted_at = COALESCE(acted_at, ?) WHERE fp = ?`, now, fp);
-      if (c.alert) await this.emit({ dedupeKey: `p1:${fp}:alert:${evidence}`, kind: 'p1-unhealed', text: `Ebda OS: ${f.title}\n${c.reason}.` }, now);
+      if (c.alert) {
+        await this.emit({ dedupeKey: `p1:${fp}:alert:${evidence}`, kind: 'p1-unhealed', text: `Ebda OS: ${f.title}\n${c.reason}.` }, now);
+        // LOOP-WATCH-2: an overdue control must also wake the controller, whose alert-wait.sh reads only GET /api/alerts (AIOS-8).
+        // Telegram alone reaches Ahmad, not the session that has to act; asFinding=false because this row already IS the finding.
+        await this.mirrorAlert(fp, f, c.reason, now);
+      }
       if (unmappedUrgent) await this.emit({ dedupeKey: `p1:${fp}:unmapped:${evidence}`, kind: 'p1-unhealed', text: `Ebda OS: could not self-heal: ${f.title}\n${c.reason}.` }, now);
       return { fp, deduped: false, reopened: !!existing, lane: 'digest', reason: c.reason, jobId: null };
     }
@@ -372,6 +378,14 @@ export class BrainDO extends DurableObject<Env> {
 
   // ---------- platform alert feed (ruling AIOS-8) ----------
   /** Store one alert; the same alert within ALERT_DEDUPE_MS bumps the count of its row. P0/P1 also become a finding the OS acts on. */
+  /** LOOP-WATCH-2: write an overdue-control finding into the controller feed ONCE per fingerprint (first raise, or an incident that
+   *  was already open when this code shipped), so alert-wait.sh wakes on it without a row every 15-min tick. */
+  private async mirrorAlert(fp: string, f: Finding, reason: string, now: number): Promise<void> {
+    if (this.getMeta(`feed:${fp}`)) return;
+    this.setMeta(`feed:${fp}`, now);
+    await this.recordAlert({ source: `brain/${f.kind}`, level: 'p1', title: f.title, text: `Ebda OS: ${f.title}\n${reason}.`, ...(f.url ? { url: f.url } : {}), ...(f.repo ? { repo: f.repo } : {}) }, now, false);
+  }
+
   async recordAlert(a: PlatformAlert, now: number = Date.now(), asFinding = true): Promise<{ id: number; deduped: boolean }> {
     const sig = (await fingerprint({ source: a.source, kind: a.level, key: `${a.title}\n${a.text}` }));
     const prev = this.row(`SELECT id FROM alerts WHERE sig = ? AND last_at > ? ORDER BY id DESC LIMIT 1`, sig, now - ALERT_DEDUPE_MS);

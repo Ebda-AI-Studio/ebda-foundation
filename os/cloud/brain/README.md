@@ -127,7 +127,8 @@ run stale 30 min = one `monitor-silent` P1; GitHub run silent 24 h = a `monitor-
 
 **Platform alert feed (AIOS-8).** `POST /alerts {source, level p0|p1|p2|info, title, text, url?, repo?, at?}` (Bearer `INGEST_TOKEN`,
 array <= 20): the same alert within 10 min is one row with a count; P0/P1 also become a `platform-alert` finding. Failed
-default-branch workflow runs from the org webhook are recorded too. Read: `GET /api/alerts?since=<id>&limit=` (dashboard auth),
+default-branch workflow runs from the org webhook are recorded too. Overdue-control findings (ALERT_KINDS: `loop-main-red`, `loop-merge-stall`, `monitor-silent`, ...) are mirrored in as
+`brain/<kind>` p1 rows when first raised (LOOP-WATCH-2), so the controller wakes on them, not only Ahmad's Telegram. Read: `GET /api/alerts?since=<id>&limit=` (dashboard auth),
 newest first. Controller wait loop: `os/ops/alert-wait.sh` (exits printing new alerts).
 
 **Controller leases (HANDS-COORD).** `POST /leases {repo, holder, ttlMin≤240, note?}` / `DELETE /leases {repo, holder}`
