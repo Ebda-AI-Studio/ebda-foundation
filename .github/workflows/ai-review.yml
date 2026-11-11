@@ -158,7 +158,7 @@ jobs:
     timeout-minutes: 5
     if: github.event.pull_request.head.repo.full_name == github.repository && needs.classify.outputs.risky == 'false'
     steps:
-      - run: echo "all-safe diff (docs, markdown, newly added tests only): no review required"
+      - run: echo "all-safe diff - docs, markdown and newly added tests only - no review required"
 
   state-check:
     name: AI review

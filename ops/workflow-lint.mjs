@@ -50,6 +50,9 @@ export function lintWorkflow(name, text) {
     }
   }
   lines.forEach((l, i) => {
+    // a plain (unquoted, non-block) `run:` value containing `: ` is invalid YAML and silently disables the whole workflow on GitHub
+    const rv = l.match(/^\s*(?:-\s+)?run:\s+([^|>"'\s].*)$/);
+    if (rv && /:(?:\s|$)/.test(rv[1])) bad(i + 1, 'run: plain scalar contains ": " (invalid YAML): use a block scalar (run: |) or quote it');
     const u = l.match(/^\s*-?\s*uses:\s*([^\s#]+)/);
     if (u && !u[1].startsWith('./') && !/@[0-9a-f]{40}$/.test(u[1])) bad(i + 1, `action not pinned to a 40-hex SHA: ${u[1]}`);
     if (/^\s+cache:\s*\S/.test(l) && !/vars\.EBDA_RUNS_ON/.test(l) && /setup-node/.test(lines.slice(Math.max(0, i - 6), i).join('\n'))) {
