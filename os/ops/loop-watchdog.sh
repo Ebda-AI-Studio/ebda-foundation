@@ -76,7 +76,7 @@ while :; do
   SIG="$(printf '%s\n' "${WHY[@]:-}" | awk 'NF {print $1,$2}' | sort -u | tr '\n' '|')"
   if [ ${#WHY[@]} -gt 0 ] && [ "$SIG" != "$(cat "$ACK" 2>/dev/null)" ]; then
     printf 'WATCHDOG %s (ack with: echo "%s" > %s)\n' "$(date -u +%H:%MZ)" "$SIG" "$ACK"
-    printf ' - %s\n' "${WHY[@]}"
+    printf ' - %s\n' ${WHY[@]+"${WHY[@]}"}
     exit 0
   fi
   [ ${#WHY[@]} -eq 0 ] && rm -f "$ACK"
