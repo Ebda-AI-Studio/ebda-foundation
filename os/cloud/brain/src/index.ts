@@ -12,6 +12,8 @@
 //   GET  /hands/runs/:id  POST /hands/jobs/:id/outcome  POST /hands/usage  POST /hands/claim  POST /hands/refused   (Bearer HANDS_TOKEN)
 //   POST /telegram/webhook  inline-button answers FORWARDED BY THE tg-relay SESSION (it polls @EbdaAIStudiobot; the brain is send-only and
 //                           never registers this URL with Telegram). Auth: X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
+//   POST|GET /api/decisions  one-tap approval questions (Bearer INGEST_TOKEN): POST {id,question,why,default,cost_if_wrong,kind,link?}[] <= 10 ->
+//                         one Telegram message each; GET ?status=answered|pending reads the answers. Taps arrive via /telegram/webhook (src/decisions.ts).
 //   /social/*             social posting: drafts/edits/calendar (INGEST_TOKEN), decide/brands (SOCIAL_DECIDE_TOKEN), /social/d/:id signed
 //                         decision page (src/social/routes.ts)
 //   GET  /health
@@ -28,6 +30,7 @@ import { runTokenValid } from './runtoken';
 import { checkBearerAuth, mapEvent, mapRunDetail, signEvent, timingSafeEqualStr, verifyGitHubSig, type RelayEvent } from './relay';
 import { cronName } from './schedule';
 import { validateAlert, type PlatformAlert } from './alerts';
+import { answerDecision, listDecisions, noteDecision, postDecisions, MAX_PER_CALL, validateDraft } from './decisions';
 import { handleSocial } from './social/routes';
 import { validateUsage } from './usage';
 import { watchAdvisories } from './watchers/advisories';
@@ -143,6 +146,12 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
     return new Response('bad json', { status: 400 });
   }
   const cb = update?.callback_query;
+  // decisions: a free-text reply to a decision message (from the owner, in the configured chat) is stored as that decision's note
+  const msg = update?.message;
+  if (!cb && msg?.reply_to_message?.message_id && typeof msg.text === 'string') {
+    if (String(msg.chat?.id ?? '') === String(env.TELEGRAM_CHAT_ID ?? '') && String(msg.from?.id ?? '') === String(env.TELEGRAM_OWNER_ID || env.TELEGRAM_CHAT_ID || '')) await noteDecision(env, Number(msg.reply_to_message.message_id), msg.text);
+    return new Response(null, { status: 200 });
+  }
   // only button answers from the configured chat are accepted; everything else is acknowledged and ignored
   if (!cb || String(cb?.message?.chat?.id ?? '') !== String(env.TELEGRAM_CHAT_ID ?? '')) return new Response(null, { status: 200 });
   // M-2: in a group chat any member could press a button; the presser must be the owner (TELEGRAM_OWNER_ID, default the chat id,
@@ -150,8 +159,11 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
   if (String(cb?.from?.id ?? '') !== String(env.TELEGRAM_OWNER_ID || env.TELEGRAM_CHAT_ID || '')) return new Response(null, { status: 200 });
   const m = String(cb.data ?? '').match(/^q:([\w-]+):([\w-]+)$/);
   const sm = String(cb.data ?? '').match(/^s:([\w-]+):([aek])$/);
+  const dm = String(cb.data ?? '').match(/^d:([\w-]+):([ynlk])$/);
   let text = 'not understood';
-  if (sm) {
+  if (dm) {
+    text = (await answerDecision(env, dm[1]!, dm[2]!, cb.from)).text;
+  } else if (sm) {
     const decision = sm[2] === 'a' ? 'approve' : sm[2] === 'e' ? 'edit' : 'skip';
     const r = await brainStub(env).socialDecide(sm[1]!, decision, 'telegram-button');
     text = r.ok ? `recorded: ${r.status}` : r.reason ?? 'refused';
@@ -350,6 +362,28 @@ export default {
         if (!rec) return json(out);
         const resolved = await brainStub(env).reconcileSource(rec.source, (list as Finding[]).map((f) => f.key), rec.keep ?? []);
         return json({ ...out, resolved });
+      }
+      if (path === '/api/decisions' && (request.method === 'POST' || request.method === 'GET')) {
+        if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });
+        if (request.method === 'GET') {
+          const st = url.searchParams.get('status');
+          if (st !== null && st !== 'answered' && st !== 'pending') return json({ error: 'status must be answered or pending' }, 400);
+          return json({ decisions: await listDecisions(env, st) });
+        }
+        let body: unknown;
+        try {
+          body = await readJson(request);
+        } catch {
+          return json({ error: 'bad json' }, 400);
+        }
+        const list = Array.isArray(body) ? body : [body];
+        if (list.length > MAX_PER_CALL) return json({ error: `at most ${MAX_PER_CALL} decisions per request` }, 400);
+        for (const d of list) {
+          const err = validateDraft(d);
+          if (err) return json({ error: err }, 400);
+        }
+        if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return json({ error: 'telegram not configured' }, 503);
+        return json(await postDecisions(env, list as Array<Record<string, any>>));
       }
       if (path === '/alerts' && request.method === 'POST') {
         // AIOS-8: the platform's Telegram alerts, mirrored (one alert or an array <= 20)
