@@ -7,44 +7,62 @@ import { join } from 'node:path';
 // @ts-expect-error plain .mjs without types
 import { isRisky, riskyPaths } from '../ci/ai-review/risky-paths.mjs';
 
-describe('risky-paths (fail closed: only docs/markdown/tests are exempt)', () => {
-  it('exempts markdown, docs/, and test files', () => {
-    for (const p of ['README.md', 'apps/web/CHANGELOG.mdx', 'docs/plans/x.md', 'docs/img/a.png', 'apps/api/src/refunds/refund.test.ts', 'apps/api/test/helpers.ts', 'packages/x/__tests__/a.ts', 'e2e/checkout.spec.ts']) {
-      expect(isRisky(p), p).toBe(false);
+describe('risky-paths (fail closed: only docs, markdown and NEWLY ADDED tests are exempt)', () => {
+  it('exempts markdown and docs/ whatever the status', () => {
+    for (const p of ['README.md', 'apps/web/CHANGELOG.mdx', 'docs/plans/x.md', 'docs/img/a.png']) for (const st of ['A', 'M', 'D']) expect(isRisky(p, st), `${st} ${p}`).toBe(false);
+  });
+  it('exempts a newly ADDED test file', () => {
+    for (const p of ['apps/api/src/refunds/refund.test.ts', 'apps/api/test/helpers.ts', 'packages/x/__tests__/a.ts', 'e2e/checkout.spec.ts']) expect(isRisky(p, 'A'), p).toBe(false);
+  });
+  it('a MODIFIED or DELETED existing test is risky: several safety guards are test files', () => {
+    for (const p of ['tests/unit/across-stores-isolation.test.ts', 'tests/unit/no-rls-bypass-in-runtime.test.ts', 'tests/unit/no-raw-pii-in-logs.test.ts', 'tests/unit/ai-writers-guard.test.ts']) {
+      expect(isRisky(p, 'M'), `M ${p}`).toBe(true);
+      expect(isRisky(p, 'D'), `D ${p}`).toBe(true);
+      expect(isRisky(p), `unknown status ${p}`).toBe(true);
     }
   });
   it('requires review for the data paths the first (word-list) classifier missed', () => {
     for (const p of ['packages/database/src/index.ts', 'packages/database/prisma/schema.prisma', 'apps/api/src/routes/order.routes.ts', 'apps/api/src/services/order.service.ts', 'apps/api/src/services/cross-store.service.ts', 'packages/database/migrations/002_rls.sql']) {
-      expect(isRisky(p), p).toBe(true);
+      expect(isRisky(p, 'A'), p).toBe(true);
     }
   });
-  it('requires review for the gate itself, CI, scripts and configs, so the gate cannot be edited to pass', () => {
-    for (const p of ['.github/ai-review/review.mjs', '.github/ai-review/prompt.md', '.github/ai-review/risky-paths.mjs', '.github/workflows/ai-review.yml', '.github/workflows/ci.yml', 'scripts/ci/merge-gate.sh', 'package.json', 'eslint.slop.mjs', 'vitest.config.ts']) {
-      expect(isRisky(p), p).toBe(true);
-    }
+  it('requires review for the gate itself, CI, scripts and configs, even when added', () => {
+    for (const p of ['.github/ai-review/review.mjs', '.github/ai-review/prompt.md', '.github/workflows/ci.yml', 'scripts/ci/merge-gate.sh', 'package.json', 'eslint.slop.mjs', 'vitest.config.ts']) expect(isRisky(p, 'A'), p).toBe(true);
   });
   it('does not let a docs/ or test-looking name smuggle code through', () => {
-    for (const p of ['docs/build.mjs', 'docs/../apps/api/src/x.ts', 'apps/api/src/contest.ts', 'apps/api/src/test-utils.ts', 'apps/api/src/readme.md.ts']) expect(isRisky(p), p).toBe(true);
+    for (const p of ['docs/build.mjs', 'docs/../apps/api/src/x.ts', 'apps/api/src/contest.ts', 'apps/api/src/test-utils.ts', 'apps/api/src/readme.md.ts']) expect(isRisky(p, 'A'), p).toBe(true);
   });
-  it('an all-safe diff yields no paths; one risky file among safe ones is reported alone; blanks are ignored', () => {
-    expect(riskyPaths(['README.md', '', 'a.test.ts'])).toEqual([]);
-    expect(riskyPaths(['README.md', 'apps/api/src/x.ts', '  '])).toEqual(['apps/api/src/x.ts']);
+  it('parses git --name-status lines; a bare path has unknown status and counts as modified', () => {
+    expect(riskyPaths(['A\tREADME.md', 'A\ta.test.ts', ''])).toEqual([]);
+    expect(riskyPaths(['A\tREADME.md', 'M\tapps/api/src/x.ts', 'M\ttests/guard.test.ts', 'A\ttests/new.test.ts', 'tests/bare.test.ts'])).toEqual(['apps/api/src/x.ts', 'tests/guard.test.ts', 'tests/bare.test.ts']);
   });
   it('CLI prints only the paths that need review', () => {
-    const out = spawnSync('node', [join(__dirname, '../ci/ai-review/risky-paths.mjs')], { input: 'README.md\napps/api/src/x.ts\n', encoding: 'utf8' });
-    expect(out.stdout).toBe('apps/api/src/x.ts\n');
+    const out = spawnSync('node', [join(__dirname, '../ci/ai-review/risky-paths.mjs')], { input: 'A\tREADME.md\nM\ttests/guard.test.ts\nA\ttests/new.test.ts\n', encoding: 'utf8' });
+    expect(out.stdout).toBe('tests/guard.test.ts\n');
   });
 });
 
 describe('ai-review.yml keeps the gate out of the PR author\'s hands', () => {
   const wf = readFileSync(join(__dirname, '../.github/workflows/ai-review.yml'), 'utf8');
-  it('checks out the BASE branch (scripts and prompt), never the PR head, in both jobs', () => {
+  it('checks out the BASE branch (scripts and prompt), never the PR head, in both checkout jobs', () => {
     expect((wf.match(/ref: \$\{\{ github\.event\.pull_request\.base\.ref \}\}/g) ?? []).length).toBe(2);
     expect(wf).not.toMatch(/ref: \$\{\{ github\.event\.pull_request\.head/);
   });
   it('fails closed on an oversized diff instead of reviewing part of it', () => {
     expect(wf).toMatch(/-ge 400000/);
     expect(wf).not.toMatch(/head -c/);
+  });
+  it('classifies with name-status so a modified test is not mistaken for a new one', () => {
+    expect(wf).toMatch(/git diff --name-status --no-renames/);
+  });
+  it('has a fork-gate that is red until a maintainer labels, never skips forks, and never reads the secret', () => {
+    const fork = wf.slice(wf.indexOf('  fork-gate:'));
+    expect(fork).toMatch(/head\.repo\.full_name != github\.repository/);
+    expect(fork).toMatch(/exit 1/);
+    expect(fork).not.toMatch(/CLAUDE_CODE_OAUTH_TOKEN/);
+  });
+  it('re-runs on the labeled event so a manual label turns the check green', () => {
+    expect(wf).toMatch(/github\.event\.action == 'labeled' && github\.event\.label\.name == 'ai-review-passed'/);
   });
 });
 
