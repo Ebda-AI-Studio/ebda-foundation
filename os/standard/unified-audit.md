@@ -67,3 +67,5 @@ A finding is not "fix line X." It is "fix line X **and** every layer/feature/pag
 **Source of truth:** this file + the linked `standard/*` rubrics + the linked `~/.claude/.../memory/*` lessons. Every run that discovers a new bug-class or lens APPENDS it here + to memory (the loop's step 10) so the next audit is stronger. This is how the Foundation makes every current + future project better every run.
 
 Original incident narrative: [standards incidents](../../docs/history/standards/incidents.md).
+
+The loop (`loop/LOOP.md`, skill `ebda-loop`) is the operating procedure that runs these audits on cadence (code audit when none ran in 7 days or after big merges) and feeds findings back as `review-finding` issues.
