@@ -17,7 +17,7 @@
 // A missing REQUIRED secret never makes the run green: whatever can still run runs (probes first), the gap is written to the job summary
 // and the process exits 1, so the workflow goes red and GitHub's failed-run mail is the fallback channel.
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
-import { evaluateLogAlerts, evaluateProbeAlerts, decide, digestText, DEFAULT_RULES, LOG_ALERT_PREFIXES, brainListing, brainKind } from './lib/ebda-logs-core.mjs';
+import { evaluateLogAlerts, evaluateProbeAlerts, decide, digestText, DEFAULT_RULES, LOG_ALERT_PREFIXES, brainListing, brainKind, messageScope } from './lib/ebda-logs-core.mjs';
 import { listKeys, fetchRecords } from './lib/ebda-logs-r2.mjs';
 
 const argv = process.argv.slice(2);
@@ -73,6 +73,14 @@ async function brainFindings(body) {
     say(`brain: POST /findings failed (${e.message}); Telegram is the primary path, the brain may itself be down`);
     gaps.push('brain: unreachable: the AI OS did not receive this run\'s state');
   }
+}
+
+async function brainHealthy() {
+  if (!env.EBDA_OS_BRAIN_URL || dry) return false;
+  try {
+    const r = await fetch(`${env.EBDA_OS_BRAIN_URL.replace(/\/$/, '')}/health`, { signal: AbortSignal.timeout(5000) });
+    return r.ok && (await r.json().catch(() => ({}))).ok === true;
+  } catch { return false; }
 }
 
 async function probe(p) {
@@ -168,7 +176,11 @@ if (mode === 'drill') {
   for (const a of alerts) say(`alert ${a.severity} ${a.key}: ${a.title}${a.detail ? ` | ${a.detail}` : ''}`);
   if (!alerts.length) say('no alert conditions');
 
-  const d = decide(alerts, state, now, { unknownPrefixes: logsRead ? [] : LOG_ALERT_PREFIXES });
+  // AIOS-7: while the brain answers, its cron owns the probe alerts; this run messages them only when the brain is down
+  const brainUp = await brainHealthy();
+  const scope = messageScope(alerts, { brainUp, logsRead });
+  say(`brain: ${brainUp ? 'up, it messages the probe alerts' : 'NOT answering: this run messages the probe alerts too'}`);
+  const d = decide(scope.alerts, state, now, { unknownPrefixes: scope.unknownPrefixes });
   Object.assign(state, d.state);
   for (const m of d.messages) {
     const r = await telegram(`${m}\n${runUrl}`);

@@ -21,8 +21,10 @@ import type { AdvisoryRunSummary } from './watchers/advisories';
 
 /** HANDS-COORD: the longest a controller lease may run before it must be renewed. */
 export const LEASE_MAX_MIN = 240;
-/** prod-watch runs every 10 min; 60 min of silence = six missed runs */
-export const PROD_WATCH_SILENT_MS = 60 * 60_000;
+/** the brain's prod-watch runs every 10 min; 30 min without a completed run = three missed runs (ruling AIOS-7) */
+export const PROD_WATCH_SILENT_MS = 30 * 60_000;
+/** the GitHub-hosted secondary run: best-effort cron, so only a full day of silence is noted (digest) */
+export const PROD_WATCH_GH_STALE_MS = 24 * 3_600_000;
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
 export const NIGHTLY_MAX_JOBS = 25;
@@ -98,7 +100,7 @@ export interface BrainState {
   /** HANDS-COORD controller leases that are live now */
   leases: Row[];
   /** last time each external monitor reported (epoch ms, null = never) */
-  sources: { prodWatchSeenAt: number | null };
+  sources: { prodWatchSeenAt: number | null; prodWatchCfSeenAt: number | null };
   findings: { open: number; recent: FindingRow[] };
   jobs: { queuedUrgent: number; queuedNightly: number; awaitingAnswer: number; running: number };
   runs: RunRow[];
@@ -402,22 +404,32 @@ export class BrainDO extends DurableObject<Env> {
    * it reports again). Measured 2026-11-11: GitHub ran its every-10-min schedule once in ~10 hours, and nothing noticed.
    */
   async checkProdWatchAlive(now: number): Promise<void> {
-    const seen = this.getMeta<number>('source:seen:prod-watch');
-    if (!seen) return; // never wired: nothing to miss yet
-    const f = { source: 'self-check', kind: 'monitor-silent', key: 'prod-watch' };
-    if (now - seen > PROD_WATCH_SILENT_MS) {
-      const mins = Math.round((now - seen) / 60_000);
-      await this.ingestMany([{ ...f, title: `prod-watch has not reported for ${mins} min: production is not being watched from outside Cloudflare`, severity: 'P1' }], now);
-    } else {
-      await this.resolveFinding(f, 'prod-watch reporting again', now);
+    // primary: the brain's own prod-watch run (ruling AIOS-7). The tick that runs this also runs it, so a stale stamp means the
+    // probe step itself keeps failing: one P1.
+    const cf = this.getMeta<number>('source:seen:prod-watch-cf');
+    const p = { source: 'self-check', kind: 'monitor-silent', key: 'prod-watch-cf' };
+    if (cf && now - cf > PROD_WATCH_SILENT_MS) {
+      await this.ingestMany([{ ...p, title: `prod-watch on the brain cron has not completed for ${Math.round((now - cf) / 60_000)} min: production probes are not running`, severity: 'P1' }], now);
+    } else if (cf) {
+      await this.resolveFinding(p, 'prod-watch on the brain cron completed again', now);
+    }
+    // secondary: the GitHub-hosted run, the only watcher outside Cloudflare. GitHub's cron is best-effort, so a day of silence is
+    // a digest note, not a page.
+    const gh = this.getMeta<number>('source:seen:prod-watch');
+    const g = { source: 'self-check', kind: 'monitor-stale', key: 'prod-watch-github' };
+    if (gh && now - gh > PROD_WATCH_GH_STALE_MS) {
+      await this.ingestMany([{ ...g, title: `the GitHub-hosted prod-watch (outside Cloudflare) has not reported for ${Math.round((now - gh) / 3_600_000)} h`, severity: 'P3' }], now);
+    } else if (gh) {
+      await this.resolveFinding(g, 'GitHub-hosted prod-watch reporting again', now);
     }
   }
+
 
   /**
    * Resolve every open finding of `source` (any kind) whose key is not in `openKeys`, except keys starting with one of
    * `keepPrefixes` (the monitor could not evaluate them this run, so their state is unknown, not clear). Records the heartbeat.
    */
-  async reconcileSource(source: string, openKeys: string[], keepPrefixes: string[], now: number = Date.now()): Promise<number> {
+  async reconcileSource(source: string, openKeys: string[], keepPrefixes: string[], now: number = Date.now(), seenAs: string = source): Promise<number> {
     const open = new Set(openKeys);
     let n = 0;
     for (const r of this.rows(`SELECT kind, key FROM findings WHERE source = ? AND status != 'resolved'`, source)) {
@@ -425,7 +437,7 @@ export class BrainDO extends DurableObject<Env> {
       if (open.has(key) || keepPrefixes.some((p) => key.startsWith(p))) continue;
       if (await this.resolveFinding({ source, kind: String(r.kind), key }, 'cleared at the source', now)) n++;
     }
-    this.setMeta(`source:seen:${source}`, now);
+    this.setMeta(`source:seen:${seenAs}`, now);
     return n;
   }
 
@@ -1192,7 +1204,7 @@ export class BrainDO extends DurableObject<Env> {
     return {
       generatedAt: now,
       leases: this.rows(`SELECT repo, holder, note, expires_at FROM leases WHERE expires_at > ? ORDER BY repo`, now),
-      sources: { prodWatchSeenAt: this.getMeta<number>('source:seen:prod-watch') },
+      sources: { prodWatchSeenAt: this.getMeta<number>('source:seen:prod-watch'), prodWatchCfSeenAt: this.getMeta<number>('source:seen:prod-watch-cf') },
       findings: {
         open: count(`SELECT COUNT(*) AS n FROM findings WHERE status NOT IN ('done','failed','held','resolved')`),
         recent: this.rows(`SELECT fp, source, kind, title, repo, url, lane, reason, status, raised_at, acted_at, seen_count FROM findings ORDER BY last_seen DESC LIMIT 50`) as unknown as FindingRow[],

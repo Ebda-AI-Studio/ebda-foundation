@@ -3,7 +3,7 @@
 import assert from 'node:assert';
 import {
   parseKeyWindow, keysInWindow, dayPrefixes, normalizePath, matches, aggregate, callers,
-  evaluateLogAlerts, evaluateProbeAlerts, decide, digestText, DEFAULT_RULES, LOG_ALERT_PREFIXES, brainListing, brainKind,
+  evaluateLogAlerts, evaluateProbeAlerts, decide, digestText, DEFAULT_RULES, LOG_ALERT_PREFIXES, brainListing, brainKind, messageScope,
 } from '../lib/ebda-logs-core.mjs';
 
 const T0 = Date.UTC(2026, 10, 10, 12, 0, 0);
@@ -136,5 +136,14 @@ assert.deepEqual(bl.findings[0], { source: 'prod-watch', kind: 'prod-outage', ke
 bl = brainListing([], { logsRead: false });
 assert.deepEqual(bl.findings, []);
 assert.deepEqual(bl.reconcile.keep, LOG_ALERT_PREFIXES, 'logs unread: log findings are kept, not resolved (must not fire)');
+
+// AIOS-7: brain up -> this run does not message probe alerts (and keeps them unknown); brain down -> it messages them
+const both = [{ key: 'probe:api', severity: 'P1', title: 'api down' }, { key: 'storefront-5xx', severity: 'P1', title: '5xx' }];
+let sc = messageScope(both, { brainUp: true, logsRead: true });
+assert.deepEqual(sc.alerts.map((a) => a.key), ['storefront-5xx'], 'brain up: probe alerts are the brain\'s (must not fire here)');
+assert.deepEqual(sc.unknownPrefixes, ['probe:']);
+sc = messageScope(both, { brainUp: false, logsRead: false });
+assert.deepEqual(sc.alerts.map((a) => a.key), ['probe:api', 'storefront-5xx'], 'brain down: this run messages the probes (must fire)');
+assert.deepEqual(sc.unknownPrefixes, LOG_ALERT_PREFIXES);
 
 console.log('ebda-logs: PASS');

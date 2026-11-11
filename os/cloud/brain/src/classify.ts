@@ -16,7 +16,7 @@ import type { Classification, Finding } from './findings';
 export const URGENT_CVSS = 9.0;
 
 /** Config / access self-reports of any source (watchers, dream-scan, heal-watch): ops problems, digest only. */
-const DIGEST_KINDS = new Set(['monitor-unconfigured', 'watcher-error', 'alert-drill', 'scan-target-missing', 'dream-scan-failed', 'dr-drill-stale', 'pr-needs-you', 'usage-starved', 'budget-warn', 'cf-usage-warn', 'cost-warn', 'footprint-unknown']);
+const DIGEST_KINDS = new Set(['monitor-stale', 'monitor-unconfigured', 'watcher-error', 'alert-drill', 'scan-target-missing', 'dream-scan-failed', 'dr-drill-stale', 'pr-needs-you', 'usage-starved', 'budget-warn', 'cf-usage-warn', 'cost-warn', 'footprint-unknown']);
 /** Ruling F-I6: a restore drill with no PASS for 14+ days is a P1 decision for Ahmad (run it on the Mac), never a hands job. */
 const ALERT_KINDS = new Set(['monitor-silent', 'dr-drill-overdue', 'cost-stop', 'cf-usage-stop', 'budget-stop']);
 /** F-01: a finding of one of these kinds halts the hands (one flag, checked before every container start). */

@@ -47,6 +47,8 @@ export interface Env {
   WORLD_STATUS_URLS?: string;
   WORLD_NPM_DEPS?: string;
   HEALTH_FAIL_BUDGET: string;
+  /** ruling AIOS-7: '1' = the primary prod-watch probes run on the brain tick every 10 min ('0' = only the GitHub run) */
+  PROD_WATCH_ON_BRAIN?: string;
   MESSAGE_BUDGET_PER_DAY: string;
   URGENT_MESSAGE_BUDGET_PER_DAY?: string;
   URGENT_RUNS_PER_DAY: string;

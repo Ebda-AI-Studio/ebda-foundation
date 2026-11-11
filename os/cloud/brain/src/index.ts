@@ -31,6 +31,7 @@ import { validateUsage } from './usage';
 import { watchAdvisories } from './watchers/advisories';
 import { checkAll, parseTargets } from './watchers/health';
 import { runWatchers } from './watchers/run';
+import { runProdWatch } from './prod-watch';
 
 export { BrainDO } from './brain-do';
 export { HandsContainer } from './hands-container';
@@ -382,6 +383,8 @@ export default {
         await brain.processCiEvents(now);
         const targets = parseTargets(env.HEALTH_TARGETS);
         if (targets.length) await brain.observeHealth(await checkAll(targets), now);
+        // primary production probes (ruling AIOS-7): every other tick; a failure never blocks the OS tick
+        await runProdWatch(env, brain, now).catch((e: Error) => console.error('prod-watch', e.message));
         await brain.tick(now);
         // social: previews a day ahead, the approval gate, publishing at the slot (a social failure never blocks the OS tick)
         await brain.socialTick(now).catch((e: Error) => console.error('social tick', e.message));

@@ -88,22 +88,40 @@ describe('prod-watch listing reconcile', () => {
   });
 });
 
-describe('prod-watch dead-man switch', () => {
-  it('silent > 60 min after it has reported once raises one monitor-silent alert; a new report resolves it', async () => {
+describe('prod-watch dead-man switch (AIOS-7: brain cron primary, GitHub secondary)', () => {
+  it('GitHub-hosted run silent > 24 h: one digest note (never a page); a new report resolves it', async () => {
     const brain = brainStub(env);
     const t0 = Date.now();
     await req('/findings', 'POST', { findings: [], reconcile: { source: 'prod-watch' } });
-    await brain.checkProdWatchAlive(t0 + 30 * 60_000);
+    await brain.checkProdWatchAlive(t0 + 23 * 3_600_000);
     let s = await brain.state();
-    expect(s.findings.recent.some((f) => f.kind === 'monitor-silent' && f.status !== 'resolved')).toBe(false); // must not fire at 30 min
-    await brain.checkProdWatchAlive(t0 + 61 * 60_000);
+    expect(s.findings.recent.some((f) => f.kind === 'monitor-stale' && f.status !== 'resolved')).toBe(false); // must not fire at 23 h
+    await brain.checkProdWatchAlive(t0 + 25 * 3_600_000);
     s = await brain.state();
-    const row = s.findings.recent.find((f) => f.kind === 'monitor-silent');
-    expect(row?.lane).toBe('digest'); // ALERT_KINDS: one P1 message, never a hands job
-    expect(row?.status).not.toBe('resolved'); // must fire at 61 min
+    const row = s.findings.recent.find((f) => f.kind === 'monitor-stale');
+    expect(row?.lane).toBe('digest'); // must fire, digest only
     await req('/findings', 'POST', { findings: [], reconcile: { source: 'prod-watch' } });
     await brain.checkProdWatchAlive(Date.now());
     s = await brain.state();
+    expect(s.findings.recent.find((f) => f.kind === 'monitor-stale')?.status).toBe('resolved');
+  });
+
+  it('the brain-cron run not completing for > 30 min: one monitor-silent P1 alert; completing again resolves it', async () => {
+    const brain = brainStub(env);
+    const t0 = Date.now();
+    await brain.reconcileSource('prod-watch', [], [], t0, 'prod-watch-cf');
+    await brain.checkProdWatchAlive(t0 + 20 * 60_000);
+    let s = await brain.state();
+    expect(s.findings.recent.some((f) => f.kind === 'monitor-silent' && f.status !== 'resolved')).toBe(false); // must not fire at 20 min
+    await brain.checkProdWatchAlive(t0 + 31 * 60_000);
+    s = await brain.state();
+    const row = s.findings.recent.find((f) => f.kind === 'monitor-silent');
+    expect(row?.lane).toBe('digest'); // ALERT_KINDS: digest lane + one P1 message, never a hands job
+    expect(row?.status).not.toBe('resolved');
+    await brain.reconcileSource('prod-watch', [], [], Date.now(), 'prod-watch-cf');
+    await brain.checkProdWatchAlive(Date.now());
+    s = await brain.state();
     expect(s.findings.recent.find((f) => f.kind === 'monitor-silent')?.status).toBe('resolved');
+    expect(typeof s.sources.prodWatchCfSeenAt).toBe('number');
   });
 });
