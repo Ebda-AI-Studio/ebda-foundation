@@ -276,7 +276,12 @@ export class BrainDO extends DurableObject<Env> {
     if (c.lane === 'digest') {
       // digest-only: no job, no question, no message. Counted as acted (the digest is the action) so self-check never flags it.
       this.sql.exec(`UPDATE findings SET status = 'digest', acted_at = COALESCE(acted_at, ?) WHERE fp = ?`, now, fp);
-      if (c.alert) await this.emit({ dedupeKey: `p1:${fp}:alert:${evidence}`, kind: 'p1-unhealed', text: `Ebda OS: ${f.title}\n${c.reason}.` }, now);
+      if (c.alert) {
+        await this.emit({ dedupeKey: `p1:${fp}:alert:${evidence}`, kind: 'p1-unhealed', text: `Ebda OS: ${f.title}\n${c.reason}.` }, now);
+        // LOOP-WATCH-2: an overdue control must also wake the controller, whose alert-wait.sh reads only GET /api/alerts (AIOS-8).
+        // Telegram alone reaches Ahmad, not the session that has to act; asFinding=false because this row already IS the finding.
+        await this.recordAlert({ source: `brain/${f.kind}`, level: 'p1', title: f.title, text: `Ebda OS: ${f.title}\n${c.reason}.`, ...(f.url ? { url: f.url } : {}), ...(f.repo ? { repo: f.repo } : {}) }, now, false);
+      }
       if (unmappedUrgent) await this.emit({ dedupeKey: `p1:${fp}:unmapped:${evidence}`, kind: 'p1-unhealed', text: `Ebda OS: could not self-heal: ${f.title}\n${c.reason}.` }, now);
       return { fp, deduped: false, reopened: !!existing, lane: 'digest', reason: c.reason, jobId: null };
     }

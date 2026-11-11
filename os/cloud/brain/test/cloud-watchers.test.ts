@@ -318,6 +318,23 @@ describe('loop-stall (ruling LOOP-WATCH-1): the session-independent backstop', (
     const never = harness(base, [runs(run(1, 'success', 5)), open(['ai-review-passed']), closed(null)]);
     expect(await watchLoopStall(never.ctx)).toMatchObject({ stalled: 0 });
   });
+  it('2026-11-11 incident: main red ~3 h among other workflows, 17 approved PRs, last merge 3 h ago -> BOTH alerts fire', async () => {
+    // the real list: CI runs interleaved with gitleaks / deploy / backup runs on the same branch (5 CI of the first 20 that day)
+    const other = (id: number, min: number) => ({ id, name: 'gitleaks', conclusion: 'success', updated_at: ago(min), html_url: `https://github.com/${R}/actions/runs/${id}` });
+    const list = [run(105, 'failure', 155), other(204, 175), other(203, 176), run(104, 'failure', 158), other(202, 180), run(103, 'failure', 163), run(102, 'failure', 166), run(101, 'failure', 167)];
+    for (let i = 0; i < 30; i++) list.push(other(300 + i, 190 + i));
+    list.push(run(100, 'success', 240));
+    let runsUrl = '';
+    const labelled = Array.from({ length: 17 }, () => ['ai-review-passed']);
+    const h = harness(base, [['/actions/runs', (u: string) => { runsUrl = u; return json({ workflow_runs: list }); }], open(...labelled, ['hold', 'ai-review-passed']), closed(185)]);
+    expect(await watchLoopStall(h.ctx)).toEqual({ repos: 1, red: 1, stalled: 1 });
+    expect(runsUrl).toContain('per_page=100');
+    expect(h.ingested).toMatchObject([
+      { kind: 'loop-main-red', key: `loop-stall:${R}:red-101`, severity: 'P1', detail: { sinceRun: 101 } },
+      { kind: 'loop-merge-stall', severity: 'P1', detail: { approved: 17, minutes: 185 } },
+    ]);
+    for (const f of h.ingested) expect(classifyFinding(f)).toMatchObject({ lane: 'digest', alert: true });
+  });
   it('a GitHub failure is a watcher-error and resolves nothing', async () => {
     const h = harness(base, [['/actions/runs', () => new Response('no', { status: 500 })]]);
     await watchLoopStall(h.ctx);
