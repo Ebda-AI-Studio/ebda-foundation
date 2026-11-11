@@ -102,60 +102,39 @@ export function questionMessage(q: QuestionView): Outgoing {
 
 export interface DigestInput {
   day: string;
-  outcomes: Array<{ title: string; status: string; prUrl?: string | null }>;
-  raised24h: number;
-  acted24h: number;
-  ratio7d: number | null;
-  pendingQuestions: Array<{ id: string; text: string; defaultOption: string }>;
-  rolledUp: Array<{ text: string; failed: boolean }>;
-  osBugs: number;
-  usageNote: string | null;
-  /** F-01: why the hands are halted (a halt leads the digest) */
+  /** jobs the hands finished in the last 24 h (fixed: merged or pr-opened) */
+  fixed: number;
+  /** findings not yet closed (any lane) */
+  open: number;
+  /** findings closed in the last 24 h because they were no longer reported or were fixed */
+  resolved: number;
+  /** why the hands are halted (a halt leads the digest) */
   halted?: string | null;
-  /** F-05: one footprint line (Cloudflare usage, last 24 h), or 'unknown' text when the read failed */
-  footprint?: string | null;
-  /** budget line: month-to-date spend vs the budget */
-  budget?: string | null;
-  /** digest-lane findings not shown before: monitors that are unconfigured or cannot read their source */
-  monitorNotes?: string[];
-  /** digest-lane findings beyond the ones rendered; they stay unshown and lead the next digest */
-  monitorMore?: number;
-  /** jobs put back in the queue in the last 24 h because their run died without reporting (I-1) */
-  requeued?: number;
+  /** things only Ahmad can decide, then things still broken; already ordered, one short line each */
+  needs: string[];
+  /** watchers that are not set up (names only; the dashboard has the detail) */
+  notSetUp: string[];
+  /** the social block (at most 3 lines) or null */
+  social?: string | null;
+  dashUrl: string;
 }
 
-/** Most monitor notes one digest renders; the brain marks exactly this many shown, never more. */
-export const MONITOR_NOTES_PER_DIGEST = 10;
+/** The digest is a glance, not a log: at most DIGEST_MAX_LINES lines and DIGEST_MAX_CHARS characters (test/policy.test.ts pins both). */
+export const DIGEST_MAX_LINES = 12;
+export const DIGEST_MAX_CHARS = 1400;
+export const DIGEST_TOP_ITEMS = 5;
+const oneLine = (t: string, n = 110) => {
+  const one = t.replace(/\s+/g, ' ').trim();
+  return one.length > n ? `${one.slice(0, n - 1)}…` : one;
+};
 
 export function digestMessage(d: DigestInput): Outgoing {
-  const lines: string[] = [`Ebda OS daily digest ${d.day}`];
-  if (d.halted) lines.push(`HANDS HALTED: ${d.halted}`);
-  if (d.budget) lines.push(d.budget);
-  if (d.footprint) lines.push(d.footprint);
-  if (d.outcomes.length) {
-    lines.push('', 'Done:');
-    for (const o of d.outcomes.slice(0, 20)) lines.push(`- ${o.status}: ${o.title}${o.prUrl ? ` ${o.prUrl}` : ''}`);
-    if (d.outcomes.length > 20) lines.push(`- and ${d.outcomes.length - 20} more (dashboard)`);
-  } else {
-    lines.push('', 'Done: nothing shipped in the last 24 h.');
-  }
-  const r24 = d.raised24h ? `${d.acted24h}/${d.raised24h}` : 'no findings';
-  lines.push('', `Acted-on: ${r24} in 24 h; 7-day ratio ${d.ratio7d === null ? 'n/a' : `${Math.round(d.ratio7d * 100)}%`}.`);
-  if (d.osBugs > 0) lines.push(`OS bug: ${d.osBugs} finding(s) left unacted for more than 24 h (see dashboard).`);
-  if (d.usageNote) lines.push(`Hands paused: ${d.usageNote}.`);
-  if (d.requeued) lines.push(`Runs that died: ${d.requeued} job(s) put back in the queue.`);
-  if (d.pendingQuestions.length) {
-    lines.push('', 'Waiting for you:');
-    for (const q of d.pendingQuestions.slice(0, 10)) lines.push(`- ${q.text} (default "${q.defaultOption}")`);
-  }
-  if (d.monitorNotes?.length) {
-    lines.push('', 'Monitors needing attention (no job opened):');
-    for (const t of d.monitorNotes.slice(0, MONITOR_NOTES_PER_DIGEST)) lines.push(`- ${t}`);
-    if (d.monitorMore) lines.push(`- +${d.monitorMore} more pending (next digest)`);
-  }
-  if (d.rolledUp.length) {
-    lines.push('', 'Rolled up (over budget or not delivered):');
-    for (const r of d.rolledUp.slice(0, 10)) lines.push(`- ${r.failed ? '[delivery failed] ' : ''}${r.text.split('\n').slice(0, 2).join(' / ')}`);
-  }
+  const lines: string[] = [`Ebda OS digest ${d.day}${d.halted ? ` | HANDS HALTED (${oneLine(d.halted, 60)})` : ''}`];
+  lines.push(`Fixed ${d.fixed} | Open ${d.open} | Needs you ${d.needs.length} | Resolved ${d.resolved}`);
+  for (const t of d.needs.slice(0, DIGEST_TOP_ITEMS)) lines.push(`! ${oneLine(t)}`);
+  if (d.notSetUp.length) lines.push(`Not set up: ${oneLine(d.notSetUp.join(', '), 100)}`);
+  if (d.social) lines.push(...d.social.split('\n').slice(0, 3).map((l) => oneLine(l, 120)));
+  const more = d.needs.length - DIGEST_TOP_ITEMS;
+  lines.push(`Full list${more > 0 ? ` (+${more} more)` : ''}: ${d.dashUrl}`);
   return { dedupeKey: `digest:${d.day}`, kind: 'digest', text: lines.join('\n') };
 }

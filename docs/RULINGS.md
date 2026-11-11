@@ -132,3 +132,7 @@ Ruling MG-5 - The three other readers of the check rollup under `os/ops/` are NO
 ## Observability (2026-11-10, docs/plans/2026-11-10-observability.md)
 
 Rulings OBS-1 (alert job on GitHub-hosted runners, off Cloudflare), OBS-2 (Telegram = P1 + one digest, 6/day, outage exempt), OBS-3 (missing secret = red run), OBS-4 (reader paced at 3 req/s): full text in the plan.
+
+## Digest size (2026-11-11)
+
+Ruling DIG-1 - The daily Telegram digest is a glance, not a log: at most 12 lines and 1400 characters (pinned by `os/cloud/brain/test/policy.test.ts` and `brain.test.ts`). It carries counts (fixed / open / needs you / resolved), only the top 5 items that need Ahmad or are still broken, ONE line naming watchers that are not set up (never listed under "Done"), a 3-line social block (the separate social message is gone), and a dashboard link for the full list. Resolved items are a count. Ahmad asked "why are the messages so long" after a 26-line "Done" of config gaps and "no longer reported". Cost if wrong: an item beyond the top 5 is only on the dashboard until it moves up.

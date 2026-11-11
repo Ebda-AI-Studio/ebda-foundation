@@ -13,7 +13,7 @@ import type { Env, Policy } from './env';
 import { intVar, numberVar, policyFrom } from './env';
 import { evidenceOf, fingerprint, type Finding, type Lane, type MergePolicy } from './findings';
 import { providerFor, type JobUsage, type HandsBatch, type HandsJob, type HandsProvider, type JobOutcome, type RunKind, type UsageReport } from './hands';
-import { admit, dayKey, digestMessage, MONITOR_NOTES_PER_DIGEST, questionMessage, sendTelegram, URGENT_KINDS, type MsgKind, type Outgoing } from './telegram';
+import { admit, dayKey, digestMessage, questionMessage, sendTelegram, URGENT_KINDS, type MsgKind, type Outgoing } from './telegram';
 import { usageGuard } from './usage';
 import { SocialEngine } from './social/engine';
 import type { Brand, Decision } from './social/types';
@@ -270,7 +270,6 @@ export class BrainDO extends DurableObject<Env> {
     if (c.lane === 'digest') {
       // digest-only: no job, no question, no message. Counted as acted (the digest is the action) so self-check never flags it.
       this.sql.exec(`UPDATE findings SET status = 'digest', acted_at = COALESCE(acted_at, ?) WHERE fp = ?`, now, fp);
-      if (existing) this.setMeta('digest:shown', (this.getMeta<string[]>('digest:shown') ?? []).filter((x) => x !== fp)); // a recurrence is news again
       if (c.alert) await this.emit({ dedupeKey: `p1:${fp}:alert:${evidence}`, kind: 'p1-unhealed', text: `Ebda OS: ${f.title}\n${c.reason}.` }, now);
       if (unmappedUrgent) await this.emit({ dedupeKey: `p1:${fp}:unmapped:${evidence}`, kind: 'p1-unhealed', text: `Ebda OS: could not self-heal: ${f.title}\n${c.reason}.` }, now);
       return { fp, deduped: false, reopened: !!existing, lane: 'digest', reason: c.reason, jobId: null };
@@ -1111,51 +1110,51 @@ export class BrainDO extends DurableObject<Env> {
 
   /** Build (never send) the daily digest: shared by the 05:00 send and the dashboard's preview. The preview writes nothing
    *  (the self-check's last result is read instead of re-run), so polling the dashboard costs no DO row writes. */
-  private buildDigest(now: number, preview = false) {
+  private buildDigest(now: number, preview = false, social: string | null = null) {
     const since = now - DAY;
-    const outcomes: Array<{ title: string; status: string; prUrl: string | null }> = this.rows(`SELECT f.title, j.outcome FROM jobs j JOIN findings f ON f.fp = j.fp WHERE j.finished_at > ? AND j.outcome IS NOT NULL ORDER BY j.finished_at`, since).map((r) => {
-      const o = JSON.parse(String(r.outcome)) as JobOutcome;
-      return { title: String(r.title), status: o.status, prUrl: o.prUrl ?? null };
-    });
-    for (const r of this.rows(`SELECT title, outcome FROM findings WHERE status = 'resolved' AND closed_at > ?`, since)) outcomes.push({ title: String(r.title), status: String(r.outcome ?? 'resolved'), prUrl: null });
-    // digest-lane findings (monitor self-reports) are listed ONCE: the fingerprints already shown are remembered
-    const shown = new Set(this.getMeta<string[]>('digest:shown') ?? []);
-    // R-4a-3 closed: the shown fingerprints are excluded in SQL, so old shown rows can never crowd out a new one
-    const shownList = [...shown];
-    const watchRows = this.rows(`SELECT fp, title FROM findings WHERE lane = 'digest' AND status = 'digest' AND fp NOT IN (SELECT value FROM json_each(?)) ORDER BY first_seen LIMIT 500`, JSON.stringify(shownList));
-    // only the notes the digest actually renders are marked shown; the rest wait for the next digest
-    const rendered = watchRows.slice(0, MONITOR_NOTES_PER_DIGEST);
-    const a24 = this.actedOn(now, DAY);
-    const a7 = this.actedOn(now, 7 * DAY);
-    const pending = this.rows(`SELECT id, text, default_opt FROM questions WHERE status = 'pending' ORDER BY created_at LIMIT 10`);
-    const rolled = this.rows(`SELECT dedupe_key, text, status FROM messages WHERE status IN ('deferred', 'undelivered') ORDER BY at`);
+    const fixed = Number(this.row(`SELECT COUNT(*) AS n FROM jobs WHERE finished_at > ? AND outcome IS NOT NULL AND json_extract(outcome, '$.status') IN ('merged', 'pr_opened', 'fix_deployed')`, since)?.n ?? 0);
+    const resolved = Number(this.row(`SELECT COUNT(*) AS n FROM findings WHERE status = 'resolved' AND closed_at > ?`, since)?.n ?? 0);
+    const open = Number(this.row(`SELECT COUNT(*) AS n FROM findings WHERE status NOT IN ('done','failed','held','resolved')`)?.n ?? 0);
+    // not set up: one name per watcher that raised monitor-unconfigured and still has it open (never counted as "done" or as a problem)
+    const notSetUp = this.rows(`SELECT key FROM findings WHERE kind = 'monitor-unconfigured' AND status != 'resolved' ORDER BY key`).map((r) => String(r.key).split(':')[0]!);
+    // needs you / still broken, in this order: questions, OS bugs, hands paused, undelivered messages, then open monitor findings
+    const needs: string[] = [];
+    for (const q of this.rows(`SELECT text, default_opt FROM questions WHERE status IN ('pending', 'sent') ORDER BY created_at LIMIT 10`)) needs.push(`Decision: ${String(q.text)} (default "${String(q.default_opt)}")`);
+    const bugs = preview ? (this.getMeta<{ fps: string[] }>('os:bugs')?.fps.length ?? 0) : this.selfCheck(now).length;
+    if (bugs > 0) needs.push(`OS bug: ${bugs} finding(s) left unacted for over 24 h`);
     const refused = this.getMeta<{ at: number; reason: string }>('usage:refused');
+    if (refused && now - refused.at < DAY) needs.push(`Hands paused: ${refused.reason}`);
+    const sp = this.spent(now);
+    const bud = this.budgets();
+    if (bud.monthly > 0 && sp.month >= 0.8 * bud.monthly) needs.push(`Hands spend: $${sp.month.toFixed(2)} of $${bud.monthly} this month`);
+    const fp = this.getMeta<Footprint>('footprint:last');
+    if (fp?.unknown) needs.push(`Cloudflare footprint unknown (${fp.note ?? 'read failed'})`);
+    const requeued = this.getMeta<{ at: number; n: number }>('sweep:requeued');
+    if (requeued && now - requeued.at < DAY && requeued.n) needs.push(`Runs that died: ${requeued.n} job(s) put back in the queue`);
+    for (const r of this.rows(`SELECT dedupe_key, text, status FROM messages WHERE status IN ('deferred', 'undelivered') ORDER BY at`)) needs.push(`${r.status === 'undelivered' ? 'Message not delivered' : 'Message held over budget'}: ${String(r.text).split('\n').slice(0, 2).join(' / ')}`);
+    for (const r of this.rows(`SELECT title FROM findings WHERE lane = 'digest' AND status = 'digest' AND kind != 'monitor-unconfigured' ORDER BY first_seen LIMIT 50`)) needs.push(String(r.title));
+    const rolled = this.rows(`SELECT dedupe_key FROM messages WHERE status IN ('deferred', 'undelivered') ORDER BY at`);
+    const pending = this.rows(`SELECT id FROM questions WHERE status = 'pending' ORDER BY created_at LIMIT 10`);
     const msg = digestMessage({
       day: dayKey(now),
-      outcomes,
-      raised24h: a24.raised,
-      acted24h: a24.acted,
-      ratio7d: a7.ratio,
-      pendingQuestions: pending.map((q) => ({ id: String(q.id), text: String(q.text), defaultOption: String(q.default_opt) })),
-      rolledUp: rolled.map((r) => ({ text: String(r.text), failed: r.status === 'undelivered' })),
-      monitorNotes: rendered.map((r) => String(r.title)),
-      monitorMore: watchRows.length - rendered.length,
-      osBugs: preview ? (this.getMeta<{ fps: string[] }>('os:bugs')?.fps.length ?? 0) : this.selfCheck(now).length,
-      usageNote: refused && now - refused.at < DAY ? refused.reason : null,
+      fixed,
+      open,
+      resolved,
       halted: this.halted(),
-      budget: (() => { const sp = this.spent(now); const b = this.budgets(); return `Hands spend: $${sp.month.toFixed(2)} of $${b.monthly} this month ($${sp.day.toFixed(2)} today of $${b.daily}).`; })(),
-      footprint: (() => { const f = this.getMeta<Footprint>('footprint:last'); if (!f) return null; if (f.unknown) return `Footprint (24 h): unknown (${f.note ?? 'read failed'}).`; return `Footprint (24 h): containers ${Math.round(f.containerMin ?? 0)} min, DO requests ${f.doRequests ?? 0}, DO rows written ${f.doRowsWritten ?? 0}, KV writes ${f.kvWrites ?? 0}${f.estUsd === undefined ? '' : `; est $${f.estUsd.toFixed(2)}/month`}.`; })(),
-      requeued: (() => { const q = this.getMeta<{ at: number; n: number }>('sweep:requeued'); return q && now - q.at < DAY ? q.n : 0; })(),
+      needs,
+      notSetUp,
+      social,
+      dashUrl: `${(this.env.HANDS_BRAIN_URL ?? '').replace(/\/$/, '')}/dash/`,
     });
-    return { msg, shown, rendered, rolled, pending };
+    return { msg, rolled, pending };
   }
 
-  /** The one daily digest: outcomes (not noticings), acted-on ratio, decisions waiting, rolled-up messages. */
+  /** The one daily digest: counts, what needs Ahmad or is still broken (top 5), the social block, a dashboard link. */
   async digest(now: number = Date.now()): Promise<string> {
-    const { msg, shown, rendered, rolled, pending } = this.buildDigest(now);
+    const social = await this.social().summary(now).catch(() => null);
+    const { msg, rolled, pending } = this.buildDigest(now, false, social);
     const r = await this.emit(msg, now);
     if (r === 'sent') {
-      if (rendered.length) this.setMeta('digest:shown', [...shown, ...rendered.map((x) => String(x.fp))].slice(-1000));
       for (const m of rolled) this.sql.exec(`UPDATE messages SET status = 'rolled' WHERE dedupe_key = ?`, m.dedupe_key);
       // questions delivered through the digest start their deadline now
       const deadline = now + this.policy.questionDeadlineHours * HOUR;

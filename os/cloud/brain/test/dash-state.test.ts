@@ -14,8 +14,8 @@ describe('dashboard state', () => {
     const s = await brain.state();
     expect(s.cfLimits).toEqual({ warnUsd: 10, stopUsd: 20 });
     expect(s.gaps).toContainEqual({ id: 'cf-usage', missing: 'CF_API_TOKEN secret and CF_ACCOUNT_ID' });
-    expect(s.digestPreview).toMatch(/^Ebda OS daily digest \d{4}-\d{2}-\d{2}/);
-    expect(s.digestPreview).toContain('Hands spend: $0.00 of $150 this month');
+    expect(s.digestPreview).toMatch(/^Ebda OS digest \d{4}-\d{2}-\d{2}/);
+    expect(s.digestPreview).toContain('Fixed 0 | Open ');
     // the preview is built, never sent, and rendering it twice gives the same text (nothing marked shown)
     expect(send.mock.calls.filter(([u]) => String(u).includes('api.telegram.org'))).toHaveLength(0);
     expect((await brain.state()).digestPreview).toBe(s.digestPreview);

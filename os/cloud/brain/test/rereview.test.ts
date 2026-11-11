@@ -104,24 +104,6 @@ describe('M-3: a replayed GREEN cannot close a newer red', () => {
   });
 });
 
-describe('M-10 / R-4a-3: more than 500 already-shown digest rows cannot hide a new monitor note', () => {
-  it('520 shown rows, then one new note: the next digest still lists it', async () => {
-    const h = await harness();
-    const note = (i: number | string): Finding => ({ source: 'watcher', kind: 'monitor-unconfigured', key: `w${i}:config:unconfigured`, title: `watcher w${i} not running` });
-    for (let i = 0; i < 520; i++) await h.run((b) => b.ingestFinding(note(i), T0 + i));
-    // pretend all 520 were already shown (500+ shown rows are what pushed a new row out of the old LIMIT 500 window)
-    await h.run((b) => {
-      const fps = (b as unknown as { sql: SqlStorage }).sql.exec(`SELECT fp FROM findings WHERE lane = 'digest'`).toArray().map((r) => String(r.fp));
-      expect(fps).toHaveLength(520);
-      b.setMetaPublic('digest:shown', fps);
-    });
-    await h.run((b) => b.ingestFinding({ ...note('NEWONE'), title: 'watcher NEWONE not running' }, T0 + HOUR));
-    await h.run((b) => b.digest(T0 + DAY));
-    expect(h.sent.at(-1)).toMatch(/NEWONE/);
-    expect(h.sent.at(-1)).not.toMatch(/watcher w0 /);
-  });
-});
-
 describe('minor: webhooks lost during a brain outage are caught up from GitHub', () => {
   const run = (id: number, name: string, conclusion: string, updated: string, attempt = 1) => ({ id, name, conclusion, run_attempt: attempt, head_sha: `sha${id}`, head_branch: 'main', html_url: `https://github.com/o/r/actions/runs/${id}`, updated_at: updated, created_at: updated });
   function ctxWith(runs: unknown[], token: string | undefined = 'ghp_test', cfg = JSON.stringify({ repos: { 'o/r': {} } })) {

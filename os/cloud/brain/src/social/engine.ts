@@ -431,6 +431,25 @@ export class SocialEngine {
     return anything ? `Social digest ${new Date(now).toISOString().slice(0, 10)}\n${lines.join('\n')}` : null;
   }
 
+  /** The social block inside the OS digest: at most 3 lines, no network reads. null = nothing to say. */
+  async summary(now: number): Promise<string | null> {
+    const counts = this.rows(`SELECT status, COUNT(*) AS n FROM social_posts WHERE scheduled_at BETWEEN ? AND ? OR updated_at > ? GROUP BY status`, now - DAY, now + 2 * DAY, now - DAY);
+    const issues: string[] = [];
+    const off = new Set<string>();
+    const modes: string[] = [];
+    for (const brand of BRANDS) {
+      const m = this.brandMode(brand, now);
+      modes.push(`${BRAND_LABEL[brand]} ${m.paused ? 'paused' : m.mode === 'approval' || m.firstApprovedAt === null ? 'approval' : 'auto'}`);
+      for (const net of NETWORKS) if (this.adapters[net].disabledReason(brand)) off.add(net);
+      const exp = (this.adapters.linkedin as LinkedInAdapter).tokenExpiry?.(brand);
+      if (exp && exp - now < 7 * DAY) issues.push(`${BRAND_LABEL[brand]} LinkedIn token expires ${cairoTime(exp)}`);
+    }
+    if (off.size) issues.unshift(`${[...off].join(', ')} not connected`);
+    if (!counts.length && !issues.length) return null;
+    const tally = counts.map((r) => `${r.n} ${String(r.status)}`).join(', ') || 'no posts';
+    return [`Social (48 h): ${tally}`, `Modes: ${modes.join('; ')}`, issues.length ? `Social issues: ${issues.join('; ')}` : 'Social issues: none'].join('\n');
+  }
+
   async digest(now: number): Promise<'sent' | 'nothing' | 'duplicate' | 'failed'> {
     const day = new Date(now).toISOString().slice(0, 10);
     if (this.meta<string>('digest:day') === day) return 'duplicate';

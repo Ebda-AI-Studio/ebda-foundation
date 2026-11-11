@@ -60,7 +60,7 @@ describe('F-01: one halt flag, checked before every container start', () => {
     expect(p.stops.map((s) => `${s.kind}:${s.halt}`).sort()).toEqual(['nightly:true', 'urgent:true']);
     expect((await h.run((b) => b.state(T0 + HOUR))).halt).toMatch(/test halt/);
     await h.run((b) => b.digest(T0 + HOUR));
-    expect(h.sent.at(-1)).toMatch(/^Ebda OS daily digest[^\n]*\nHANDS HALTED: halted: test halt/);
+    expect(h.sent.at(-1)).toMatch(/^Ebda OS digest [^\n]*HANDS HALTED \(halted: test halt/);
     await h.run((b) => b.clearHalt(T0 + 2 * HOUR));
     expect(p.resumes.sort()).toEqual(['nightly', 'urgent']);
     expect(await h.run((b) => b.runNightly(T0 + 3 * HOUR))).toMatchObject({ started: true });
@@ -389,11 +389,11 @@ describe('F-05: the footprint watcher', () => {
     expect((await h.run((b) => b.state(NOW))).halt).toMatch(/Durable Object requests/);
     expect(h.sent.filter((t) => /Durable Object requests/.test(t))).toHaveLength(1);
   });
-  it('under 50 % of every limit: no finding, and the digest shows the footprint line', async () => {
+  it('under 50 % of every limit: no finding, and the digest stays quiet about it (the dashboard has the numbers)', async () => {
     const h = await run(ok);
     expect((await h.run((b) => b.state(NOW))).halt).toBeNull();
     await h.run((b) => b.digest(NOW));
-    expect(h.sent.at(-1)).toMatch(/Footprint \(24 h\): containers 20 min, DO requests 1000, DO rows written 500, KV writes 400/);
+    expect(h.sent.at(-1)).not.toMatch(/Footprint|containers 20 min/);
   });
   it('between 50 % and 100 %: a digest warning, no halt', async () => {
     const h = await run({ ...ok, kvOperationsAdaptiveGroups: 20_000 }, { CF_KV_WRITES_DAY: '33000' });
@@ -412,8 +412,7 @@ describe('F-05: the footprint watcher', () => {
     expect(s.findings.recent.some((f) => f.kind === 'cf-usage-warn' && /estimated spend/.test(f.title))).toBe(true);
     const quiet = await run(ok, huge);
     expect((await quiet.run((b) => b.state(NOW))).halt).toBeNull();
-    await quiet.run((b) => b.digest(NOW));
-    expect(quiet.sent.at(-1)).toMatch(/; est \$0\.\d\d\/month\./);
+    expect((await quiet.run((b) => b.state(NOW))).footprint).toMatchObject({ estUsd: expect.any(Number) });
   });
   it('estimateMonthlyUsd follows the published rates above the included amounts', async () => {
     const { estimateMonthlyUsd } = await import('../src/watchers/cf-usage');
@@ -429,7 +428,7 @@ describe('F-05: the footprint watcher', () => {
     expect(s.halt).toBeNull();
     expect(s.findings.recent.some((f) => f.kind === 'watcher-error' && /containerVcpuSec/.test(f.title + f.fp))).toBeDefined();
     await h.run((b) => b.digest(NOW));
-    expect(h.sent.at(-1)).toMatch(/Footprint \(24 h\): unknown/);
+    expect(h.sent.at(-1)).toMatch(/! Cloudflare footprint unknown/);
     expect(h.sent.at(-1)).not.toMatch(/containers 0 min/);
   });
 });
