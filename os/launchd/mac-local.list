@@ -9,7 +9,6 @@ usage-sentinel	ops/launchd/com.ebda.os.usage-sentinel.plist
 graph-backfill	ops/launchd/com.ebda.os.graph-backfill.plist
 instinct-extract	ops/launchd/com.ebda.os.instinct-extract.plist
 session-mining	ops/launchd/com.ebda.os.session-mining.plist
-ebda-cf-backup	ops/launchd/com.ebda.os.ebda-cf-backup.plist
 os-selftest	ops/launchd/com.ebda.os.os-selftest.plist
 hands-mac-local	cloud/hands/providers/launchd/com.ebda.os.hands-mac-local.plist	optin=OS_HANDS_LOCAL
 acceptance-feedback	ops/launchd/com.ebda.os.acceptance-feedback.plist
