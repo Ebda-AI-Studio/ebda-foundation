@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>__HOME__</string>
+		<key>PATH</key>
+		<string>__PATH__</string>
+		<key>DRAIN_REQUIRED_JSON</key>
+		<string>["Typecheck, test, lint workflows","Dependency audit","OS layer (shellcheck, guards, suites, Linux smoke)","OS brain Worker (typecheck, workerd tests, audit)","OS hands (tests, dry-run, Dockerfile checks, audit)","Scan for leaked secrets"]</string>
+	</dict>
+	<key>Label</key>
+	<string>com.ebda.os.drain-ebda-foundation</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>__HOME__/.claude/scripts/drain.sh</string>
+		<string>--repo</string>
+		<string>Ebda-AI-Studio/ebda-foundation</string>
+		<string>--dir</string>
+		<string>__HOME__/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-foundation</string>
+		<string>--gate</string>
+		<string>__HOME__/.claude/scripts/merge-gate.sh</string>
+		<string>--name</string>
+		<string>ebda-foundation</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/Library/Logs/ebda-os-drain-ebda-foundation.log</string>
+	<key>StandardOutPath</key>
+	<string>__HOME__/Library/Logs/ebda-os-drain-ebda-foundation.log</string>
+	<key>RunAtLoad</key><true/>
+	<!-- the script is a loop and holds a lock: this interval is the restart-if-it-died watchdog; a second copy exits at once -->
+	<key>StartInterval</key>
+	<integer>300</integer>
+</dict>
+</plist>

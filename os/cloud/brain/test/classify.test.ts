@@ -148,3 +148,17 @@ describe('classifyFinding: prod-watch production state (AI OS primary operator)'
     expect(classifyFinding(f({ source: 'prod-watch', kind: 'prod-outage', repo: 'o/r', selfHealExhausted: true })).lane).toBe('urgent');
   });
 });
+
+describe('classifyFinding: drain loop findings (ops/drain.sh)', () => {
+  it('drain-stall is one P1 alert in the digest lane and never a hands job', () => {
+    const c = classifyFinding(f({ source: 'drain-ebda-store', kind: 'drain-stall', repo: 'o/r', severity: 'P1' }));
+    expect(c.lane).toBe('digest');
+    expect(c.alert).toBe(true);
+  });
+  it('drain-held (risky PR waiting for the AI review) is digest only, no alert', () => {
+    const c = classifyFinding(f({ source: 'drain-ebda-store', kind: 'drain-held', repo: 'o/r', severity: 'P2' }));
+    expect(c.lane).toBe('digest');
+    expect(c.alert).toBeUndefined();
+  });
+});
+

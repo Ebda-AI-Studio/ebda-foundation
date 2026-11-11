@@ -30,3 +30,5 @@ app-error-heal	ops/launchd/com.ebda.os.app-error-heal.plist
 restore-drill	ops/launchd/com.ebda.os.restore-drill.plist
 social-content	ops/launchd/com.ebda.os.social-content.plist
 isp-188-watch	ops/launchd/com.ebda.os.isp-188-watch.plist
+drain-ebda-store	ops/launchd/com.ebda.os.drain-ebda-store.plist
+drain-ebda-foundation	ops/launchd/com.ebda.os.drain-ebda-foundation.plist

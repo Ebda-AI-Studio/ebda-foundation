@@ -32,3 +32,7 @@ The loop stops ONLY when ALL are true, each measured, not claimed (Ahmad 2026-11
 Then: Ahmad's two items (launch assets, 10-minute merchant test) -> launch.
 
 `loop/exit-check.sh` measures 3a, 4 and 6 (PASS/FAIL each; `/api/state` has no severity, so any open brain finding fails 6) and prints 1, 2, 3b and 5 as `manual: needs controller evidence`. It exits non-zero unless every measured condition passes and `--manual-ok` asserts the controller holds that evidence.
+
+## Drain loop (durable)
+`os/ops/drain.sh` is the merge loop, one launchd job per repo (`com.ebda.os.drain-ebda-store`, `com.ebda.os.drain-ebda-foundation`, installed by `os/install.sh`). It survives the session, takes a lock per repo and per PR, merges only through the merge gate, and holds `risky-path` PRs until `ai-review-passed`. It is OFF until `~/.whisky-os-state/drain/<name>.enabled` exists: switch over by stopping the controller's own loops first (`touch ~/.claude/handoff/drain.stop`, kill only the PIDs you started), then `touch` the marker; `rm` it or `touch <name>.stop` to halt. Heartbeat: `~/.whisky-os-state/drain/<name>.heartbeat` every cycle and a findings snapshot to the brain every 10 minutes. 60+ minutes with green PRs waiting and no merge opens ONE `drain-stall` finding (the brain alerts once and resolves it when the next snapshot omits it); a risky PR held 120+ minutes opens a `drain-held` digest finding.
+
