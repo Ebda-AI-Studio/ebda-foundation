@@ -3,6 +3,7 @@
 // as the fallback (ruling RR-gh-token). GH_APP_PRIVATE_KEY must be PKCS#8 PEM (openssl pkcs8 -topk8 -nocrypt -in app.pem).
 import type { Env } from './env';
 import { isPlaceholder } from './env';
+import { boundFetch } from './bound-fetch';
 
 const enc = new TextEncoder();
 const b64url = (b: ArrayBuffer | Uint8Array | string) => {
@@ -26,7 +27,7 @@ async function appJwt(appId: string, pem: string, now: number): Promise<string> 
 }
 
 /** Tokens by owner for the given owner/name repos. Throws on any failure (the caller refuses the start: never falls back silently). */
-export async function mintInstallationTokens(env: Partial<Env>, repos: string[], fetchImpl: typeof fetch = fetch, now: number = Date.now()): Promise<Record<string, string>> {
+export async function mintInstallationTokens(env: Partial<Env>, repos: string[], fetchImpl: typeof fetch = boundFetch, now: number = Date.now()): Promise<Record<string, string>> {
   const installs = JSON.parse(String(env.GH_APP_INSTALLATIONS)) as Record<string, number>;
   const byOwner = new Map<string, string[]>();
   for (const r of repos) {

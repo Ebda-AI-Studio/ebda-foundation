@@ -2,6 +2,7 @@
 // verifies the Cf-Access-Jwt-Assertion itself as well (RS256 against the team's certs, aud, iss, exp), so a request
 // that bypassed the edge (e.g. a misconfigured route) is still refused. Unconfigured = refused (fail closed).
 import { isPlaceholder } from './env';
+import { boundFetch } from './bound-fetch';
 
 interface Jwk extends JsonWebKey {
   kid?: string;
@@ -17,7 +18,7 @@ export function resetAccessCache(): void {
   jwksCache = null;
 }
 
-export async function verifyAccessJwt(token: string | null, teamDomain: string, aud: string, now: number, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; reason?: string; email?: string }> {
+export async function verifyAccessJwt(token: string | null, teamDomain: string, aud: string, now: number, fetchImpl: typeof fetch = boundFetch): Promise<{ ok: boolean; reason?: string; email?: string }> {
   if (isPlaceholder(teamDomain) || isPlaceholder(aud)) return { ok: false, reason: 'access not configured' };
   if (!token) return { ok: false, reason: 'missing Cf-Access-Jwt-Assertion' };
   const parts = token.split('.');

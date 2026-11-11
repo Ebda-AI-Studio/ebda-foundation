@@ -1,6 +1,7 @@
 // The git host behind an interface (GitHub today), so the brain can move hosts without a rewrite.
 // Only read calls live here; the brain never calls GitHub Actions (Actions minutes are for CI only).
 import type { Finding } from './findings';
+import { boundFetch } from './bound-fetch';
 
 export interface AlertPage {
   notModified: boolean;
@@ -49,7 +50,7 @@ function nextLink(link: string | null): string | null {
 
 export class GitHubHost implements GitHost {
   readonly name = 'github';
-  constructor(private token: string, private fetchImpl: typeof fetch = fetch) {}
+  constructor(private token: string, private fetchImpl: typeof fetch = boundFetch) {}
 
   async openDependencyAlerts(org: string, etag: string | null, kev: ReadonlySet<string>, deployedRepos: ReadonlySet<string>): Promise<AlertPage> {
     const headers: Record<string, string> = {
@@ -83,7 +84,7 @@ export class GitHubHost implements GitHost {
 /** CISA Known Exploited Vulnerabilities feed: refreshed at most daily, conditional on ETag, cached as a CVE id list in KV. */
 export const KEV_URL = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
 
-export async function loadKev(kv: KVNamespace, now: number, fetchImpl: typeof fetch = fetch): Promise<Set<string>> {
+export async function loadKev(kv: KVNamespace, now: number, fetchImpl: typeof fetch = boundFetch): Promise<Set<string>> {
   const cached = await kv.get<{ at: number; etag: string | null; ids: string[] }>('kev:v1', 'json');
   if (cached && now - cached.at < 24 * 3600 * 1000) return new Set(cached.ids);
   try {

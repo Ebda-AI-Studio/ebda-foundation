@@ -6,6 +6,7 @@
 // digest. Unhealed-P1 notices are one per incident fingerprint. A deduped key is never sent twice. Anything over its
 // bucket rolls into the next digest.
 // Credentials: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID Worker secrets only.
+import { boundFetch } from './bound-fetch';
 
 export type MsgKind = 'urgent-outcome' | 'p1-unhealed' | 'question' | 'digest';
 
@@ -57,7 +58,7 @@ export interface SendResult {
 }
 
 /** Send one plain-text message (no parse_mode, so finding text can never inject markup). */
-export async function sendTelegram(token: string | undefined, chatId: string | undefined, msg: Outgoing, fetchImpl: typeof fetch = fetch): Promise<SendResult> {
+export async function sendTelegram(token: string | undefined, chatId: string | undefined, msg: Outgoing, fetchImpl: typeof fetch = boundFetch): Promise<SendResult> {
   if (!token || !chatId) return { ok: false, reason: 'telegram not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID secrets unset)' };
   const body: Record<string, unknown> = { chat_id: chatId, text: clip(msg.text), disable_web_page_preview: true };
   if (msg.buttons?.length) body.reply_markup = { inline_keyboard: [msg.buttons.map((b) => ({ text: b.text, callback_data: b.data.slice(0, 64) }))] };

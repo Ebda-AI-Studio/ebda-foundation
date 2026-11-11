@@ -10,6 +10,7 @@ echo "== standard-links =="; node "$ROOT/os/tests/standard-links.test.mjs" || rc
 echo "== os-local-list =="; bash "$ROOT/os/tests/os-local-list.test.sh" || rc=1
 echo "== os-config-parity =="; bash "$ROOT/os/tests/os-config-parity.test.sh" || rc=1
 echo "== install-dryrun =="; bash "$ROOT/os/tests/install-dryrun.test.sh" || rc=1
+echo "== no-bare-fetch-default =="; bash "$ROOT/os/tests/no-bare-fetch-default.test.sh" || rc=1
 echo "== brain-deploy-dry =="; bash "$ROOT/os/tests/brain-deploy-dry.test.sh" || rc=1
 echo "== cutover-gate =="; bash "$ROOT/os/tests/cutover-gate.test.sh" || rc=1
 echo "== force-purge-check =="; bash "$ROOT/os/tests/force-purge-check.test.sh" || rc=1
