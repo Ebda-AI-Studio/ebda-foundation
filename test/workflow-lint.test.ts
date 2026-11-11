@@ -18,3 +18,15 @@ describe('workflow-lint hosted-only exception', () => {
     expect(lintWorkflow('w.yml', `${pr}    # hosted-only: outside-in production watch\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n`).join('\n')).toMatch(/may not run on pull_request/);
   });
 });
+
+describe('workflow-lint fork-guard exemption', () => {
+  const wf = (job: string) => `name: x\non:\n  pull_request:\nconcurrency:\n  group: g\njobs:\n  a:\n${job}    runs-on: \${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}\n    timeout-minutes: 5\n`;
+  it('a pull_request job with neither the guard nor an exemption is flagged', () => {
+    expect(lintWorkflow('w.yml', wf('')).join('\n')).toMatch(/without the fork guard/);
+  });
+  it('a `# fork-guard-exempt: <reason>` comment in the job clears it; a reasonless one does not', () => {
+    expect(lintWorkflow('w.yml', wf('    # fork-guard-exempt: only labels the PR, never runs its content\n'))).toEqual([]);
+    expect(lintWorkflow('w.yml', wf('    # fork-guard-exempt: x\n')).join('\n')).toMatch(/without the fork guard/);
+  });
+});
+

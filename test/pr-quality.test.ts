@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // @ts-expect-error plain .mjs without types
@@ -164,6 +164,40 @@ describe('pr-body grace period', () => {
     expect(before.status).toBe(0);
     expect(before.stderr).toMatch(/::warning::pr-body \(warn-only until 2099-01-01\)/);
     expect(run('2000-01-01').status).toBe(1);
+  });
+});
+
+describe('symlinks never leave the checkout', () => {
+  const cli = join(__dirname, '../ci/pr-quality/slop-guard.mjs');
+  it('a symlinked directory or file inside the scan roots is not followed', () => {
+    const outside = repo({ 'secret/x.ts': 'const leaked: any = 1;\nconsole.log(leaked);\n', 'secret/y.ts': 'export const nothing = 1;\n' });
+    const root = repo({ 'apps/a/src/ok.ts': 'export const fine = 1;\n', 'apps/a/src/use.ts': 'fine;\n' });
+    symlinkSync(join(outside, 'secret'), join(root, 'apps/a/src/linked'));
+    symlinkSync(join(outside, 'secret/x.ts'), join(root, 'apps/a/src/file-link.ts'));
+    expect(ids(root)).toEqual([]);
+  });
+  it('a symlinked scan root is skipped', () => {
+    const outside = repo({ 'a/src/x.ts': 'console.log(1);\n' });
+    const root = repo({ 'keep.txt': '' });
+    symlinkSync(outside, join(root, 'apps'));
+    expect(ids(root)).toEqual([]);
+  });
+  it('a symlinked baseline or config is refused, and the error never echoes the target file', () => {
+    const outside = repo({ 'secret.json': '{"password": "hunter2-do-not-print"' });
+    const root = repo({ 'apps/a/src/x.ts': 'export const k = 1;\n' });
+    symlinkSync(join(outside, 'secret.json'), join(root, '.pr-quality-baseline.json'));
+    const r = spawnSync('node', [cli, '--root', root], { encoding: 'utf8' });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr + r.stdout).not.toMatch(/hunter2/);
+    expect(r.stderr).toMatch(/symlink: refused/);
+  });
+  it('a symlinked eslint-suppressions.json is not read', () => {
+    const outside = repo({ 's.json': '{"x.ts":{"no-console":{"count":99}}}' });
+    const base = repo({ 'apps/a/eslint-suppressions.json': '{"x.ts":{"no-console":{"count":1}}}' });
+    const pr = repo({ 'apps/a/x.ts': '' });
+    symlinkSync(join(outside, 's.json'), join(pr, 'apps/a/eslint-suppressions.json'));
+    expect(() => eslintGrowth(pr, base, ['apps'])).not.toThrow();
+    expect(eslintGrowth(pr, base, ['apps'])).toEqual([]);
   });
 });
 

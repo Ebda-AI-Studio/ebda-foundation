@@ -147,3 +147,5 @@ Ruling PRQ-3 - The guards judge a PR against its BASE branch, not its own copy: 
 
 Ruling PRQ-4 - The PR-body check is warn-only until `bodyCheckEnforceFrom` in `.pr-quality.json` (a date), so adopting it does not turn every open PR red; an unset or unreadable date means enforce now. Cost if wrong: for the grace period a PR without the three sections merges; the warning is still printed in the check log.
 
+Ruling PRQ-5 - Fork PRs are checked, never skipped (a skipped check is a free pass): both pr-quality jobs run for forks from the base workflow, the fork head is checked out into `pr/` and only scanned. The scanner never follows a symlink (lstat on every entry, on each scan root, and on the baseline/config/suppression files, whose parse errors never echo content), so a PR cannot make it read a file outside the checkout. Cost if wrong: a fork PR runs two cheap node jobs with the repo's read-only token; the scanner reading attacker-chosen regular files in the checkout is the accepted exposure.
+

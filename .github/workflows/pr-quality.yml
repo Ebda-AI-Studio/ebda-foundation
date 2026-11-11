@@ -6,6 +6,7 @@ name: PR quality
 # THE GUARDS RUN FROM THE BASE BRANCH. The workflow comes from the base, the scripts and config are checked out from the base tip, and the
 # PR is only scanned as data (checked out into pr/, never executed). A PR cannot edit a guard, a baseline or the config to pass: the ratchet
 # is enforced against the BASE's baseline and eslint suppressions. Both jobs are plain node: no install, seconds to run.
+# FORK PRs are checked like any other (a skipped check would be a free pass): the fork's head is checked out into pr/ and only scanned.
 on:
   workflow_call:
 
@@ -23,7 +24,7 @@ jobs:
     name: PR body sections
     runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 5
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # fork-guard-exempt: forks must be checked too (a skipped check is a pass); only the base branch's scripts run, the PR body is data
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,7 +50,7 @@ jobs:
     name: Slop baselines
     runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 10
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # fork-guard-exempt: forks must be checked too (a skipped check is a pass); the PR is only scanned as data, symlinks are never followed
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,6 +58,7 @@ jobs:
           path: base
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
           path: pr
           persist-credentials: false
