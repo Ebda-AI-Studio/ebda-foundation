@@ -7,13 +7,15 @@
 export const EBDA = {
   /** The company (master brand). Products are always "Ebda <Product>", never a bare "Ebda" (BRAND-NAME-1). */
   name: 'Ebda AI Studio',
-  nameAr: 'ابدأ استوديو للذكاء الاصطناعي',
+  nameAr: 'ابدأ ستوديو للذكاء الاصطناعي',
   /** The company behind Ebda (single source for every operator mention; ruling OPERATOR-1). */
   company: {
-    legalNameAr: 'ابدأ استوديو للذكاء الاصطناعي والبرمجيات والتسويق الرقمي',
-    legalNameEn: 'Ebda AI Studio for Artificial Intelligence, Software and Digital Marketing',
-    shortNameAr: 'ابدأ استوديو للذكاء الاصطناعي',
+    legalNameAr: 'ابدأ ستوديو لتكنولوجيا المعلومات',
+    legalNameEn: 'Ebda Studio',
+    shortNameAr: 'ابدأ ستوديو للذكاء الاصطناعي',
     shortNameEn: 'Ebda AI Studio',
+    /** Founding date (Ahmad, 2026-11-03): ISO, rendered with formatLegalDate, and `foundingDate` in the Organization JSON-LD. */
+    foundedOn: '2026-09-11',
     url: 'https://ebda.app',
   },
   products: {
