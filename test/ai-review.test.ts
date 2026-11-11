@@ -61,6 +61,11 @@ describe('ai-review.yml keeps the gate out of the PR author\'s hands', () => {
     expect(fork).toMatch(/exit 1/);
     expect(fork).not.toMatch(/CLAUDE_CODE_OAUTH_TOKEN/);
   });
+  it('a label event gets its own concurrency group, so adding a label never cancels a running bot review', () => {
+    const group = /^  group: (.*)$/m.exec(wf)?.[1] ?? '';
+    expect(group).toMatch(/github\.event\.action == 'labeled' && 'label' \|\| 'review'/);
+    expect(wf).toMatch(/cancel-in-progress: true/);
+  });
   it('re-runs on the labeled event so a manual label turns the check green', () => {
     expect(wf).toMatch(/github\.event\.action == 'labeled' && github\.event\.label\.name == 'ai-review-passed'/);
   });
