@@ -99,7 +99,8 @@ Mac watchers, the dreaming cycle and self-heal recipes report with `POST /findin
 keys under `keep` are left alone (the monitor could not evaluate them this run, e.g. the R2 logs were unreadable). The heartbeat
 is `sources.prodWatchSeenAt` in `GET /api/state`. Kinds: `prod-outage` (probe), `prod-5xx`, `prod-429`, `prod-exception`,
 `prod-logs-silent`, `alert-drill`. prod-watch already messages Telegram itself, so a prod-watch finding without a `repo` classifies as
-`digest` (recorded, no hands job, no second message; `src/classify.ts`).
+`digest` (recorded, no hands job, no second message; `src/classify.ts`). Dead-man switch: once prod-watch has reported, 60 min of
+silence raises ONE `monitor-silent` P1 (an alert kind, never a hands job); it resolves on the next report.
 
 **Controller leases (HANDS-COORD).** `POST /leases {repo, holder, ttlMin≤240, note?}` / `DELETE /leases {repo, holder}`
 (Bearer `INGEST_TOKEN`; Mac helper `os/ops/controller-lease.sh`). 409 = another controller holds it. While a lease is live the

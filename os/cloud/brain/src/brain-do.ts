@@ -19,6 +19,8 @@ import type { AdvisoryRunSummary } from './watchers/advisories';
 
 /** HANDS-COORD: the longest a controller lease may run before it must be renewed. */
 export const LEASE_MAX_MIN = 240;
+/** prod-watch runs every 10 min; 60 min of silence = six missed runs */
+export const PROD_WATCH_SILENT_MS = 60 * 60_000;
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
 export const NIGHTLY_MAX_JOBS = 25;
@@ -391,6 +393,23 @@ export class BrainDO extends DurableObject<Env> {
   }
 
   // ---------- external monitors (prod-watch) ----------
+  /**
+   * Dead-man switch: prod-watch (GitHub-hosted, every 10 min) is the OS's eyes on production from outside Cloudflare. Once it has
+   * reported at least once, a silence longer than PROD_WATCH_SILENT_MS raises ONE `monitor-silent` alert (deduped; resolves when
+   * it reports again). Measured 2026-11-11: GitHub ran its every-10-min schedule once in ~10 hours, and nothing noticed.
+   */
+  async checkProdWatchAlive(now: number): Promise<void> {
+    const seen = this.getMeta<number>('source:seen:prod-watch');
+    if (!seen) return; // never wired: nothing to miss yet
+    const f = { source: 'self-check', kind: 'monitor-silent', key: 'prod-watch' };
+    if (now - seen > PROD_WATCH_SILENT_MS) {
+      const mins = Math.round((now - seen) / 60_000);
+      await this.ingestMany([{ ...f, title: `prod-watch has not reported for ${mins} min: production is not being watched from outside Cloudflare`, severity: 'P1' }], now);
+    } else {
+      await this.resolveFinding(f, 'prod-watch reporting again', now);
+    }
+  }
+
   /**
    * Resolve every open finding of `source` (any kind) whose key is not in `openKeys`, except keys starting with one of
    * `keepPrefixes` (the monitor could not evaluate them this run, so their state is unknown, not clear). Records the heartbeat.
@@ -1070,6 +1089,7 @@ export class BrainDO extends DurableObject<Env> {
     await this.retryFailed(now);
     await this.flushQuestions(now);
     await this.dispatchUrgent(now);
+    await this.checkProdWatchAlive(now);
     this.ageWaiting(now);
     return { osBugs: this.selfCheck(now).length };
   }

@@ -87,3 +87,23 @@ describe('prod-watch listing reconcile', () => {
     expect(s.findings.recent.find((f) => f.kind === 'alert-drill')?.lane).toBe('digest');
   });
 });
+
+describe('prod-watch dead-man switch', () => {
+  it('silent > 60 min after it has reported once raises one monitor-silent alert; a new report resolves it', async () => {
+    const brain = brainStub(env);
+    const t0 = Date.now();
+    await req('/findings', 'POST', { findings: [], reconcile: { source: 'prod-watch' } });
+    await brain.checkProdWatchAlive(t0 + 30 * 60_000);
+    let s = await brain.state();
+    expect(s.findings.recent.some((f) => f.kind === 'monitor-silent' && f.status !== 'resolved')).toBe(false); // must not fire at 30 min
+    await brain.checkProdWatchAlive(t0 + 61 * 60_000);
+    s = await brain.state();
+    const row = s.findings.recent.find((f) => f.kind === 'monitor-silent');
+    expect(row?.lane).toBe('digest'); // ALERT_KINDS: one P1 message, never a hands job
+    expect(row?.status).not.toBe('resolved'); // must fire at 61 min
+    await req('/findings', 'POST', { findings: [], reconcile: { source: 'prod-watch' } });
+    await brain.checkProdWatchAlive(Date.now());
+    s = await brain.state();
+    expect(s.findings.recent.find((f) => f.kind === 'monitor-silent')?.status).toBe('resolved');
+  });
+});
