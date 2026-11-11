@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>__HOME__</string>
+		<key>PATH</key>
+		<string>__PATH__</string>
+	</dict>
+	<key>Label</key>
+	<string>com.ebda.os.claude-bundle-sync</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>__HOME__/.claude/scripts/claude-bundle-sync.sh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/Library/Logs/ebda-os-claude-bundle-sync.log</string>
+	<key>StandardOutPath</key>
+	<string>__HOME__/Library/Logs/ebda-os-claude-bundle-sync.log</string>
+	<key>WatchPaths</key>
+	<array>
+		<string>__HOME__/.local/share/claude/versions</string>
+	</array>
+</dict>
+</plist>

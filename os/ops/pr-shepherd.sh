@@ -32,7 +32,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/pr-merge-gate.sh" 2>/dev/null || true
 
 DRY="${DRY_RUN:-0}"
-ORG="$OS_ORG"
+# The brain shepherds the orgs it watches (OS_ORGS in config/brain-watchers.json). This Mac job covers ONE other org, named
+# per machine in ~/.ebda-os.local.env (OS_PR_SHEPHERD_ORG); unset, or the brain's own primary org, = skip, so two shepherds
+# never act on the same PRs (ruling INSTALL-1).
+ORG="${OS_PR_SHEPHERD_ORG:-}"
+if [ -z "$ORG" ]; then echo "pr-shepherd: OS_PR_SHEPHERD_ORG not set - the brain shepherds $OS_ORG; skip"; exit 0; fi
+if [ "$ORG" = "$OS_ORG" ]; then echo "pr-shepherd: $ORG is shepherded by the brain; refusing a second shepherd - skip"; exit 0; fi
 LEDGER="$HOME/.whisky-os-state/pr-shepherd-ledger.json"
 mkdir -p "$(dirname "$LEDGER")"; [ -s "$LEDGER" ] || echo '{}' > "$LEDGER"
 INFRA_RE='exit code 137|Killed +npm|No space left on device|lost communication with the server|shutdown signal|The operation was canceled and the runner'

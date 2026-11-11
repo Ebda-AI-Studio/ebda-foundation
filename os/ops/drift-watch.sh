@@ -63,8 +63,10 @@ dirty=$(git -C "$F" status --porcelain --untracked-files=no 2>/dev/null | wc -l 
 BREW="$(command -v brew >/dev/null 2>&1 && brew --prefix 2>/dev/null || echo /opt/homebrew)"
 # only the Mac-local set (os/launchd/mac-local.list, what os/install.sh installs) is expected on this Mac; the other templates are
 # jobs the brain runs now and must NOT be reported missing
-while IFS=$'\t' read -r _name _rel; do
+while IFS=$'\t' read -r _name _rel _flag; do
   case "$_name" in ''|'#'*) continue ;; esac
+  # an opt-in job (3rd column `optin=VAR`, ruling INSTALL-1) is expected only when VAR=1
+  case "${_flag:-}" in optin=*) _v="${_flag#optin=}"; [ "${!_v:-}" = 1 ] || continue ;; esac
   tmpl="$F/os/$_rel"
   [ -f "$tmpl" ] || { issues+=("TEMPLATE-MISSING: $_rel (listed in mac-local.list)"); continue; }
   label="${OS_LAUNCHD_PREFIX}.$_name"
