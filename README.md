@@ -2,7 +2,7 @@
 
 The shared base every Ebda AI Studio product starts from. Source of truth for code that two or more Ebda products must run identically (phone to E.164, the buyer key, Arabic folding, reserved slugs, brand names and tokens), plus the `new` generator for the next product.
 
-Consumers (vendored, sha-pinned): Ebda Store `packages/shared/src/foundation`, Ebda WhatsApp `foundation/`. Both carry a `foundation.lock.json` and the same `foundation-parity` test.
+Consumers (vendored, sha-pinned): Ebda Store `packages/shared/src/foundation`, Ebda Chat (repo `ebda-whatsapp`) `foundation/`. Both carry a `foundation.lock.json` and the same `foundation-parity` test.
 
 ## Two layers, one repo
 

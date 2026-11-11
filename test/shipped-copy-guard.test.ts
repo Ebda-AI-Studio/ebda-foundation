@@ -54,7 +54,7 @@ describe('shipped copy has no bare "Ebda"', () => {
   });
   it('the Arabic arm: a planted bare Arabic brand word is exactly 1 hit, the full product names are 0', () => {
     expect(bareHits({ 'checklists/x.md': 'مرحبا في إبدا\n' })).toHaveLength(1);
-    expect(bareHits({ 'checklists/x.md': 'إبدا ستور\nإبدأ واتساب\nابدأ الآن\n' })).toHaveLength(0);
+    expect(bareHits({ 'checklists/x.md': 'إبدا ستور\nإبدأ شات\nابدأ الآن\n' })).toHaveLength(0);
     expect(bareHits({ 'packages/foundation/src/x.ts': "export const a = 'مرحبا في إبدا';" })).toHaveLength(1);
   });
 });
