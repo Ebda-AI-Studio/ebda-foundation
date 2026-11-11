@@ -149,3 +149,11 @@ Ruling PRQ-4 - The PR-body check is warn-only until `bodyCheckEnforceFrom` in `.
 
 Ruling PRQ-5 - Fork PRs are checked, never skipped (a skipped check is a free pass): both pr-quality jobs run for forks from the base workflow, the fork head is checked out into `pr/` and only scanned. The scanner never follows a symlink (lstat on every entry, on each scan root, and on the baseline/config/suppression files, whose parse errors never echo content), so a PR cannot make it read a file outside the checkout. Cost if wrong: a fork PR runs two cheap node jobs with the repo's read-only token; the scanner reading attacker-chosen regular files in the checkout is the accepted exposure.
 
+
+## Money rulings (Ebda Store still-open audit 2026-11-12)
+
+Ruling PRICE-1 - One discount function, `computeDiscount`/`couponCartDiscount` in ebda-store `packages/shared/src/commerce/coupon-math.ts`, serves checkout, quote, admin order create, the promotions resolver and the Durable Object twins; it clamps to [0, base] and treats non-finite input as 0. Evidence: M-078, the API and DO copies disagreed on negative stored values. Cost if wrong: a pricing change needs one edit in shared plus a rebuild of every consumer.
+
+Ruling BILL-NOTICE-1 - A subscription lifecycle notice is claimed per (subscription, stage) before it is sent, so a repeated sweep or a retried job sends it once. Evidence: S2-13 (grace end had no notice). Cost if wrong: a merchant gets a second identical email.
+
+Ruling GUEST-RET-1 - A guest return request needs order number plus phone or email, is rate-limited, and returns one identical failure body. Evidence: S2-7. Cost if wrong: a shopper who mistypes cannot tell which field was wrong.
