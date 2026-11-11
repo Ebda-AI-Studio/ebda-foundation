@@ -34,6 +34,15 @@ RTL first, mirrored logically (`ms-/me-/ps-/pe-/start-/end-`, never `ml-/mr-/lef
 or positive letter-spacing on Arabic (breaks joining); never per-letter animation; slide and tab transitions mirror. Line-height from the table above, not the Latin default.
 Check every borrowed rule against Arabic before adopting it.
 
+### Signed numbers (SIGN-1, non-negotiable)
+
+Points, money deltas, stock adjustments, refunds, discounts and percentage changes render through ONE formatter per product (ebda-store: `formatSigned` in `@ebda/shared/region`), never a hand-built `'-'`/`'+'` prefix.
+- Zero never carries a sign: `-0`, `+0` and a value that rounds to zero (`-0.04` at one decimal) print plain `0`.
+- The sign and the number are one unit: wrap in a bidi isolate (`<bdi dir="ltr">` in JSX, Unicode LRI...PDI in strings, emails and CSV) so Arabic never moves the minus to the far side ("N-").
+- Minus is U+2212, not a hyphen. Plus shows only where the direction is the meaning (earned, credit).
+- Where meaning matters, prefer a word to a sign ("owed", "refunded", "used"); the sign is the fallback, not the label.
+- Guard: a product test fails on a hand-built sign prefix in UI source (ebda-store `tests/unit/signed-number-guard.test.ts`).
+
 ## Do
 
 - One filled gold primary action per view, at the inline-end of the page header; secondary beside it; destructive never first.
