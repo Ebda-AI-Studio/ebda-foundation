@@ -9,6 +9,8 @@ name: AI review
 # FORK PRs are never reviewed with secrets and never skipped: the `fork-gate` job fails until a maintainer reviews the PR and adds the label
 # `ai-review-passed` (the `labeled` event re-runs it green). A manual label on a same-repo PR (e.g. an oversized diff) is honoured the same way.
 # A diff over 400 KB fails with a clear message: it needs human/controller review, then the label `ai-review-passed` by hand.
+# APPROVAL IS NEVER CARRIED BY AUTOMATION: every push strips ai-review-passed (so does `edited` when the BASE branch changed; a title/body edit does not).
+# A maintainer re-applies the label after checking the PR-only diff is unchanged (Ruling AIR-6).
 # Risky + any infra problem (no secret, CLI crash, bad JSON) = FAIL, never pass. Secret: CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`).
 # REUSABLE ONLY (workflow_call): this repo has no .github/ai-review/. A product repo calls this file from a workflow whose trigger is
 # `pull_request_target` (needs Actions access = organization on this repo) or carries a copy with `on: pull_request_target`, plus
@@ -25,8 +27,8 @@ permissions:
   issues: write
 
 concurrency:
-  # label events get their own group: a person adding any label must not cancel a bot review that is running (only a new push should)
-  group: ai-review-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.action == 'labeled' && 'label' || 'review' }}
+  # label events and non-base edits (title/body) get their own groups: a person adding a label or fixing a typo must not cancel a bot review that is running
+  group: ai-review-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.action == 'labeled' && 'label' || github.event.action == 'edited' && github.event.changes.base.ref.from == null && 'edit' || 'review' }}
   cancel-in-progress: true
 
 jobs:
@@ -34,7 +36,7 @@ jobs:
     name: AI review classify
     runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 5
-    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft && github.event.action != 'labeled'
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft && github.event.action != 'labeled' && (github.event.action != 'edited' || github.event.changes.base.ref.from != null)
     outputs:
       risky: ${{ steps.paths.outputs.risky }}
     steps:
@@ -159,7 +161,7 @@ jobs:
     name: AI review
     runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 5
-    if: github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event.pull_request.head.repo.full_name != github.repository && (github.event.action != 'edited' || github.event.changes.base.ref.from != null)
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}

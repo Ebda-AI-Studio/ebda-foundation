@@ -63,7 +63,7 @@ describe('ai-review.yml keeps the gate out of the PR author\'s hands', () => {
   });
   it('a label event gets its own concurrency group, so adding a label never cancels a running bot review', () => {
     const group = /^  group: (.*)$/m.exec(wf)?.[1] ?? '';
-    expect(group).toMatch(/github\.event\.action == 'labeled' && 'label' \|\| 'review'/);
+    expect(group).toMatch(/github\.event\.action == 'labeled' && 'label' \|\|/);
     expect(wf).toMatch(/cancel-in-progress: true/);
   });
   it('re-runs on the labeled event so a manual label turns the check green', () => {
@@ -132,5 +132,23 @@ describe('review.mjs gate', () => {
   });
   it('never writes passed=true when it blocks', async () => {
     expect((await run('garbage', { FAIL_CLOSED: 'true' })).passed).toBe(false);
+  });
+});
+
+describe('approval is never carried across pushes by automation (Ruling AIR-6)', () => {
+  const wf2 = readFileSync(join(__dirname, '../.github/workflows/ai-review.yml'), 'utf8');
+  const classify2 = wf2.slice(wf2.indexOf('  classify:'), wf2.indexOf('  review:'));
+  const fork2 = wf2.slice(wf2.indexOf('  fork-gate:'));
+  const BASE_CHANGED = /github\.event\.action != 'edited' \|\| github\.event\.changes\.base\.ref\.from != null/;
+  it('every non-label event strips ai-review-passed unconditionally in classify, with no marker or diff comparison', () => {
+    expect(classify2).toMatch(/gh pr edit "\$PR" --remove-label ai-review-passed/);
+    expect(wf2).not.toMatch(/pass-marker|patch-id|REVIEWED_DIFF/);
+  });
+  it('a base-branch change (edited event with changes.base) re-runs classify and the fork gate; a title/body edit does not', () => {
+    expect(classify2).toMatch(BASE_CHANGED);
+    expect(fork2).toMatch(BASE_CHANGED);
+  });
+  it('a non-base edit has its own concurrency group so it cannot cancel a running review', () => {
+    expect(/^  group: (.*)$/m.exec(wf2)?.[1] ?? '').toMatch(/github\.event\.action == 'edited' && github\.event\.changes\.base\.ref\.from == null && 'edit'/);
   });
 });
