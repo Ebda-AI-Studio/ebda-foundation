@@ -363,3 +363,19 @@ describe('status self-check', () => {
     expect(await r.json()).toMatchObject({ telegram: true, decideDoor: true, brands: { ebda: { networks: { facebook: { enabled: false } } } } });
   });
 });
+
+describe('public-copy rule and disabled networks', () => {
+  it('refuses pre-launch / registration wording and "coming soon" except for CRM / ERP', () => {
+    expect(copyViolations('Join the waitlist for Ebda Store')).toContain('contains pre-launch / registration wording');
+    expect(copyViolations('Register now for early access')).toContain('contains pre-launch / registration wording');
+    expect(copyViolations('Ebda Chat is coming soon')).toContain('"coming soon" is only for CRM / ERP');
+    expect(copyViolations('Ebda Store is live today. Ebda CRM is coming soon.')).toEqual([]);
+  });
+  it('a post whose network is disabled is never sent to Ahmad for approval', async () => {
+    const h = await harness({ facebook: true, linkedin: false });
+    await h.run((b) => b.socialIngest(draft({ id: 'whisky11-linkedin-202611180600', network: 'linkedin' }), T0));
+    await h.run((b) => b.socialTick(SLOT - 24 * HOUR));
+    expect(h.tg()).toHaveLength(0);
+    expect(await h.run((b) => b.socialPost('whisky11-linkedin-202611180600'))).toMatchObject({ status: 'draft' });
+  });
+});

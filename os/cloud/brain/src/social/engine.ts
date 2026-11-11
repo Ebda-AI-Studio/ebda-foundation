@@ -202,6 +202,8 @@ export class SocialEngine {
     let n = 0;
     for (const p of due) {
       if (this.brandMode(p.brand, now).paused) continue;
+      // never ask Ahmad to approve a post its network cannot publish (LinkedIn until the API is approved)
+      if (this.adapters[p.network].disabledReason(p.brand)) continue;
       const exp = Math.floor((p.scheduled_at + PUBLISH_GRACE_MS) / 1000);
       const secret = this.env.SOCIAL_LINK_SECRET;
       const base = this.env.HANDS_BRAIN_URL;
