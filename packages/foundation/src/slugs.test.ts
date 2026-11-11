@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { RESERVED_SLUGS, isDemoShowroomSlug, isReservedSlug, slugFormatError } from './slugs';
+import { RESERVED_SLUGS, isDemoShowroomSlug, isReservedSlug, slugFormatError, slugify, slugifyWithFallback } from './slugs';
 
 const v = JSON.parse(readFileSync(new URL('../../../vectors/slugs.json', import.meta.url), 'utf8'));
 
@@ -18,5 +18,14 @@ describe('slugs', () => {
   it('the list is lowercase and unique', () => {
     expect(new Set(RESERVED_SLUGS).size).toBe(RESERVED_SLUGS.length);
     for (const s of RESERVED_SLUGS) expect(s).toBe(s.toLowerCase());
+  });
+});
+
+describe('slugify (one slugifier, standard docs/standard/slugs.md)', () => {
+  it('vectors', () => {
+    for (const c of v.slugify) expect(slugify(c.in, c.opts), c.in).toBe(c.out);
+  });
+  it('fallback never empty', () => {
+    expect(slugifyWithFallback('مقال', 'post', { ascii: true })).toMatch(/^post-[a-z0-9]+$/);
   });
 });
