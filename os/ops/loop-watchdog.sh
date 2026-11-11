@@ -8,6 +8,7 @@
 #   - main CI red                                  (newest completed run of workflow CI on main is failure/cancelled/timed_out)
 #   - drain dead                                   (no <OS_LAUNCHD_PREFIX>.drain-* launchd job loaded AND no ops/drain*.sh process)
 #   - alert listener dead                          (no alert-wait.sh process)
+#   - a ROOT checkout under $OS_PROJECTS_DIR with core.bare=true (silently breaks merge-gate: 2026-10-25, 2026-11-11)
 #   - no merge for --stall-min (40) min while approved PRs wait (label ai-review-passed, not hold, not draft)
 #
 #   loop-watchdog.sh [--interval SEC] [--stall-min MIN] [--once] [--ack-file FILE]
@@ -53,6 +54,16 @@ drain_alive() {
   pgrep -f 'ops/drain[^ ]*\.sh' >/dev/null 2>&1
 }
 
+# root checkouts = a directory with a .git DIRECTORY (a worktree has a .git file) at the business-folder layout depths
+bare_roots() {
+  local d root="${OS_PROJECTS_DIR:?os-config not loaded}"
+  for d in "$root"/*/internal-projects/* "$root"/*/clients/*/* "$root"/*/projects/*; do
+    [ -d "$d/.git" ] || continue
+    [ "$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$d" config --bool core.bare 2>/dev/null)" = true ] && echo "root checkout bare: $d (fix: git -C $d config core.bare false)"
+  done
+  return 0
+}
+
 check() { # prints one reason per line
   local r c last ready age
   while read -r r; do
@@ -66,6 +77,7 @@ check() { # prints one reason per line
       [ "$age" -gt $((STALL_MIN * 60)) ] && echo "no merge for $((age / 60)) min: $r with $ready approved PRs"
     fi
   done < <(repos)
+  bare_roots
   drain_alive || echo "drain not running (no $PREFIX.drain-* job, no drain process)"
   pgrep -f 'alert-wait\.sh' >/dev/null 2>&1 || echo "alert-wait not running"
 }

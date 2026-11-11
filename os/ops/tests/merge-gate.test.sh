@@ -281,4 +281,11 @@ Y
 rm "$WFX/deploy.yml"; printf '%s' "$(pr "[$(c Lint COMPLETED SUCCESS)]")" > "$TMP/g1.json"
 MERGE_GATE_VIEW_CMD="cat $TMP/g1.json" MERGE_GATE_MERGE_CMD="echo merged > $TMP/merged" bash "$OPS/merge-gate.sh" 7 abcdef1 --workflows "$WFX" --interval 0 --polls 1 --hands >"$TMP/out" 2>&1; rc=$?
 ok "--hands with no exposure still merges (0)" "$rc" "0"
+# a root checkout marked core.bare=true must say so, not "no workflows dir" (2026-11-11)
+BR="$TMP/bare-fixture"; mkdir -p "$BR/.github/workflows"; cp "$WF/ci.yml" "$BR/.github/workflows/"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$BR" init -q; env -u GIT_DIR -u GIT_WORK_TREE git -C "$BR" config core.bare true
+( cd "$BR" && env -u GIT_DIR -u GIT_WORK_TREE bash "$OPS/merge-gate.sh" 7 abcdef1 --repo o/r --interval 0 --polls 1 >"$TMP/out" 2>&1 ); rc=$?
+ok "core.bare=true checkout refuses (2)" "$rc" "2"
+grep -q 'marked bare (core.bare=true).*git config core.bare false' "$TMP/out" && ok "bare checkout: clear message with the fix" 1 1 || { ok "bare checkout: clear message with the fix" 0 1; cat "$TMP/out"; }
+grep -q 'no workflows dir' "$TMP/out" && ok "bare checkout is not reported as 'no workflows dir'" 1 0 || ok "bare checkout is not reported as 'no workflows dir'" 0 0
 echo "---"; echo "merge-gate: $pass passed, $fail failed"; [ "$fail" = 0 ]
