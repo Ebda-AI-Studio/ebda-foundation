@@ -18,6 +18,7 @@ import { usageGuard } from './usage';
 import { SocialEngine } from './social/engine';
 import type { Brand, Decision } from './social/types';
 import type { AdvisoryRunSummary } from './watchers/advisories';
+import { ALERT_DEDUPE_MS, type PlatformAlert } from './alerts';
 
 /** HANDS-COORD: the longest a controller lease may run before it must be renewed. */
 export const LEASE_MAX_MIN = 240;
@@ -202,6 +203,8 @@ export class BrainDO extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS auth_fail (ip TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS auth_fail_ip ON auth_fail(ip, at);
+      CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, sig TEXT NOT NULL, source TEXT NOT NULL, level TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, url TEXT, repo TEXT, at INTEGER NOT NULL, last_at INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1);
+      CREATE INDEX IF NOT EXISTS alerts_sig ON alerts(sig, last_at);
       CREATE TABLE IF NOT EXISTS leases (repo TEXT PRIMARY KEY, holder TEXT NOT NULL, note TEXT, claimed_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
     `);
     SocialEngine.migrate(this.sql);
@@ -363,6 +366,32 @@ export class BrainDO extends DurableObject<Env> {
   /** Newest PASS of the weekly restore drill (posted by the Mac), or null. The signature keeps the watcher Sink shape. */
   lastPassAt(_source: string, _kind: string): number | null {
     return this.getMeta<number>('drill:last-pass');
+  }
+
+  // ---------- platform alert feed (ruling AIOS-8) ----------
+  /** Store one alert; the same alert within ALERT_DEDUPE_MS bumps the count of its row. P0/P1 also become a finding the OS acts on. */
+  async recordAlert(a: PlatformAlert, now: number = Date.now(), asFinding = true): Promise<{ id: number; deduped: boolean }> {
+    const sig = (await fingerprint({ source: a.source, kind: a.level, key: `${a.title}\n${a.text}` }));
+    const prev = this.row(`SELECT id FROM alerts WHERE sig = ? AND last_at > ? ORDER BY id DESC LIMIT 1`, sig, now - ALERT_DEDUPE_MS);
+    if (prev) {
+      this.sql.exec(`UPDATE alerts SET count = count + 1, last_at = ? WHERE id = ?`, now, Number(prev.id));
+      return { id: Number(prev.id), deduped: true };
+    }
+    this.sql.exec(`INSERT INTO alerts (sig, source, level, title, text, url, repo, at, last_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, sig, a.source, a.level, a.title.slice(0, 300), a.text.slice(0, 4096), a.url ?? null, a.repo ?? null, a.at ?? now, now);
+    const id = Number(this.row(`SELECT last_insert_rowid() AS id`)?.id ?? 0);
+    // keep the feed bounded (resource-frugal): the newest 5000 rows
+    this.sql.exec(`DELETE FROM alerts WHERE id <= ?`, id - 5000);
+    if (asFinding && (a.level === 'p0' || a.level === 'p1')) {
+      // "the OS acts, not pings": a page becomes a finding (the classifier decides the lane; HANDS_HALT still gates any code change).
+      // The sender already messaged Ahmad, so the finding never messages again by itself.
+      await this.ingestMany([{ source: 'platform-alert', kind: 'platform-alert', key: `${a.source}:${a.title}`.slice(0, 500), title: a.title.slice(0, 300), severity: 'P1', ...(a.repo ? { repo: a.repo } : {}), ...(a.url ? { url: a.url } : {}), detail: { text: a.text.slice(0, 2000), source: a.source, level: a.level } }], now);
+    }
+    return { id, deduped: false };
+  }
+
+  /** Alerts with id > since, newest first (at most `limit`). */
+  async alertsSince(since: number, limit = 100): Promise<Array<Record<string, unknown>>> {
+    return this.rows(`SELECT id, source, level, title, text, url, repo, at, last_at, count FROM alerts WHERE id > ? ORDER BY id DESC LIMIT ?`, since, Math.max(1, Math.min(500, limit))).map((r) => ({ ...r }));
   }
 
   // ---------- controller leases (launch-map row HANDS-COORD) ----------

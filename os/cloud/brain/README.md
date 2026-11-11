@@ -125,6 +125,11 @@ P1s sent with the same dedupe/6-a-day policy, findings as source `prod-watch` (h
 run is the secondary: R2 log rules, digest, and probe alerts only while this Worker's `/health` does not answer. Dead-man: brain-cron
 run stale 30 min = one `monitor-silent` P1; GitHub run silent 24 h = a `monitor-stale` digest note.
 
+**Platform alert feed (AIOS-8).** `POST /alerts {source, level p0|p1|p2|info, title, text, url?, repo?, at?}` (Bearer `INGEST_TOKEN`,
+array <= 20): the same alert within 10 min is one row with a count; P0/P1 also become a `platform-alert` finding. Failed
+default-branch workflow runs from the org webhook are recorded too. Read: `GET /api/alerts?since=<id>&limit=` (dashboard auth),
+newest first. Controller wait loop: `os/ops/alert-wait.sh` (exits printing new alerts).
+
 **Controller leases (HANDS-COORD).** `POST /leases {repo, holder, ttlMin≤240, note?}` / `DELETE /leases {repo, holder}`
 (Bearer `INGEST_TOKEN`; Mac helper `os/ops/controller-lease.sh`). 409 = another controller holds it. While a lease is live the
 brain hands no job for that repo to any provider; the hands read `GET /hands/leases` before touching a repo (fail closed).
@@ -205,7 +210,7 @@ All on the **personal** Cloudflare account. Never put an id or secret in the rep
    (needs `admin:org_hook`; only `workflow_run`). Check: the hook's ping returns 204 in the org's webhook deliveries.
 6. Telegram answers (optional; the dashboard can answer too). Do **not** register a webhook. The relay session forwards each `callback_query` update it polls to `POST https://$OS_BRAIN_HOST/telegram/webhook` with header `X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_WEBHOOK_SECRET>`; the brain answers the button press (owner id checked) and acknowledges it with `answerCallbackQuery`. Without the relay forwarding, questions are still sent and the dashboard or the deadline default decides. Inbound text commands are not supported by the brain.
 7. Cloudflare Access (Zero Trust → Access → Applications, self-hosted), two path-scoped applications on `$OS_BRAIN_HOST`:
-   `/dash` and `/api`, policy = Ahmad's email only. Do **not** cover `/github`, `/telegram`, `/hands`, `/findings`, `/leases`,
+   `/dash` and `/api`, policy = Ahmad's email only. Do **not** cover `/github`, `/telegram`, `/hands`, `/findings`, `/leases`, `/alerts`,
    `/pending`, `/health` (machines authenticate with their own secrets). Then add the team domain + the application AUD
    tag to `~/.ebda-os.local.env` as `OS_BRAIN_ACCESS_TEAM_DOMAIN=<team>.cloudflareaccess.com` and `OS_BRAIN_ACCESS_AUD=<aud>`
    and redeploy (step 3). From then on Access wins and Basic Auth is ignored; set `DASH_BASIC_AUTH` to `off` in

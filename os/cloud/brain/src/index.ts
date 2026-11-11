@@ -5,6 +5,7 @@
 //   GET  /pending         Mac fallback drain of signed relay events (Bearer RELAY_SECRET), wire format unchanged.
 //   POST /findings        Mac watchers / dreaming cycle / self-heal report findings (Bearer INGEST_TOKEN).
 //   POST /findings        also { findings, reconcile: { source, keep? } }: a monitor's complete listing; absent keys resolve (prod-watch).
+//   POST /alerts          the platform's Telegram alerts, mirrored (Bearer INGEST_TOKEN, ruling AIOS-8); GET /api/alerts?since=<id> reads them.
 //   POST|DELETE /leases   HANDS-COORD controller lease on a repo {repo, holder, ttlMin<=240, note?} (Bearer INGEST_TOKEN).
 //   POST /drill           the Mac's weekly restore drill result {result:'pass'|'fail'} (Bearer INGEST_TOKEN, ruling F-I6).
 //   GET  /hands/leases[?run=id]  live controller leases for the hands (run token or HANDS_MAC_TOKEN)
@@ -26,6 +27,7 @@ import { OUTCOME_STATUSES, type JobOutcome, type JobUsage } from './hands';
 import { runTokenValid } from './runtoken';
 import { checkBearerAuth, mapEvent, mapRunDetail, signEvent, timingSafeEqualStr, verifyGitHubSig, type RelayEvent } from './relay';
 import { cronName } from './schedule';
+import { validateAlert, type PlatformAlert } from './alerts';
 import { handleSocial } from './social/routes';
 import { validateUsage } from './usage';
 import { watchAdvisories } from './watchers/advisories';
@@ -92,6 +94,14 @@ async function handleGitHub(request: Request, env: Env, ctx: ExecutionContext): 
     // a green run on the default branch closes that workflow's open CI finding (and is remembered for M-4)
     ctx.waitUntil(brainStub(env).resolveCi(slug, detail.workflow, runKey));
     return new Response(null, { status: 204 });
+  }
+  // AIOS-8: a failed default-branch run is what every workflow notify step pages about; record it in the alert feed
+  if (run?.conclusion === 'failure' && detail.branch === detail.defaultBranch && slug) {
+    ctx.waitUntil(
+      brainStub(env)
+        .recordAlert({ source: `github/${slug}`, level: 'p1', title: `${detail.workflow} failed on ${detail.branch} (${slug})`, text: `${detail.workflow} failed on ${detail.branch} in ${slug} @ ${String(run?.head_sha ?? '').slice(0, 7)}`, url: String(run?.html_url ?? '').startsWith('https://') ? String(run.html_url) : undefined, repo: slug }, Date.now(), false) // the CI relay already makes this a ci-failure finding
+        .then(() => undefined),
+    );
   }
   const mapped = mapEvent(ghEvent, payload);
   if (!mapped || !deliveryId) return new Response(null, { status: 204 });
@@ -266,6 +276,14 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
   const refused = await gateHuman(request, env, () => brain);
   if (refused) return refused;
   if (request.method === 'GET' && path === '/api/state') return json(await brain.state());
+  if (request.method === 'GET' && path === '/api/alerts') {
+    // AIOS-8: the alert feed for controllers (os/ops/alert-wait.sh): ids > since, newest first
+    const u = new URL(request.url);
+    const since = Number(u.searchParams.get('since') ?? 0);
+    const limit = Number(u.searchParams.get('limit') ?? 100);
+    if (!Number.isInteger(since) || since < 0 || !Number.isInteger(limit) || limit < 1) return json({ error: 'since and limit must be non-negative integers' }, 400);
+    return json({ alerts: await brain.alertsSince(since, limit) });
+  }
   // F-01: the global kill switch. POST /api/halt {on: boolean, reason?: string}; same-origin like the question answers. Clearing is manual only.
   if (request.method === 'POST' && path === '/api/halt') {
     if (request.headers.get('Origin') !== new URL(request.url).origin) return json({ error: 'cross-origin' }, 403);
@@ -332,6 +350,26 @@ export default {
         if (!rec) return json(out);
         const resolved = await brainStub(env).reconcileSource(rec.source, (list as Finding[]).map((f) => f.key), rec.keep ?? []);
         return json({ ...out, resolved });
+      }
+      if (path === '/alerts' && request.method === 'POST') {
+        // AIOS-8: the platform's Telegram alerts, mirrored (one alert or an array <= 20)
+        if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });
+        let body: unknown;
+        try {
+          body = await readJson(request);
+        } catch {
+          return json({ error: 'bad json' }, 400);
+        }
+        const list = Array.isArray(body) ? body : [body];
+        if (list.length > 20) return json({ error: 'at most 20 alerts per request' }, 400);
+        for (const a of list) {
+          const err = validateAlert(a);
+          if (err) return json({ error: err }, 400);
+        }
+        if (!(await brainStub(env).admitIngest(list.length))) return json({ error: 'daily ingest limit reached' }, 429);
+        const out = [];
+        for (const a of list as PlatformAlert[]) out.push(await brainStub(env).recordAlert(a));
+        return json({ recorded: out });
       }
       if (path === '/leases' && (request.method === 'POST' || request.method === 'DELETE')) {
         // HANDS-COORD: a controller (Claude session / Ahmad) claims or releases a repo; the hands never touch a leased repo

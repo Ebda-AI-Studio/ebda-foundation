@@ -82,6 +82,14 @@ watches shares its failures (a Cloudflare-wide outage silences the brain and the
 only cover for that case and it is best-effort. Cost if wrong: during a Cloudflare-wide outage the first alert waits for GitHub's next
 scheduled run (minutes to hours), as before this change.
 
+Ruling AIOS-8 - The platform's Telegram alerts are mirrored into the brain (`POST /alerts`, stored with id + timestamp, deduped for
+10 min, `GET /api/alerts?since=` newest first, P0/P1 -> a `platform-alert` finding); controllers wait on them with
+`os/ops/alert-wait.sh`. Runtime senders (ebda-store API `alerts.service`, status Worker) POST the same text; workflow notify steps are
+covered by the org webhook instead (every one of them fires on a failed default-branch run, which the brain records as an alert),
+so no workflow had to change. Evidence: a Telegram bot cannot read its own outgoing messages, so Ahmad was pasting alerts by hand
+(2026-11-11: backup sweep, billing-renewal-daily, Sentry N+1). Cost if wrong: a workflow's alert text in the feed is the brain's
+one-line summary + run link, not the workflow's own wording.
+
 ## Escalation
 
 Primary operator = the AI OS (brain + hands + prod-watch). Human backup = Ahmad, reached ONLY through Telegram
