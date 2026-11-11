@@ -2,7 +2,7 @@
 
 Every PR except an all-safe one (markdown, `docs/`, newly added test files; a modified or deleted existing test IS reviewed) is reviewed by `claude -p` in CI. The gate runs from the BASE branch (`pull_request_target`; the PR is only fetched as data), so a PR cannot edit it to pass; edits under `.github/` are always reviewed. No criticals: label `ai-review-passed`. Criticals or any infra problem: the check fails. The drain loop merges a `risky-path` PR only with `ai-review-passed`.
 
-Files: `pass-marker.mjs` (keeps `ai-review-passed` tied to the reviewed diff via a patch-id marker comment: a clean merge of main keeps the label, any change to the PR's own diff strips it), `risky-paths.mjs` (path classifier), `prompt.md` (rules, including the slop section), `review.mjs` (parses the model output, posts findings, gates). Workflow: `.github/workflows/ai-review.yml` (reusable, `workflow_call` only). Rulings AIR-1..3 in `docs/RULINGS.md`.
+Files: `pass-marker.mjs` (binds `ai-review-passed` to the reviewed head and the byte hash of the PR-only diff via a bot marker comment: a clean merge of main keeps the label, any other change strips it; Ruling AIR-6), `risky-paths.mjs` (path classifier), `prompt.md` (rules, including the slop section), `review.mjs` (parses the model output, posts findings, gates). Workflow: `.github/workflows/ai-review.yml` (reusable, `workflow_call` only). Rulings AIR-1..3 in `docs/RULINGS.md`.
 
 ## Adopt in a product repo
 1. Copy `risky-paths.mjs`, `pass-marker.mjs`, `prompt.md`, `review.mjs` to `.github/ai-review/`.
