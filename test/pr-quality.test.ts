@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // @ts-expect-error plain .mjs without types
-import { checkPrBody, closedIssues, section } from '../ci/pr-quality/pr-body-check.mjs';
+import { checkPrBody, closedIssues, section, enforceFrom } from '../ci/pr-quality/pr-body-check.mjs';
 // @ts-expect-error plain .mjs without types
-import { scan, compare } from '../ci/pr-quality/slop-guard.mjs';
+import { scan, compare, eslintGrowth } from '../ci/pr-quality/slop-guard.mjs';
 
 const GOOD = '## Verified\nnpm test green, 14 new tests\n\n## Not verified\nThe live deploy\n\n## Cost-if-wrong\nA red check until the secret exists\n';
 
@@ -94,6 +94,76 @@ describe('slop-guard', () => {
     expect(run('--update').status).toBe(0);
     expect(run().status).toBe(0);
     expect(JSON.parse(readFileSync(join(root, '.pr-quality-baseline.json'), 'utf8')).ids).toEqual([]);
+  });
+});
+
+describe('base-branch enforcement', () => {
+  const cli = join(__dirname, '../ci/pr-quality/slop-guard.mjs');
+  const guard = (pr: string, base: string) => spawnSync('node', [cli, '--root', pr, '--base-root', base], { encoding: 'utf8' });
+  const src = (n: number) => `const a${n}: any = 1;\nexport const u${n} = a${n};\n`;
+  const use = (n: number) => `u${n};\n`;
+  const cfg = '{"roots":["apps"]}';
+  function seed(n: number) { // a repo with n baselined `any` violations
+    const files: Record<string, string> = { '.pr-quality.json': cfg };
+    for (let i = 0; i < n; i++) { files[`apps/a/src/f${i}.ts`] = src(i); files[`apps/a/src/g${i}.ts`] = use(i); }
+    const root = repo(files);
+    spawnSync('node', [cli, '--root', root, '--update', '--init']);
+    files['.pr-quality-baseline.json'] = readFileSync(join(root, '.pr-quality-baseline.json'), 'utf8');
+    return { root, files };
+  }
+  it('a PR that adds a violation AND edits its own baseline to hide it still fails against the base', () => {
+    const b = seed(1);
+    const pr = repo({ ...b.files, 'apps/a/src/f9.ts': src(9), 'apps/a/src/g9.ts': use(9) });
+    rmSync(join(pr, '.pr-quality-baseline.json'));
+    spawnSync('node', [cli, '--root', pr, '--update', '--init']); // the PR "re-takes" its baseline: now self-consistent
+    expect(spawnSync('node', [cli, '--root', pr], { encoding: 'utf8' }).status).toBe(0); // the old check alone is fooled
+    const r = guard(pr, b.root);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/baseline holds an id the base branch's does not|NEW vs the base/);
+  });
+  it('a PR that fixes a violation and shrinks its baseline passes', () => {
+    const b = seed(2);
+    const files = { ...b.files }; delete files['apps/a/src/f1.ts']; delete files['apps/a/src/g1.ts'];
+    const pr = repo(files);
+    spawnSync('node', [cli, '--root', pr, '--update']);
+    expect(guard(pr, b.root).status).toBe(0);
+  });
+  it('base config wins: a PR cannot narrow roots to skip files', () => {
+    const b = seed(1);
+    const pr = repo({ ...b.files, '.pr-quality.json': '{"roots":["nowhere"]}' });
+    spawnSync('node', [cli, '--root', pr, '--update', '--init', '--config', join(pr, '.pr-quality.json')]);
+    expect(guard(pr, b.root).status).toBe(1); // base roots scan apps/: the violation still counts and the baseline no longer matches
+  });
+  it('eslint suppressions may not grow vs the base; a moved file with the same total is fine', () => {
+    const sup = (n: number, file = 'src/a.ts') => JSON.stringify({ [file]: { 'no-console': { count: n } } });
+    const base = repo({ 'apps/a/eslint-suppressions.json': sup(3) });
+    expect(eslintGrowth(repo({ 'apps/a/eslint-suppressions.json': sup(4) }), base, ['apps'])).toHaveLength(1);
+    expect(eslintGrowth(repo({ 'apps/a/eslint-suppressions.json': sup(2) }), base, ['apps'])).toEqual([]);
+    expect(eslintGrowth(repo({ 'apps/a/eslint-suppressions.json': sup(3, 'src/moved.ts') }), base, ['apps'])).toEqual([]);
+    expect(eslintGrowth(repo({ 'apps/b/eslint-suppressions.json': sup(1) }), base, ['apps'])).toHaveLength(1); // a new workspace file cannot launder
+    expect(eslintGrowth(repo({ 'apps/a/eslint-suppressions.json': sup(9) }), repo({ 'apps/a/x.ts': '' }), ['apps'])).toEqual([]); // base has none: adoption
+  });
+});
+
+describe('pr-body grace period', () => {
+  it('enforceFrom reads the config date; unset or unreadable means enforce now', () => {
+    const f = join(mkdtempSync(join(tmpdir(), 'pqc-')), 'c.json');
+    writeFileSync(f, '{"bodyCheckEnforceFrom":"2099-01-01"}');
+    expect(enforceFrom(f)).toBe(Date.parse('2099-01-01'));
+    writeFileSync(f, '{}');
+    expect(enforceFrom(f)).toBeNull();
+    expect(enforceFrom(join(tmpdir(), 'does-not-exist.json'))).toBeNull();
+  });
+  it('CLI: a bad body only warns (exit 0) before the date and fails (exit 1) after it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pqc-'));
+    const run = (date: string) => {
+      writeFileSync(join(dir, 'c.json'), JSON.stringify({ bodyCheckEnforceFrom: date }));
+      return spawnSync('node', [join(__dirname, '../ci/pr-quality/pr-body-check.mjs')], { env: { PATH: process.env.PATH ?? '', PR_BODY: 'no sections', PR_TITLE: 'feat: x', PR_QUALITY_CONFIG: join(dir, 'c.json') }, encoding: 'utf8' });
+    };
+    const before = run('2099-01-01');
+    expect(before.status).toBe(0);
+    expect(before.stderr).toMatch(/::warning::pr-body \(warn-only until 2099-01-01\)/);
+    expect(run('2000-01-01').status).toBe(1);
   });
 });
 

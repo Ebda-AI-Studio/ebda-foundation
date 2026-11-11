@@ -1,9 +1,11 @@
 name: PR quality
 
-# Anti-slop gate (os/standard/pr-quality.md). REUSABLE ONLY (workflow_call), same adoption rules as ai-review.yml: a product repo
-# calls it or carries a copy whose `on:` is `pull_request` with types [opened, synchronize, reopened, edited, ready_for_review],
-# plus .github/pr-quality/{pr-body-check.mjs,slop-guard.mjs}, .pr-quality.json and .pr-quality-baseline.json (ci/pr-quality/README.md).
-# Both jobs are plain node: no install, seconds to run.
+# Anti-slop gate (os/standard/pr-quality.md). REUSABLE ONLY (workflow_call): a product repo calls it from a `pull_request_target` workflow or
+# carries a copy whose `on:` is `pull_request_target` with types [opened, synchronize, reopened, edited, ready_for_review], plus
+# .github/pr-quality/{pr-body-check.mjs,slop-guard.mjs}, .pr-quality.json and .pr-quality-baseline.json (ci/pr-quality/README.md).
+# THE GUARDS RUN FROM THE BASE BRANCH. The workflow comes from the base, the scripts and config are checked out from the base tip, and the
+# PR is only scanned as data (checked out into pr/, never executed). A PR cannot edit a guard, a baseline or the config to pass: the ratchet
+# is enforced against the BASE's baseline and eslint suppressions. Both jobs are plain node: no install, seconds to run.
 on:
   workflow_call:
 
@@ -24,16 +26,19 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - name: Check Verified / Not verified / Cost-if-wrong, fix and review-finding rules
+      - name: Check Verified / Not verified / Cost-if-wrong, fix and review-finding rules (warn-only until bodyCheckEnforceFrom)
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BRANCH: ${{ github.event.pull_request.head.ref }}
           PR: ${{ github.event.pull_request.number }}
+          PR_QUALITY_CONFIG: .pr-quality.json
         run: |
           set -euo pipefail
           CHANGED_FILES="$(gh pr diff "$PR" --name-only)"
@@ -47,8 +52,16 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          path: base
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - name: no-any, no-console, todo-no-issue, emoji-copy, duplicate-helper, unused-export (baseline may only shrink)
-        run: node .github/pr-quality/slop-guard.mjs
+      - name: no-any, no-console, todo-no-issue, emoji-copy, duplicate-helper, unused-export (baseline may only shrink, judged against the base)
+        run: node base/.github/pr-quality/slop-guard.mjs --root pr --base-root base

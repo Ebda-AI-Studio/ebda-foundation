@@ -143,3 +143,7 @@ Ruling PRQ-1 - Slop guards are baseline-ratcheted per violation id, not per coun
 
 Ruling PRQ-2 - The learning loop is a PR-body checklist, not a new service: a closed `review-finding` needs a checked Test line naming a test in the diff and a checked Foundation line. Cost if wrong: the Foundation line is a pointer, not proof a guard exists; the reviewer reads it.
 
+Ruling PRQ-3 - The guards judge a PR against its BASE branch, not its own copy: the workflow is `pull_request_target`, the scripts, `.pr-quality.json`, baseline and eslint suppressions come from the base tip, and the PR is checked out into `pr/` only to be scanned. A PR baseline may not hold an id the base's lacks, no violation outside the base baseline is allowed, and no `eslint-suppressions.json` may total more per rule than the base's (totals, so a moved file is fine, a new workspace file is not). The adoption PR itself (base has no baseline) falls back to the plain check. Cost if wrong: a PR branched before main fixed a violation can fail until it merges main; `pull_request_target` runs with repo permissions, so no step may execute PR content.
+
+Ruling PRQ-4 - The PR-body check is warn-only until `bodyCheckEnforceFrom` in `.pr-quality.json` (a date), so adopting it does not turn every open PR red; an unset or unreadable date means enforce now. Cost if wrong: for the grace period a PR without the three sections merges; the warning is still printed in the check log.
+
