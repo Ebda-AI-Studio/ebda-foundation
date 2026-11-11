@@ -1,0 +1,40 @@
+{
+  "_comment": "Social content job config (docs/plans/2026-11-11-social-posting.md). The OS posts ONLY Facebook Pages + LinkedIn company pages. Instagram and TikTok are Ahmad's own. Slots are Cairo local time; weekday 1=Mon..7=Sun (ISO). Ahmad can change any cadence here.",
+  "horizonDays": { "min": 2, "max": 8 },
+  "brands": {
+    "whisky11": {
+      "label": "Whisky 11",
+      "template": "whisky11.html",
+      "languages": ["en"],
+      "audience": "founders and operations leads at small and mid-size companies in the US and UK who need web apps, internal tools, automation or AI features built by a senior engineer",
+      "voice": "plain, direct, senior-engineer English; short sentences; concrete about the work, never hype",
+      "facts": [
+        "Whisky 11 is a software studio led by Ahmad Sharaf, a senior full-stack engineer.",
+        "It builds web apps, internal tools, workflow automation and AI features for US and UK clients.",
+        "Portfolio: whisky11.com/work. Contact through whisky11.com."
+      ],
+      "topics": ["how a small team should scope its first internal tool", "what to automate first in an operations team", "how to tell if an AI feature is worth building", "what a good handover of a codebase looks like", "shipping small and often vs one big launch", "the cost of a slow admin panel"],
+      "cadence": {
+        "facebook": [{ "weekday": 2, "time": "17:00" }, { "weekday": 4, "time": "17:00" }],
+        "linkedin": [{ "weekday": 2, "time": "15:00" }, { "weekday": 4, "time": "15:00" }]
+      }
+    },
+    "ebda": {
+      "label": "Ebda AI Studio",
+      "template": "ebda.html",
+      "languages": ["ar-EG", "en"],
+      "audience": "Egyptian merchants and small businesses who sell online or on WhatsApp and want their own store",
+      "voice": "Egyptian Arabic in full, warm sentences first, then the same message in plain English; never bare 'Ebda': the company is 'Ebda AI Studio', products 'Ebda Store' and 'Ebda Chat'",
+      "facts": [
+        "Ebda AI Studio makes Ebda Store (ebda.app), an online store builder for Egyptian merchants, and Ebda Chat (wa.ebda.app) for WhatsApp.",
+        "Payments from day one: cash on delivery and InstaPay.",
+        "Card payments work through the merchant's own payment gateway."
+      ],
+      "topics": ["opening an online store with cash on delivery and InstaPay", "taking orders from WhatsApp without losing them", "why your own store beats selling only on social media", "a product page that answers the buyer's questions", "following up with customers after the order"],
+      "cadence": {
+        "facebook": [{ "weekday": 1, "time": "20:00" }, { "weekday": 3, "time": "20:00" }],
+        "linkedin": [{ "weekday": 1, "time": "11:00" }, { "weekday": 3, "time": "11:00" }]
+      }
+    }
+  }
+}

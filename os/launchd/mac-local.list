@@ -28,3 +28,4 @@ reflect	ops/launchd/com.ebda.os.reflect.plist
 heal-watch	ops/launchd/com.ebda.os.heal-watch.plist
 app-error-heal	ops/launchd/com.ebda.os.app-error-heal.plist
 restore-drill	ops/launchd/com.ebda.os.restore-drill.plist
+social-content	ops/launchd/com.ebda.os.social-content.plist

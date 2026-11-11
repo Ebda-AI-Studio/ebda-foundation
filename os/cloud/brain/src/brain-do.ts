@@ -15,6 +15,8 @@ import { evidenceOf, fingerprint, type Finding, type Lane, type MergePolicy } fr
 import { providerFor, type JobUsage, type HandsBatch, type HandsJob, type HandsProvider, type JobOutcome, type RunKind, type UsageReport } from './hands';
 import { admit, dayKey, digestMessage, MONITOR_NOTES_PER_DIGEST, questionMessage, sendTelegram, URGENT_KINDS, type MsgKind, type Outgoing } from './telegram';
 import { usageGuard } from './usage';
+import { SocialEngine } from './social/engine';
+import type { Brand, Decision } from './social/types';
 import type { AdvisoryRunSummary } from './watchers/advisories';
 
 /** HANDS-COORD: the longest a controller lease may run before it must be renewed. */
@@ -198,6 +200,7 @@ export class BrainDO extends DurableObject<Env> {
       CREATE INDEX IF NOT EXISTS auth_fail_ip ON auth_fail(ip, at);
       CREATE TABLE IF NOT EXISTS leases (repo TEXT PRIMARY KEY, holder TEXT NOT NULL, note TEXT, claimed_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
     `);
+    SocialEngine.migrate(this.sql);
   }
 
   // ---------- small helpers ----------
@@ -1127,6 +1130,38 @@ export class BrainDO extends DurableObject<Env> {
       for (const q of pending) this.sql.exec(`UPDATE questions SET status = 'sent', sent_at = ?, deadline = ? WHERE id = ? AND status = 'pending'`, now, deadline, q.id);
     }
     return r;
+  }
+
+  // ---------- social posting (src/social/engine.ts) ----------
+  private _social: SocialEngine | null = null;
+  /** Replaceable in tests (adapters, fetch). The engine's fetch is this DO's fetchImpl, so tests stub one function. */
+  social(): SocialEngine {
+    if (!this._social) this._social = new SocialEngine(this.sql, this.env, () => this.fetchImpl, () => this.ctx.storage.sync());
+    return this._social;
+  }
+  socialIngest(d: unknown, now: number = Date.now()) {
+    return this.social().ingest(d, now);
+  }
+  socialDecide(id: string, decision: Decision, via: string, now: number = Date.now(), opts: { rev?: number; note?: string } = {}) {
+    return this.social().decide(id, decision, via, now, opts);
+  }
+  socialSetBrand(brand: Brand, patch: { paused?: boolean; keepApproval?: boolean }) {
+    return this.social().setBrand(brand, patch);
+  }
+  socialTick(now: number = Date.now()) {
+    return this.social().tick(now);
+  }
+  socialDigest(now: number = Date.now()) {
+    return this.social().digest(now);
+  }
+  socialEdits() {
+    return this.social().edits();
+  }
+  socialCalendar(from: number, to: number) {
+    return this.social().calendar(from, to);
+  }
+  socialPost(id: string) {
+    return this.social().getPost(id);
   }
 
   // ---------- dashboard ----------

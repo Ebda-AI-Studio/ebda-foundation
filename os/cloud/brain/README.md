@@ -59,6 +59,24 @@ Footprint: at most 3 outbound requests per service per 15 min and a few dozen pe
 - `POST /hands/refused {runId, reason}` (hands token): the container could not lock down egress and exits 3; the brain sends ONE P1 message a day, marks the run failed and requeues its jobs.
 - `GET /api/state` lists `unconfigured` watcher ids; `os/ops/cutover-gate-check.sh --deployed <url>` fails while a ported watcher is unconfigured.
 
+## Social posting (Facebook Pages + LinkedIn company pages)
+
+Plan, research links and Ahmad-only steps: `docs/plans/2026-11-11-social-posting.md`. Code: `src/social/` (engine, copy rules, routes,
+Telegram preview, adapters), tests `test/social.test.ts`; the Mac half is `os/ops/social-content.sh` (launchd `social-content`, daily).
+Instagram and TikTok are Ahmad's own and never posted by the OS.
+
+| Piece | Where | Behaviour |
+|---|---|---|
+| Calendar | `social_posts` (BrainDO SQLite), images in KV `social:img:*` (90-day TTL) | one row per slot id `<brand>-<network>-<YYYYMMDDHHmm>`; re-submit = new revision |
+| Approval | `socialTick` on the 5-min `tick` | preview to Telegram 24 h ahead; publishes only Ahmad-approved revisions until 14 days after his first approval (per brand), then auto |
+| Publish | `src/social/adapters/{facebook,linkedin}.ts` | claim then call; lost answer = `uncertain`, reconciled from the Page feed, never blind-retried |
+| Digest | `socialDigest` on the 05:00 `digest` cron | one message a day: mode, posts, failures, disabled networks, Instagram shares on the Page |
+| Routes | `/social/drafts`, `/social/edits`, `/social/calendar` (INGEST_TOKEN); `/social/decide`, `/social/brands/:brand` (SOCIAL_DECIDE_TOKEN); `/social/d/:id` (signed link) | |
+
+Secrets: `SOCIAL_FACEBOOK`, `SOCIAL_LINKEDIN`, `SOCIAL_LINK_SECRET`, `SOCIAL_DECIDE_TOKEN`. Unset = that network / door is disabled and the
+digest says why. Vars: `SOCIAL_APPROVAL_DAYS` (14), `SOCIAL_APPROVAL_LEAD_HOURS` (24), `SOCIAL_FB_SPACING_MIN` (180),
+`SOCIAL_FB_MAX_DEFER_HOURS` (24), `SOCIAL_GRAPH_VERSION` (v27.0), `SOCIAL_LINKEDIN_VERSION` (202610).
+
 ## Design
 
 | Piece | Where | Notes |

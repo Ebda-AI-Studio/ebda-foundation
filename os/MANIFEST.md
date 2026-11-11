@@ -105,6 +105,7 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | alert-triage | REPLACED-BY | cloud/brain/src/classify.ts | brain classifies findings (urgent vs pre-approved) |
 | anomaly-watch | DROP | - | Ahmad 2026-11-06: Force products only |
 | audit-pack-daily | KEEP-MAC | audit-pack-daily | assembles the audit pack from local repos |
+| social-content | KEEP-MAC | social-content | daily Facebook + LinkedIn drafts for both brands (claude -p + headless Chrome render); the brain gates and publishes (docs/plans/2026-11-11-social-posting.md) |
 | cf-workers-watch | PORT-BRAIN | cf-workers | HTTP/API poll of Cloudflare Workers state; brain health.ts covers only 2 URLs |
 | ci-alert | REPLACED-BY | cloud/brain/src/relay.ts | CI failures arrive as signed webhooks into the brain relay inbox |
 | ci-runner-guard | KEEP-MAC | ci-runner-guard | drives Umbra and the runner service |
