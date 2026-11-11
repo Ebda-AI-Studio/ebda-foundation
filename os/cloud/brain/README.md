@@ -117,8 +117,13 @@ Mac watchers, the dreaming cycle and self-heal recipes report with `POST /findin
 keys under `keep` are left alone (the monitor could not evaluate them this run, e.g. the R2 logs were unreadable). The heartbeat
 is `sources.prodWatchSeenAt` in `GET /api/state`. Kinds: `prod-outage` (probe), `prod-5xx`, `prod-429`, `prod-exception`,
 `prod-logs-silent`, `alert-drill`. prod-watch already messages Telegram itself, so a prod-watch finding without a `repo` classifies as
-`digest` (recorded, no hands job, no second message; `src/classify.ts`). Dead-man switch: once prod-watch has reported, 60 min of
-silence raises ONE `monitor-silent` P1 (an alert kind, never a hands job); it resolves on the next report.
+`digest` (recorded, no hands job, no second message; `src/classify.ts`). Dead-man switch: see "prod-watch on the brain cron" below.
+
+**prod-watch on the brain cron (AIOS-7).** With `PROD_WATCH_ON_BRAIN=1` (committed) the 5-min tick runs the prod-watch probes every
+10 min (`src/prod-watch.ts`, KV-gated): same `os/config/prod-watch.json` list and `ebda-logs-core.mjs` rules as the GitHub run,
+P1s sent with the same dedupe/6-a-day policy, findings as source `prod-watch` (heartbeat `sources.prodWatchCfSeenAt`). The GitHub
+run is the secondary: R2 log rules, digest, and probe alerts only while this Worker's `/health` does not answer. Dead-man: brain-cron
+run stale 30 min = one `monitor-silent` P1; GitHub run silent 24 h = a `monitor-stale` digest note.
 
 **Controller leases (HANDS-COORD).** `POST /leases {repo, holder, ttlMin≤240, note?}` / `DELETE /leases {repo, holder}`
 (Bearer `INGEST_TOKEN`; Mac helper `os/ops/controller-lease.sh`). 409 = another controller holds it. While a lease is live the

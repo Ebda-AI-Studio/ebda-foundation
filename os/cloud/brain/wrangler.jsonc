@@ -37,6 +37,7 @@
     // live public endpoints only (both answered 200 on 2026-11-05); override with OS_BRAIN_HEALTH_TARGETS at deploy
     "HEALTH_TARGETS": "[{\"url\":\"https://api.ebda.app/health\",\"kind\":\"api\"},{\"url\":\"https://ebda.app/\",\"kind\":\"page\"}]",
     "HEALTH_FAIL_BUDGET": "3",
+    "PROD_WATCH_ON_BRAIN": "1",
     // Cloud watchers (src/watchers/*): a var left unset makes that watcher raise ONE monitor-unconfigured finding instead of
     // running. Set them at deploy with OS_BRAIN_<NAME> (scripts/deploy.sh); the Ebda repo that holds the restore drill is the
     // only default.

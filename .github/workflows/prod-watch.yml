@@ -1,4 +1,6 @@
 name: Prod watch
+# Ruling AIOS-7 (2026-11-11): the PRIMARY probe loop runs on the brain's Cron Trigger; this GitHub-hosted run is the secondary
+# heartbeat from outside Cloudflare (R2 log rules, daily digest, probe alerts while the brain does not answer).
 
 # The outside-in production watch for the Ebda suite (os/ops/ebda-prod-watch.mjs). It runs on GitHub-hosted runners ON PURPOSE: off
 # Cloudflare (so a Cloudflare-wide outage, which also takes down status.ebda.app and the brain Worker, still alerts) and off the

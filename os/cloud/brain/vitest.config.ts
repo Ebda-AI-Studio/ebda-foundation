@@ -19,6 +19,8 @@ export default defineConfig({
           // (the halt itself is covered by cost-abuse F-01, which sets it explicitly)
           HANDS_HALT: '0',
           INGEST_TOKEN: 'test-ingest-token',
+          // the committed config runs prod-watch on the tick (AIOS-7); the older tick tests count network calls, test/prod-watch-cron.test.ts sets it on
+          PROD_WATCH_ON_BRAIN: '0',
           TELEGRAM_WEBHOOK_SECRET: 'test-tg-secret',
           TELEGRAM_CHAT_ID: '4242',
           TELEGRAM_BOT_TOKEN: 'test-bot-token',

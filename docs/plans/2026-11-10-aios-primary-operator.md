@@ -73,6 +73,15 @@ Evidence: the brain's GitHub token is scoped to Ebda-AI-Studio, and the 2026-11-
 but answered HTTP 404 for Whisky-11 every hour. Cost if wrong: Whisky-11 repos get no Dependabot / stuck-PR watching from the brain
 until a token for that org exists and the org is added back.
 
+Ruling AIOS-7 - Production probes run primarily on the brain's own Cron Trigger (every 10 min, `src/prod-watch.ts`, same probe
+list and alert rules as the GitHub run); the GitHub-hosted prod-watch stays as the secondary heartbeat from outside Cloudflare (R2 log
+rules, daily digest) and messages the probe alerts itself whenever the brain's `/health` does not answer. Dead-man: the brain-cron run
+not completing for 30 min = one P1; the GitHub run silent for 24 h = a digest note. Evidence: GitHub ran the `*/10` schedule once in
+~10 h (2026-11-10 15:00 -> 2026-11-11 01:00, measured); Ahmad approved the move 2026-11-11. Trade-off: a watcher on the platform it
+watches shares its failures (a Cloudflare-wide outage silences the brain and the sites together; ruling OBS-1); the GitHub run is the
+only cover for that case and it is best-effort. Cost if wrong: during a Cloudflare-wide outage the first alert waits for GitHub's next
+scheduled run (minutes to hours), as before this change.
+
 ## Escalation
 
 Primary operator = the AI OS (brain + hands + prod-watch). Human backup = Ahmad, reached ONLY through Telegram

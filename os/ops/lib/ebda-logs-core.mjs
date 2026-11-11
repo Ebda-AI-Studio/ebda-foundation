@@ -353,3 +353,15 @@ export function brainListing(alerts, { logsRead }) {
   }));
   return { findings, reconcile: { source: 'prod-watch', ...(logsRead ? {} : { keep: [...LOG_ALERT_PREFIXES] }) } };
 }
+
+/**
+ * Which alerts THIS GitHub-hosted run messages (ruling AIOS-7). The brain's cron owns the probe alerts while it answers; this run then
+ * messages only what the brain cannot see (the R2 log rules) and leaves the probe keys untouched in its own state. When the brain does
+ * not answer (a Cloudflare-wide failure takes it down with what it watches), this run messages the probe alerts too.
+ */
+export function messageScope(alerts, { brainUp, logsRead }) {
+  return {
+    alerts: brainUp ? alerts.filter((a) => !a.key.startsWith('probe:')) : alerts,
+    unknownPrefixes: [...(logsRead ? [] : LOG_ALERT_PREFIXES), ...(brainUp ? ['probe:'] : [])],
+  };
+}
