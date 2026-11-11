@@ -68,6 +68,11 @@ but an unset `EBDA_OS_INGEST_TOKEN` stays a skip. Evidence: OBS-3 (a declared-bu
 10 min until Ahmad's one command lands. Cost if wrong: until the token is set the brain silently lacks production state; the
 inventory above and the PR say so.
 
+Ruling AIOS-6 - The brain watches Ebda-AI-Studio only (`OS_ORGS` in `os/config/brain-watchers.json`; `OS_BRAIN_ORGS` overrides).
+Evidence: the brain's GitHub token is scoped to Ebda-AI-Studio, and the 2026-11-11 01:07 advisories run read Ebda-AI-Studio (0 alerts)
+but answered HTTP 404 for Whisky-11 every hour. Cost if wrong: Whisky-11 repos get no Dependabot / stuck-PR watching from the brain
+until a token for that org exists and the org is added back.
+
 ## Escalation
 
 Primary operator = the AI OS (brain + hands + prod-watch). Human backup = Ahmad, reached ONLY through Telegram
@@ -79,7 +84,8 @@ Primary operator = the AI OS (brain + hands + prod-watch). Human backup = Ahmad,
    (personal CF account); `gh secret set EBDA_OS_INGEST_TOKEN -R Ebda-AI-Studio/ebda-foundation --body "$T"`; append
    `OS_BRAIN_URL=https://os.ebda.app` and `INGEST_TOKEN=$T` to `~/.whisky-services.env`.
 2. GitHub fine-grained token, resource owner **Ebda-AI-Studio**, repos ebda-store, ebda-whatsapp, ebda-foundation, ebda-studio:
-   read-only Actions, Contents, Metadata, Pull requests, Dependabot alerts; org permission Administration: read (billing for
+   read-only Actions, Commit statuses, Contents, Metadata, Pull requests, Dependabot alerts (Commit statuses is what pr-shepherd's
+   `statusCheckRollup` needs: without it GitHub answers "Resource not accessible by personal access token", measured 2026-11-11); org permission Administration: read (billing for
    cost-guard). -> `wrangler secret put GITHUB_TOKEN --name ebda-os-brain`.
 3. Cloudflare API token (personal account, read-only): Account Analytics:Read + Workers Scripts:Read. ->
    `wrangler secret put CF_API_TOKEN --name ebda-os-brain`.

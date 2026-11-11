@@ -24,8 +24,12 @@ missing=""
 for k in OS_CF_ACCOUNT_ID OS_BRAIN_KV_ID OS_BRAIN_HOST; do [ -n "${!k:-}" ] || missing="$missing $k"; done
 if [ -n "$missing" ] && [ "$DRY" -eq 0 ]; then echo "deploy: missing$missing (set them in ~/.ebda-os.local.env)" >&2; exit 2; fi
 OUT="$HERE/wrangler.deploy.jsonc"
+# the orgs the brain watches: OS_BRAIN_ORGS (env / ~/.ebda-os.local.env), else OS_ORGS in os/config/brain-watchers.json, else every
+# billed org. The brain's GitHub token is scoped to Ebda-AI-Studio, so the committed value keeps it from 404ing on the other orgs.
+_brain_orgs="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("OS_ORGS", ""))' "$HERE/../../config/brain-watchers.json" 2>/dev/null || true)"
+_brain_orgs="${OS_BRAIN_ORGS:-${_brain_orgs:-$OS_BILLED_ORGS}}"
 OS_BRAIN_KV_ID="${OS_BRAIN_KV_ID:-00000000000000000000000000000000}" \
-OS_BRAIN_ORGS="$OS_BILLED_ORGS" \
+OS_BRAIN_ORGS="$_brain_orgs" \
 python3 -I - "$HERE/wrangler.jsonc" "$OUT" <<'PY'
 import json, os, sys
 src, out = sys.argv[1], sys.argv[2]
@@ -78,6 +82,7 @@ committed = {}
 wpath = os.path.join(cfg_dir, "brain-watchers.json")
 if os.path.exists(wpath):
     committed = {k: (v if isinstance(v, str) else json.dumps(v, separators=(",", ":"))) for k, v in json.load(open(wpath, encoding="utf-8")).items() if not k.startswith("_")}
+    committed.pop("OS_ORGS", None)  # rendered through __OS_ORGS__ above, not a watcher var
     unknown = set(committed) - set(WATCHER_VARS)
     if unknown:
         sys.exit("deploy: brain-watchers.json has unknown keys: " + ", ".join(sorted(unknown)))
