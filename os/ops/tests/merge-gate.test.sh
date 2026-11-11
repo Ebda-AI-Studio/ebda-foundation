@@ -56,6 +56,11 @@ jobs:
 Y
 ok "always() aggregator is required, conditional matrix job is not" "$(python3 -I "$OPS/lib/merge_gate.py" required "$WF2")" '["App builds (affected)", "Detect"]'
 
+# --- the REAL repo workflows must yield a required list that includes the always-run PR sanity job (GATE-REQ):
+# an empty list is the "no always-run PR check to require" refusal.
+REAL="$(python3 -I "$OPS/lib/merge_gate.py" required "$HERE/../../../.github/workflows")"
+case "$REAL" in *'"PR sanity"'*) ok "real ci.yml requires the PR sanity job" 1 1 ;; *) ok "real ci.yml requires the PR sanity job" "$REAL" 'contains "PR sanity"' ;; esac
+
 # --- a path-filtered pull_request workflow contributes NO required check: GitHub creates no check run for a PR outside
 #     the filter, so requiring one waits the full --max-wait-min for a check that will never exist (ebda-store PR 490,
 #     blast-radius.yml, 2026-11-09). A filter on `push` only changes nothing. The fork guard counts as always-on. ---
@@ -198,7 +203,7 @@ ok "green x3 merges (exit 0)"        "$(run "$TMP/green.json" --polls 3)" "0"
 ok "  ...and actually ran the merge" "$([ -f "$TMP/merged" ] && echo yes || echo no)" "yes"
 ok "dry-run never merges"            "$(run "$TMP/green.json" --polls 2 --dry-run)" "0"
 ok "  ...merge cmd not run"          "$([ -f "$TMP/merged" ] && echo yes || echo no)" "no"
-ok "ZERO checks never merges (exit 2 after max wait)" "$(MERGE_GATE_MAX_WAIT_S=1 run "$TMP/none.json" --polls 3)" "2"
+ok "ZERO checks never merges (exit 2 after max wait)" "$(MERGE_GATE_MAX_TICKS=2 run "$TMP/none.json" --polls 3)" "2"
 ok "  ...merge cmd not run"          "$([ -f "$TMP/merged" ] && echo yes || echo no)" "no"
 ok "no PR workflows => refuse (2)"   "$(mkdir -p "$TMP/empty"; MERGE_GATE_VIEW_CMD="cat $TMP/green.json" bash "$OPS/merge-gate.sh" 7 abcdef1 --workflows "$TMP/empty" >/dev/null 2>&1; echo $?)" "2"
 ok "short sha rejected (64)"         "$(bash "$OPS/merge-gate.sh" 7 abc >/dev/null 2>&1; echo $?)" "64"
