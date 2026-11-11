@@ -3,7 +3,7 @@
 export const CRONS = {
   /** every 5 min: CI inbox -> findings, prod health, questions, urgent dispatch, self-check */
   tick: '*/5 * * * *',
-  /** every 15 min (offset 2): services, page-load, journey-monitor */
+  /** every 15 min (offset 2): services, page-load, journey-monitor, loop-stall */
   quarter: '2-59/15 * * * *',
   /** hourly at :07: dependency / CVE advisories (ETag), KEV refresh at most daily; deploy-drift, pr-shepherd */
   hourly: '7 * * * *',

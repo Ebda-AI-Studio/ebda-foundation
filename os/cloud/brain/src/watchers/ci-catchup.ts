@@ -18,7 +18,7 @@ export interface CiSink extends Sink {
   resolveCi(slug: string, workflow: string, runKey: string, now?: number): Promise<boolean>;
 }
 
-function reposFrom(json: string | undefined): string[] {
+export function reposFrom(json: string | undefined): string[] {
   try {
     const repos = (JSON.parse(String(json)) as { repos?: Record<string, unknown> }).repos;
     return repos && typeof repos === 'object' ? Object.keys(repos).filter((r) => /^[\w.-]+\/[\w.-]+$/.test(r)).slice(0, MAX_REPOS) : [];

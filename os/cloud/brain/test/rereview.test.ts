@@ -43,11 +43,11 @@ describe('N-1: a watcher that runs configured resolves its monitor-unconfigured 
     const brain = brainStub(env);
     const bare = { ...env, SERVICE_TARGETS: undefined, PAGE_LOAD_TARGETS: undefined, JOURNEY_CONFIG: undefined } as Env;
     await runWatchers('quarter', bare, brain, T0);
-    expect((await brain.state()).unconfigured).toEqual(['journey-monitor', 'page-load', 'services']);
+    expect((await brain.state()).unconfigured).toEqual(['journey-monitor', 'loop-stall', 'page-load', 'services']);
     const configured = { ...bare, SERVICE_TARGETS: JSON.stringify([{ name: 'api', url: 'https://api.svc.test/h', kind: 'api' }]) } as Env;
     await runWatchers('quarter', configured, brain, T0 + 20 * MIN, (async () => ok200()) as unknown as typeof fetch);
     // the cutover gate (--deployed) reads exactly this list: services is gone, the two still-unconfigured ones stay
-    expect((await brain.state()).unconfigured).toEqual(['journey-monitor', 'page-load']);
+    expect((await brain.state()).unconfigured).toEqual(['journey-monitor', 'loop-stall', 'page-load']);
     const f = (await brain.state()).findings.recent.find((x) => x.kind === 'monitor-unconfigured' && x.title.includes('services'));
     expect(f?.status).toBe('resolved');
   });

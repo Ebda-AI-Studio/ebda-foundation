@@ -12,6 +12,7 @@ import { watchDeployDrift } from '../src/watchers/deploy-drift';
 import { isoWeek, watchDrDrill } from '../src/watchers/dr-drill';
 import { forbiddenPath, isStep, watchJourneys } from '../src/watchers/journey-monitor';
 import { median, watchPageLoad } from '../src/watchers/page-load';
+import { watchLoopStall } from '../src/watchers/loop-stall';
 import { watchPrShepherd } from '../src/watchers/pr-shepherd';
 import { GROUPS, runWatchers } from '../src/watchers/run';
 import { watchSentryStale } from '../src/watchers/sentry-stale';
@@ -278,6 +279,53 @@ describe('pr-shepherd', () => {
   });
 });
 
+describe('loop-stall (ruling LOOP-WATCH-1): the session-independent backstop', () => {
+  const R = 'Ebda-AI-Studio/ebda-store';
+  const base = { HANDS_CONFIG_JSON: JSON.stringify({ repos: { [R]: {} } }), GITHUB_TOKEN: 'tok' };
+  const ago = (min: number) => new Date(NOW - min * 60000).toISOString();
+  const run = (id: number, conclusion: string, min: number) => ({ id, name: 'CI', conclusion, updated_at: ago(min), html_url: `https://github.com/${R}/actions/runs/${id}` });
+  const runs = (...r: unknown[]): Route => ['/actions/runs', () => json({ workflow_runs: r })];
+  const open = (...labels: string[][]): Route => ['pulls?state=open', () => json(labels.map((l, i) => ({ number: i + 1, draft: false, labels: l.map((name) => ({ name })) })))];
+  const closed = (minAgo: number | null): Route => ['pulls?state=closed', () => json(minAgo === null ? [] : [{ number: 99, merged_at: ago(minAgo) }])];
+  it('unconfigured', async () => {
+    const h = harness({ GITHUB_TOKEN: 'tok' }, []);
+    await watchLoopStall(h.ctx);
+    unconfigured(h, 'loop-stall');
+  });
+  it('main red for 45 min raises ONE P1 loop-main-red alert keyed by the first red run (must fire)', async () => {
+    const h = harness(base, [runs(run(3, 'failure', 5), run(2, 'failure', 45), run(1, 'success', 90)), open(), closed(1)]);
+    expect(await watchLoopStall(h.ctx)).toEqual({ repos: 1, red: 1, stalled: 0 });
+    expect(h.ingested).toMatchObject([{ kind: 'loop-main-red', key: `loop-stall:${R}:red-2`, severity: 'P1' }]);
+    expect(classifyFinding(h.ingested[0]!)).toMatchObject({ lane: 'digest', alert: true });
+  });
+  it('red for only 10 min, or green, raises nothing (must not fire) and reconciles', async () => {
+    for (const rs of [[run(2, 'failure', 10), run(1, 'success', 90)], [run(2, 'success', 5), run(1, 'failure', 90)]]) {
+      const h = harness(base, [runs(...rs), open(), closed(1)]);
+      expect(await watchLoopStall(h.ctx)).toMatchObject({ red: 0 });
+      expect(h.ingested).toEqual([]);
+      expect(h.reconciled.map((x) => x.kind)).toEqual(['loop-main-red', 'loop-merge-stall']);
+    }
+  });
+  it('no merge for 75 min with an approved PR raises loop-merge-stall; a held, draft-free or unapproved queue does not', async () => {
+    const h = harness(base, [runs(run(1, 'success', 5)), open(['ai-review-passed'], ['ai-review-passed', 'hold']), closed(75)]);
+    expect(await watchLoopStall(h.ctx)).toEqual({ repos: 1, red: 0, stalled: 1 });
+    expect(h.ingested).toMatchObject([{ kind: 'loop-merge-stall', severity: 'P1', detail: { approved: 1 } }]);
+    expect(classifyFinding(h.ingested[0]!)).toMatchObject({ alert: true });
+    const none = harness(base, [runs(run(1, 'success', 5)), open(['ai-review-passed', 'hold'], ['risky-path']), closed(75)]);
+    expect(await watchLoopStall(none.ctx)).toMatchObject({ stalled: 0 });
+    const recent = harness(base, [runs(run(1, 'success', 5)), open(['ai-review-passed']), closed(20)]);
+    expect(await watchLoopStall(recent.ctx)).toMatchObject({ stalled: 0 });
+    const never = harness(base, [runs(run(1, 'success', 5)), open(['ai-review-passed']), closed(null)]);
+    expect(await watchLoopStall(never.ctx)).toMatchObject({ stalled: 0 });
+  });
+  it('a GitHub failure is a watcher-error and resolves nothing', async () => {
+    const h = harness(base, [['/actions/runs', () => new Response('no', { status: 500 })]]);
+    await watchLoopStall(h.ctx);
+    expect(h.ingested).toMatchObject([{ kind: 'watcher-error', key: `loop-stall:${R}:error` }]);
+    expect(h.reconciled).toEqual([]);
+  });
+});
+
 describe('cf-workers', () => {
   const base = { CF_API_TOKEN: 'tok', CF_ACCOUNT_ID: ACC };
   const scripts = (ids: string[]): Route => ['/workers/scripts', () => json({ success: true, result: ids.map((id) => ({ id })) })];
@@ -453,17 +501,17 @@ describe('runner + real Durable Object', () => {
   it('every group member exists and ids are unique', () => {
     const ids = Object.values(GROUPS).flat().map((w) => w.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.sort()).toEqual(['cf-usage', 'cf-workers', 'ci-catchup', 'cost-guard', 'deploy-drift', 'dr-drill', 'journey-monitor', 'page-load', 'pr-shepherd', 'sentry-stale', 'services', 'world-watch']);
+    expect(ids.sort()).toEqual(['cf-usage', 'cf-workers', 'ci-catchup', 'cost-guard', 'deploy-drift', 'dr-drill', 'journey-monitor', 'loop-stall', 'page-load', 'pr-shepherd', 'sentry-stale', 'services', 'world-watch']);
   });
-  it('a quarter run with nothing configured raises the three monitor-unconfigured findings in the brain, and does not rerun within its cadence', async () => {
-    await fresh('wd:last:services', 'wd:last:page-load', 'wd:last:journey-monitor');
+  it('a quarter run with nothing configured raises the four monitor-unconfigured findings in the brain, and does not rerun within its cadence', async () => {
+    await fresh('wd:last:services', 'wd:last:page-load', 'wd:last:journey-monitor', 'wd:last:loop-stall');
     const brain = brainStub(env);
     const e = { ...env, SERVICE_TARGETS: undefined, PAGE_LOAD_TARGETS: undefined, JOURNEY_CONFIG: undefined } as Env;
     const r = await runWatchers('quarter', e, brain, NOW);
-    expect(r).toEqual({ services: 'ran', 'page-load': 'ran', 'journey-monitor': 'ran' });
+    expect(r).toEqual({ services: 'ran', 'page-load': 'ran', 'journey-monitor': 'ran', 'loop-stall': 'ran' });
     const titles = (await brain.state()).findings.recent.filter((f) => f.kind === 'monitor-unconfigured').map((f) => f.title);
-    expect(titles).toHaveLength(3);
-    expect(await runWatchers('quarter', e, brain, NOW + 60000)).toEqual({ services: 'skipped', 'page-load': 'skipped', 'journey-monitor': 'skipped' });
+    expect(titles).toHaveLength(4);
+    expect(await runWatchers('quarter', e, brain, NOW + 60000)).toEqual({ services: 'skipped', 'page-load': 'skipped', 'journey-monitor': 'skipped', 'loop-stall': 'skipped' });
   });
   it('a watcher that hits an API failure is reported and the rest of the group still runs', async () => {
     await fresh('wd:last:cf-workers', 'wd:last:sentry-stale', 'wd:last:cost-guard', 'wd:last:world-watch');
