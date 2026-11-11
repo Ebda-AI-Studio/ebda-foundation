@@ -3,7 +3,7 @@
 # and exits non-zero; missing credentials FAIL LOUD. Nothing here touches R2 or Telegram: the bucket is a local
 # directory (EBDA_CF_BACKUP_SRC) and notify.sh is a recording stub.
 set -uo pipefail
-cd "$(dirname "$0")/.."; OPS="$(pwd)"
+cd "$(dirname "$0")/.." || exit 1; OPS="$(pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 _pass=0; _fail=0
 pass() { echo "PASS: $1"; _pass=$((_pass+1)); }
