@@ -31,9 +31,10 @@ Pair it with half the cores per run (`--maxWorkers=50%`).
 **Light steps do not take the heavy lock (PREPUSH-5, 2026-11-11).** The lock is for FULL suites. A pre-push step that is
 light (about 100 s CPU, 0.5 GB: the repo-scanner unit tests) must not queue behind it, or 8 parallel pushes wait 20+ min
 behind unrelated runs. Pattern (ebda-store `scripts/ci/prepush-slot.sh` + `pre-push-gate.sh`): (1) a pass cache keyed by the
-git tree hash of HEAD plus the test list, so a re-push of the same tree costs 0 s and only a PASS is recorded; (2) a numbered-slot
+git tree hash of HEAD plus the test list plus a size+mtime fingerprint of the gitignored files the tests read (built `dist`, generated dirs), used and written
+**clean tree only** (`git status --porcelain` empty, because the tests read the working directory), so a re-push of the same clean tree costs 0 s and only a PASS is recorded; (2) a numbered-slot
 semaphore (`~/.claude/locks/prepush-slot-N.lock`, N=4, `lockf`/`flock`, wait then exit 75, never skip) with a fixed
-`--maxWorkers=2`. CI still runs the tests. Cost if wrong: a test depending on state outside the tracked tree could be cached
+`--maxWorkers=2`. CI still runs the tests. Cost if wrong: a test depending on state outside the working tree (env, network) could be cached
 as a pass and fail only in CI. sources: ebda-store `docs/rulings/PREPUSH-5.md`.
 
 ## 2. Agent fan-out
