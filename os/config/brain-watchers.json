@@ -1,16 +1,69 @@
 {
-  "_comment": "Committed, non-secret watcher config for the brain (AI OS primary operator, 2026-11-10). deploy.sh renders each key into the Worker vars; an OS_BRAIN_<NAME> in the environment or ~/.ebda-os.local.env overrides it. CF_ACCOUNT_ID comes from OS_CF_ACCOUNT_ID. Deliberately NOT set: SERVICE_TARGETS (prod-watch probes the same URLs from outside Cloudflare and reports into the brain, ruling OBS-1), DEPLOY_DRIFT_TARGETS (every Ebda deploy workflow is path-filtered, so 'live commit != main tip' is normal; ruling AIOS-3), SENTRY_* (needs a Sentry token Ahmad has not issued).",
+  "_comment": "Committed, non-secret watcher config for the brain (AI OS primary operator, 2026-11-10). deploy.sh renders each key into the Worker vars; an OS_BRAIN_<NAME> in the environment or ~/.ebda-os.local.env overrides it. CF_ACCOUNT_ID comes from OS_CF_ACCOUNT_ID. Deliberately NOT set: SERVICE_TARGETS (prod-watch probes the same URLs from outside Cloudflare and reports into the brain, ruling OBS-1), DEPLOY_DRIFT_TARGETS (every Ebda deploy workflow is path-filtered, so 'live commit != main tip' is normal; ruling AIOS-3), SENTRY_* (needs a Sentry token Ahmad has not issued). OS_ORGS = the orgs the brain watches (advisories, pr-shepherd): Ebda-AI-Studio only, the org its GitHub token is scoped to (ruling AIOS-6).",
   "PAGE_LOAD_TARGETS": [
-    { "name": "marketing", "url": "https://ebda.app/" },
-    { "name": "demo-store-ar", "url": "https://storedemo-souq.ebda.app/ar" },
-    { "name": "docs", "url": "https://docs.ebda.app/" }
+    {
+      "name": "marketing",
+      "url": "https://ebda.app/"
+    },
+    {
+      "name": "demo-store-ar",
+      "url": "https://storedemo-souq.ebda.app/ar"
+    },
+    {
+      "name": "docs",
+      "url": "https://docs.ebda.app/"
+    }
   ],
   "JOURNEY_CONFIG": [
-    { "name": "storefront-ar", "steps": [{ "name": "home", "url": "https://storedemo-souq.ebda.app/ar", "contains": "lang=\"ar\"" }] },
-    { "name": "api-health", "steps": [{ "name": "health", "url": "https://api.ebda.app/health", "contains": "\"status\":\"ok\"" }] }
+    {
+      "name": "storefront-ar",
+      "steps": [
+        {
+          "name": "home",
+          "url": "https://storedemo-souq.ebda.app/ar",
+          "contains": "lang=\"ar\""
+        }
+      ]
+    },
+    {
+      "name": "api-health",
+      "steps": [
+        {
+          "name": "health",
+          "url": "https://api.ebda.app/health",
+          "contains": "\"status\":\"ok\""
+        }
+      ]
+    }
   ],
-  "WORLD_NPM_DEPS": { "hono": ["4.13.14"], "zod": ["4.6.7"], "jose": ["6.2.12"], "next": ["16.4.3"], "react": ["18.3.1"], "@prisma/client": ["6.19.3"], "@sentry/cloudflare": ["10.78.0"], "drizzle-orm": ["0.45.4"] },
+  "WORLD_NPM_DEPS": {
+    "hono": [
+      "4.13.14"
+    ],
+    "zod": [
+      "4.6.7"
+    ],
+    "jose": [
+      "6.2.12"
+    ],
+    "next": [
+      "16.4.3"
+    ],
+    "react": [
+      "18.3.1"
+    ],
+    "@prisma/client": [
+      "6.19.3"
+    ],
+    "@sentry/cloudflare": [
+      "10.78.0"
+    ],
+    "drizzle-orm": [
+      "0.45.4"
+    ]
+  },
   "CF_WORKERS_PREFIXES": "ebda-",
   "COST_GH_ORG": "Ebda-AI-Studio",
-  "PR_SHEPHERD_STALE_HOURS": "24"
+  "PR_SHEPHERD_STALE_HOURS": "24",
+  "OS_ORGS": "Ebda-AI-Studio"
 }
