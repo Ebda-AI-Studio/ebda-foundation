@@ -17,3 +17,18 @@ foundation -> build -> QA -> finding -> foundation. ebda-foundation is the sourc
 ## How to run: say "loop"
 
 Say **loop** (or "run the loop" / "start the loop") and the controller follows the `ebda-loop` skill (`os/skills/ebda-loop/SKILL.md`, installed to `~/.claude/skills/ebda-loop` by `os/install.sh`). It is NOT the built-in `/loop <interval>` timer skill. One cycle: re-triage STILL-OPEN + FOUND -> dispatch Sonnet builders (money > auth > data > ops > UX) -> merge through the drains + review gate -> deploy verify -> QA on Amelia -> audits on cadence -> alerts -> exit check. It stops only when `loop/exit-check.sh` passes all 6 criteria. Status at any time: `bash os/ops/loop-status.sh` (also on the brain status page when present).
+
+## Review gate (CI, not the controller's laptop)
+Every PR except an all-safe one (markdown, docs/, tests) gets the label `risky-path` and is reviewed by `.github/workflows/ai-review.yml` (`ci/ai-review/README.md`). Pass = label `ai-review-passed` (stripped on every new push). No secret or any infra error = the check fails (Ruling AIR-1). The drain holds a `risky-path` PR until it carries `ai-review-passed`.
+
+## Exit criteria
+The loop stops ONLY when ALL are true, each measured, not claimed (Ahmad 2026-11-11):
+1. STILL-OPEN is empty (audits/still-open re-triaged against main the same day), except items BLOCKED-ON-PAPERS or explicit product decisions Ahmad made.
+2. FOUND is empty and every RE-VERIFY item is CLOSED with live evidence on the QA store.
+3. Zero open GitHub issues labelled review-finding (backfill audits + PR reviews) and every risky PR merged with ai-review-passed.
+4. main CI green on the latest commit; every deploy pipeline's live /health commit = main tip; prod-smoke-journey green 3 runs in a row.
+5. One full QA pass on the QA store touches every admin page, every button, every storefront page, checkout (COD + delivery), orders lifecycle, editor, billing/upgrade, search, emails, Arabic + English, at 390/820/1280/1440, and finds nothing new.
+6. The AI OS brain shows no open P0/P1 findings and no platform alert for 72 h.
+Then: Ahmad's two items (launch assets, 10-minute merchant test) -> launch.
+
+`loop/exit-check.sh` measures 3a, 4 and 6 (PASS/FAIL each; `/api/state` has no severity, so any open brain finding fails 6) and prints 1, 2, 3b and 5 as `manual: needs controller evidence`. It exits non-zero unless every measured condition passes and `--manual-ok` asserts the controller holds that evidence.
