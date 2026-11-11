@@ -37,6 +37,20 @@ size(){ wc -c < "$1/node_modules/.prisma/client/index.d.ts" | tr -d ' '; }
 big(){ [ "$(size "$1")" -ge 10000 ] && echo yes || echo no; }
 mkwt(){ git -C "$R" worktree add -q "$TMP/$1" -b "$1" >/dev/null 2>&1; echo "$TMP/$1"; }
 
+# 0. no clonefile (Linux CI, non-APFS): plain-install fallback must still leave a real client + built outputs
+mkdir -p "$TMP/nocp"; printf '#!/bin/sh\n[ "$1" = "-c" ] && exit 1\nexec /bin/cp "$@"\n' > "$TMP/nocp/cp"; chmod +x "$TMP/nocp/cp"
+WF="$(mkwt wf)"; PATH="$TMP/nocp:$PATH" bash "$OPS/wt-deps.sh" "$WF" >"$TMP/of" 2>&1
+ok "fallback install: generated client" "$(big "$WF")" "yes"
+ok "fallback install: workspace output built" "$([ -f "$WF/packages/lib/dist/index.js" ] && echo yes || echo no)" "yes"
+rm -rf "$WT_DEPS_CACHE"
+
+# the cache logic below needs APFS clonefile; on other filesystems the script (correctly) never reaches it
+probe="$TMP/probe.a"; echo x > "$probe"
+if ! cp -c "$probe" "$TMP/probe.b" 2>/dev/null; then
+  echo "SKIP: cache scenarios (no clonefile on this filesystem)"
+  echo "---"; echo "wt-deps-prisma: $pass passed, $fail failed (cache scenarios skipped)"; [ "$fail" = 0 ]; exit $?
+fi
+
 # 1. cache MISS: install, generate, snapshot -> the entry itself holds a real client
 W1="$(mkwt w1)"; bash "$OPS/wt-deps.sh" "$W1" >"$TMP/o1" 2>&1
 ok "miss: worktree has a generated client" "$(big "$W1")" "yes"

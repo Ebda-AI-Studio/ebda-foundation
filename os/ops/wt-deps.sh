@@ -148,7 +148,9 @@ fi
 plain_install() {
   # hook mode NEVER installs - every fallback (mkdir/probe/lock-timeout/clone failure) lands here
   [ -n "$IGN" ] && { log "hook mode: clone path failed - NOT installing; run by hand: bash ~/.claude/scripts/wt-deps.sh $WT"; exit 0; }
-  log "falling back to a normal install in $WT"; (cd "$WT" && "${INSTALL[@]}"); }
+  log "falling back to a normal install in $WT"; (cd "$WT" && "${INSTALL[@]}") || return $?
+  # no cache here (non-APFS, lock timeout, clone failure), but the worktree still must end with a real client + built outputs
+  ensure_outputs "$WT" || true; }
 
 # already installed here? (leave a real install alone unless forced)
 if [ -d "$WT/node_modules" ] && [ -n "$(ls -A "$WT/node_modules" 2>/dev/null)" ] && [ "${WT_DEPS_FORCE:-0}" != 1 ] && [ "$REFRESH" != 1 ]; then
