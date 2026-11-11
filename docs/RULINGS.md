@@ -157,3 +157,11 @@ Ruling PRICE-1 - One discount function, `computeDiscount`/`couponCartDiscount` i
 Ruling BILL-NOTICE-1 - A subscription lifecycle notice is claimed per (subscription, stage) before it is sent, so a repeated sweep or a retried job sends it once. Evidence: S2-13 (grace end had no notice). Cost if wrong: a merchant gets a second identical email.
 
 Ruling GUEST-RET-1 - A guest return request needs order number plus phone or email, is rate-limited, and returns one identical failure body. Evidence: S2-7. Cost if wrong: a shopper who mistypes cannot tell which field was wrong.
+
+## AI review gate in CI (2026-11-12)
+
+Ruling AIR-1 - The risky-path AI review (`.github/workflows/ai-review.yml`, `ci/ai-review/`) FAILS CLOSED: a PR that touches money/auth/data/migration paths and cannot get a review (no `CLAUDE_CODE_OAUTH_TOKEN`, CLI crash, non-JSON output, missing findings array, an undefined severity) is blocked, never labelled `ai-review-passed`. Non-risky PRs are not reviewed at all, so a flaky model never blocks docs or UI. `review.mjs` keeps fail-open only when `FAIL_CLOSED` is unset (advisory use). Evidence: `test/ai-review.test.ts` runs the gate against a local GitHub stub for every infra error in both modes; flipping the closed exit to 0 fails it. Cost if wrong: a model outage or an expired token stops risky PRs until the secret is fixed (hours, visible as a red check); the opposite choice would let an unreviewed refund/auth change merge.
+
+Ruling AIR-2 - Risky is decided by whole path tokens (`ci/ai-review/risky-paths.mjs`), not the drain's old substring regex, and CI labels the PR `risky-path`; the drain holds on that label instead of re-deriving it. Cost if wrong: a risky file named with none of the listed words is not reviewed; the word list is the one place to extend.
+
+Ruling AIR-3 - Product repos carry a copy of the workflow (`on: pull_request`) until the foundation repo's Actions access is set to `organization` (it is `none` today), after which they switch to `uses: Ebda-AI-Studio/ebda-foundation/.github/workflows/ai-review.yml@<sha>`. Cost if wrong: two copies can drift for a while; `ci/ai-review/README.md` lists the exact lines that must stay identical.
