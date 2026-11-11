@@ -7,6 +7,12 @@ describe('brand', () => {
     expect(brandName('en')).toBe('Ebda AI Studio');
     expect(brandName(null)).toBe('Ebda AI Studio');
   });
+  it('the company Arabic name uses the «ستوديو» spelling (nameAr and shortNameAr agree)', () => {
+    expect(EBDA.nameAr).toBe('ابدأ ستوديو للذكاء الاصطناعي');
+    expect(EBDA.company.shortNameAr).toBe(EBDA.nameAr);
+    expect(brandName('ar')).toBe('ابدأ ستوديو للذكاء الاصطناعي');
+    expect(EBDA.nameAr).not.toContain('استوديو');
+  });
   it('every product is "Ebda <Product>" and never bare', () => {
     for (const p of Object.values(EBDA.products)) {
       expect(p.nameEn).toMatch(/^Ebda \S/);
