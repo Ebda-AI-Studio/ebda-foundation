@@ -1,6 +1,7 @@
 // /social/* machine routes and the signed decision page.
 //   POST /social/drafts          one draft per request (Bearer INGEST_TOKEN: the Mac content job). Body <= 6 MB (image base64).
 //   GET  /social/edits           revisions Ahmad asked for (Bearer INGEST_TOKEN)
+//   GET  /social/status          read-only self-check: modes, network readiness, live Page + feed read; no token, publishes nothing
 //   GET  /social/calendar?from=&to=  the calendar without images (Bearer INGEST_TOKEN)
 //   POST /social/decide          {id, decision, note?} (Bearer SOCIAL_DECIDE_TOKEN: the controller forwarding Ahmad's Telegram text)
 //   POST /social/brands/:brand   {paused?, keepApproval?} (Bearer SOCIAL_DECIDE_TOKEN)
@@ -85,6 +86,7 @@ export async function handleSocial(request: Request, env: Env, path: string, bra
     return json(r, r.ok ? 200 : r.code);
   }
   if (path === '/social/edits' && request.method === 'GET') return json(await brain.socialEdits());
+  if (path === '/social/status' && request.method === 'GET') return json(await brain.socialStatus(now));
   if (path === '/social/calendar' && request.method === 'GET') {
     const u = new URL(request.url);
     const from = Number(u.searchParams.get('from') ?? now - 7 * 86_400_000);

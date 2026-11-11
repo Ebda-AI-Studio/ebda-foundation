@@ -34,6 +34,8 @@ export interface NetworkAdapter {
   recentPosts?(brand: Brand, sinceMs: number, fetchImpl: typeof fetch): Promise<PagePost[] | null>;
   /** Facebook only: after an uncertain outcome, find a post with exactly this text since claimAt (null = not readable). */
   findByText?(brand: Brand, text: string, sinceMs: number, fetchImpl: typeof fetch): Promise<string | null | undefined>;
+  /** read-only self-check: can this brand's token read its own Page? Never returns or logs the token. */
+  checkPage?(brand: Brand, fetchImpl: typeof fetch): Promise<{ ok: boolean; pageId?: string; name?: string; error?: string }>;
 }
 
 /** Classifies a fetch exception. A thrown fetch may or may not have reached the platform: always uncertain. */

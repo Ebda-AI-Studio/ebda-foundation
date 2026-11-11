@@ -333,3 +333,33 @@ describe('routes', () => {
     expect(kb[0].url).toMatch(/^https:\/\/brain\.example\.test\/social\/d\/whisky11-facebook-202611180600\?r=1&exp=\d+&sig=[0-9a-f]{64}&d=approve$/);
   });
 });
+
+describe('status self-check', () => {
+  it('shows both Pages read live, the feed, the doors; never a token; publishes and writes nothing', async () => {
+    const h = await harness({ facebook: true, linkedin: false });
+    h.routes['graph.facebook.com/v27.0/102030405060?'] = () => j({ name: 'Whisky 11', id: PAGE });
+    h.routes['graph.facebook.com/v27.0/605040302010?'] = () => j({ name: 'Ebda AI Studio', id: '605040302010' });
+    const s = (await h.run((b) => b.socialStatus(T0))) as any;
+    expect(s.brands.whisky11.networks.facebook).toMatchObject({ enabled: true, page: { ok: true, pageId: PAGE, name: 'Whisky 11' }, feedReadable: true });
+    expect(s.brands.ebda.networks.facebook.page).toMatchObject({ ok: true, name: 'Ebda AI Studio' });
+    expect(s.brands.ebda.networks.linkedin).toMatchObject({ enabled: false });
+    expect(s.brands.ebda.mode).toBe('approval');
+    expect(JSON.stringify(s)).not.toMatch(/EAAG|pageToken/);
+    expect(h.fb()).toHaveLength(0);
+    expect(h.calls.every((c) => c.method === 'GET')).toBe(true);
+    expect(await h.run((b) => b.socialCalendar(0, Number.MAX_SAFE_INTEGER))).toEqual([]);
+  });
+  it('a rejected token shows as a failed Page read, not as healthy', async () => {
+    const h = await harness({ facebook: true });
+    h.routes['graph.facebook.com/v27.0/102030405060?'] = () => j(FB_TOKEN_ERR, 400);
+    h.routes['graph.facebook.com/v27.0/605040302010?'] = () => j(FB_TOKEN_ERR, 400);
+    const s = (await h.run((b) => b.socialStatus(T0))) as any;
+    expect(s.brands.whisky11.networks.facebook.page).toMatchObject({ ok: false, error: expect.stringMatching(/code 190/) });
+  });
+  it('GET /social/status needs INGEST_TOKEN', async () => {
+    expect((await SELF.fetch('https://brain.test/social/status')).status).toBe(401);
+    const r = await SELF.fetch('https://brain.test/social/status', { headers: { Authorization: 'Bearer test-ingest-token' } });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ telegram: true, decideDoor: true, brands: { ebda: { networks: { facebook: { enabled: false } } } } });
+  });
+});
