@@ -306,3 +306,4 @@ Cross-reference so `dream-standard-drift.sh` (which matches the memory-file slug
 - `~/.claude/projects/-Users-ahmadsharaf/memory/reference-iceberg-audit.md` — 38-term audit
 - `~/.claude/projects/-Users-ahmadsharaf/memory/reference-audit-fleet-and-build-playbook.md`
 - `~/.claude/projects/-Users-ahmadsharaf/memory/` — 15-layer grading matrix
+- `storefront-locale-routes.md` — every storefront route keeps the locale prefix (cart/checkout/account/search too, never a redirect to the unprefixed path); sitemap = all public pages x locales with hreflang + lastmod, robots names it. Born from the Amelia QA store 2026-11-11.
