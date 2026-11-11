@@ -1,4 +1,4 @@
-// Social approvals on Telegram (send-only, RR-tg-send-only): the preview image, then the full text with three buttons.
+// Social approvals on Telegram (RR-tg-send-only, superseded by RR-tg-brain-owns): the preview image, then the full text with three buttons.
 // Buttons are signed URL buttons to the brain's own /social/d page (works without the tg-relay forwarding button presses); when
 // SOCIAL_LINK_SECRET is unset they fall back to callback buttons `s:<id>:<a|e|k>` (answered through POST /telegram/webhook).
 // These are NOT counted against MESSAGE_BUDGET_PER_DAY: Ahmad asked for one preview per post (ruling RR-social-budget).
