@@ -8,6 +8,11 @@
 		<string>__HOME__</string>
 		<key>PATH</key>
 		<string>__PATH__</string>
+		<!-- claude -p needs USER/LOGNAME to find its login under launchd (measured 2026-11-11: 'Not logged in' without them) -->
+		<key>USER</key>
+		<string>__USER__</string>
+		<key>LOGNAME</key>
+		<string>__USER__</string>
 	</dict>
 	<key>Label</key>
 	<string>com.ebda.os.social-content</string>

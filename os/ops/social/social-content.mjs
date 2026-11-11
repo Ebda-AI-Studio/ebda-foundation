@@ -89,6 +89,8 @@ export function buildPrompt(brandCfg, network, topic, edit) {
 /** `claude -p --output-format json` prints {"result": "..."}; the result holds the post JSON, maybe fenced. */
 export function parseClaudeJson(stdout) {
   const outer = JSON.parse(stdout);
+  // `claude -p` reports failures (e.g. 'Not logged in' under launchd without USER) as is_error with exit 0
+  if (outer.is_error) throw new Error(`claude: ${String(outer.result ?? 'error').slice(0, 200)}`);
   const r = String(outer.result ?? '');
   const m = r.match(/\{[\s\S]*\}/);
   if (!m) throw new Error('no JSON object in the model output');

@@ -4,7 +4,7 @@
 #   os/install.sh [--dry-run] [--home DIR]
 #
 # Copies os/ops/** -> $HOME/.claude/scripts, os/config/os.env -> $HOME/.claude/os.env, renders ONLY the Mac-local plists listed in
-# os/launchd/mac-local.list (__HOME__ / __PATH__ / __OS_HOME__ tokens) into $HOME/Library/LaunchAgents, symlinks os/agents/*.md and
+# os/launchd/mac-local.list (__HOME__ / __PATH__ / __OS_HOME__ / __USER__ tokens) into $HOME/Library/LaunchAgents, symlinks os/agents/*.md and
 # os/skills/* (main checkout on main only), sets core.hooksPath + $OS_GIT_CHAIN_KEY on trusted husky repos, registers the Claude Code
 # hooks. Idempotent: a second run changes nothing. Refuses to run while any predecessor-prefix launchd label is loaded (run os/cutover.sh).
 # --dry-run prints the plan and writes nothing. --home DIR installs into DIR instead of $HOME (tests, staging).
@@ -123,7 +123,7 @@ while IFS=$'\t' read -r name tmpl; do
   label="$PREFIX.$name"; wanted="$wanted$label "
   [ -f "$OSD/$tmpl" ] || { echo "install: template missing: $tmpl" >&2; exit 1; }
   target="$LA/$label.plist"; tmp="$(mktemp)"
-  sed -e "s#__HOME__#$HOME#g" -e "s#__PATH__#$RUN_PATH#g" -e "s#__OS_HOME__#$REPO#g" "$OSD/$tmpl" > "$tmp"
+  sed -e "s#__HOME__#$HOME#g" -e "s#__PATH__#$RUN_PATH#g" -e "s#__OS_HOME__#$REPO#g" -e "s#__USER__#${USER:-$(id -un)}#g" "$OSD/$tmpl" > "$tmp"
   n_plist=$((n_plist+1))
   changed=1; [ -f "$target" ] && cmp -s "$tmp" "$target" && changed=0
   [ "$changed" = 1 ] && say "plist  $target"
