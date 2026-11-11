@@ -69,6 +69,7 @@ The numbered lenses below each become one file `standard/<id>.md`. `mobile` is N
 | 57 | `third-party-script-integrity` | Third-party script tag without Subresource Integrity. Pack: security, frontend; probe S | Builder-reality reel pack (reel-lenses-2026-09) + playbook sec 14, L1 |
 | 58 | `upload-trusts-declared-mime` | Upload type decided by the client-declared MIME. Pack: security, meta-whatsapp; probe S | Ebda audit 2026-10-26 SEC-12 |
 | 59 | `webhook-persist-before-verify` | Webhook body persisted or queued before its signature is verified. Pack: security, money; probe S | Ebda audit 2026-10-26 SEC-5 |
+| 60 | `live-state-beats-token-claims` | Elevated token claim, tenant status, caller-supplied derived key or response-body URL trusted without a live check. Rule: re-check live role, one suspended-status middleware, recompute derived ids, https + host allow-list before credentials | backfill audit 2026-11-12 |
 | 60 | `analytics-pixel-present` | Marketing site has no analytics or ad pixel. Pack: business, privacy; probe S | Ebda audit 2026-10-26 BIZ-26 |
 | 61 | `legal-pending-markers` | Legal page published with unreviewed or placeholder markers. Pack: docs, privacy; probe S+J | Ebda audit 2026-10-26 DOC-3 |
 | 62 | `platform-db-shared-tenant-bodies` | Raw tenant payloads kept in one shared database with no purge. Pack: tenancy, privacy; probe J | Ebda audit 2026-10-26 DB-13 |
