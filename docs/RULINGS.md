@@ -170,3 +170,7 @@ Ruling AIR-3 - Product repos carry a copy of the workflow (`on: pull_request`) u
 
 Ruling AIR-5 - Fork PRs are never skipped and never reviewed with secrets: the `fork-gate` job (check name `AI review`) fails until a maintainer reviews the PR and adds the label `ai-review-passed`; the `labeled` event re-runs it green, and a new push strips the label again. The same `labeled` path (job `manual-pass`, same check name) lets a maintainer clear a same-repo PR the bot cannot review (a diff of 400 KB or more). Cost if wrong: anyone who can add labels can pass a PR; the label is the human review's receipt, and the drain and merge-gate both read it.
 
+## Durable drain (2026-11-12)
+
+Ruling DRN-1 - The drain ships OFF (`<name>.enabled` marker) so installing the launchd job cannot race a controller's own loop and gate one PR twice; the switch-over is a human act. Stall detection lives in the drain (it alone knows a green PR is waiting) and reaches the brain as a reconciled findings snapshot with source `drain-<name>`, not a new brain endpoint; the brain classifies `drain-stall` as a one-time alert and `drain-held` as digest. Cost if wrong: a drain that is dead AND not restarted by launchd for 60+ minutes is invisible to the brain (no missing-heartbeat watcher exists yet); the heartbeat file and the os-state status show it locally.
+

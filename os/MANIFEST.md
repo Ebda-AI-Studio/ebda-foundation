@@ -113,6 +113,8 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | cost-guard | PORT-BRAIN | cost-guard | billing API poll |
 | dead-gate-detect | KEEP-MAC | dead-gate-detect | inspects locally installed hooks and gates |
 | deploy-drift | PORT-BRAIN | deploy-drift | compares live /health commit with main over HTTP |
+| drain-ebda-store | KEEP-MAC | drain-ebda-store | durable merge loop (`ops/drain.sh`, risky-PR hold, off until `~/.whisky-os-state/drain/ebda-store.enabled` exists) |
+| drain-ebda-foundation | KEEP-MAC | drain-ebda-foundation | same loop for this repo with the 6 required checks (`DRAIN_REQUIRED_JSON`) |
 | docs-scan | KEEP-MAC | docs-scan | scans local checkouts |
 | dr-drill | PORT-BRAIN | dr-drill | checks the age of the last restore-drill PASS (digest after 8 days, one P1 after 14); the drill itself is `restore-drill` below (ruling F-I6) |
 | restore-drill | KEEP-MAC | restore-drill | the weekly restore drill needs R2 + age secrets the hands container must not hold; `ops/restore-drill.sh` posts PASS/FAIL to the brain `POST /drill` |
