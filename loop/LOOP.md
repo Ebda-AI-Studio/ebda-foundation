@@ -6,7 +6,7 @@ foundation -> build -> QA -> finding -> foundation. ebda-foundation is the sourc
    Every pass covers every button, API path, branch and page, at 390/820/1280/1440, admin <-> storefront <-> marketing.
 2. **Classify**: UX / money / auth / data / ops / feature. Build priority: money > auth > data > ops > UX.
 3. **Check the foundation first**: `design/` (tokens, component rules; present once #20 merges), `design/references/`
-   (six DESIGN.md, reference only), `standard/`, `docs/RULINGS.md`, the guards.
+   (six DESIGN.md, reference only), `os/standard/`, `docs/RULINGS.md`, the guards.
 4. **If the answer is missing, add it to the foundation first**: a token, component rule, backend standard, ruling or guard.
    The finding is not fixed until the rule that would have prevented it exists.
 5. **The product consumes it**: themed PR into main (never stacked) with a test that fails on the old code; the drain loop
