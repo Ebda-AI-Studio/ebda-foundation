@@ -62,3 +62,5 @@ covered.
    unless every vendored rubric is a lens or a written-down exception, so skipping this step has
    to be deliberate.
 5. Add the row above, with the fleet status.
+
+See also: the loop (`loop/LOOP.md`, skill `os/skills/ebda-loop`) schedules lens audits, the iceberg audit and backfill code audits on cadence and turns their findings into `review-finding` issues.

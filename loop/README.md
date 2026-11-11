@@ -5,3 +5,4 @@
 - Merge: `~/.claude/scripts/merge-gate.sh` (`os/standard/merge-gate.md`); foundation requires the 6 checks. CI: `.github/workflows`.
 - Deploy verification: `/health` commit = main tip, then live re-verify (`os/standard/deploy-verify.md`).
 - Design references: `design/references/`.
+- Run it: say "loop" -> skill `os/skills/ebda-loop/SKILL.md`; one-screen status `os/ops/loop-status.sh`.
