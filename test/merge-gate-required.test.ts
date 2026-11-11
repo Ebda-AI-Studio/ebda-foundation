@@ -66,15 +66,14 @@ describe('merge-gate-required', () => {
   type Run = { __typename: 'CheckRun'; name: string; status: string; conclusion: string; startedAt: string; completedAt: string };
   const run = (name: string, status: string, conclusion: string, startedAt: string): Run =>
     ({ __typename: 'CheckRun', name, status, conclusion, startedAt, completedAt: status === 'COMPLETED' ? startedAt : '0001-01-01T00:00:00Z' });
-  // Decisive cases get a long wall-clock budget: the gate's deadline is bash $SECONDS (whole seconds), so a 1 s budget is exceeded
-  // whenever the first poll straddles a second boundary (ebda-foundation #23 CI, 2026-11-11: status 2 instead of 0). Only the cases that
-  // EXPECT the gate to wait and give up pass maxWaitS '1' (the boundary can only make them finish sooner).
-  function gate(rollup: unknown[], required: string[] = ['Lint'], maxWaitS = '120') {
+  // No test sets a wall-clock budget: the gate's deadline is bash $SECONDS (whole seconds), so a 1-2 s budget is exceeded whenever a poll
+  // straddles a second boundary (ebda-foundation #23 CI: exit 2 instead of 0). Cases that EXPECT give-up bound the loop by poll COUNT.
+  function gate(rollup: unknown[], required: string[] = ['Lint'], ticks = '50') {
     const d = mkdtempSync(join(tmpdir(), 'mg-'));
     writeFileSync(join(d, 'pr.json'), JSON.stringify({ headRefOid: SHA, mergeable: 'MERGEABLE', statusCheckRollup: rollup }));
     const r = spawnSync('bash', ['ops/merge-gate.sh', '1', 'abcdef1', '--repo', 'o/r', '--polls', '2', '--interval', '0'], {
       encoding: 'utf8',
-      env: { ...process.env, MERGE_GATE_REQUIRED_JSON: JSON.stringify(required), MERGE_GATE_VIEW_CMD: `cat ${join(d, 'pr.json')}`, MERGE_GATE_MERGE_CMD: `echo merged > ${join(d, 'merged')}`, MERGE_GATE_MAX_WAIT_S: maxWaitS },
+      env: { ...process.env, MERGE_GATE_REQUIRED_JSON: JSON.stringify(required), MERGE_GATE_VIEW_CMD: `cat ${join(d, 'pr.json')}`, MERGE_GATE_MERGE_CMD: `echo merged > ${join(d, 'merged')}`, MERGE_GATE_MAX_TICKS: ticks },
     });
     return { status: r.status, out: r.stdout + r.stderr, merged: spawnSync('test', ['-f', join(d, 'merged')]).status === 0 };
   }
@@ -99,11 +98,11 @@ describe('merge-gate-required', () => {
   });
   it('a re-run that has not finished is waited on, whatever the older run said', () => {
     for (const older of ['SUCCESS', 'FAILURE']) {
-      const r = gate([run('Lint', 'COMPLETED', older, T1), run('Lint', 'IN_PROGRESS', '', T2)], ['Lint'], '1');
+      const r = gate([run('Lint', 'COMPLETED', older, T1), run('Lint', 'IN_PROGRESS', '', T2)], ['Lint'], '2');
       expect(r).toMatchObject({ status: 2, merged: false });
       expect(r.out).toContain('waiting (not finished: Lint)');
     }
-    const queued = gate([run('Lint', 'QUEUED', '', '0001-01-01T00:00:00Z'), run('Lint', 'COMPLETED', 'SUCCESS', T1)], ['Lint'], '1');
+    const queued = gate([run('Lint', 'QUEUED', '', '0001-01-01T00:00:00Z'), run('Lint', 'COMPLETED', 'SUCCESS', T1)], ['Lint'], '2');
     expect(queued).toMatchObject({ status: 2, merged: false });
   });
   it('the same timestamp keeps rollup order: the later entry wins', () => {
@@ -111,7 +110,7 @@ describe('merge-gate-required', () => {
     expect(gate([run('Lint', 'COMPLETED', 'FAILURE', T1), run('Lint', 'COMPLETED', 'SUCCESS', T1)])).toMatchObject({ status: 0, merged: true });
   });
   it('an old SUCCESS does not satisfy a required check whose latest run was SKIPPED', () => {
-    const r = gate([run('Lint', 'COMPLETED', 'SUCCESS', T1), run('Lint', 'COMPLETED', 'SKIPPED', T2)], ['Lint'], '1');
+    const r = gate([run('Lint', 'COMPLETED', 'SUCCESS', T1), run('Lint', 'COMPLETED', 'SKIPPED', T2)], ['Lint'], '2');
     expect(r).toMatchObject({ status: 2, merged: false });
     expect(r.out).toContain('required check(s) without an explicit SUCCESS: Lint');
   });
@@ -120,13 +119,24 @@ describe('merge-gate-required', () => {
     expect(r).toMatchObject({ status: 1, merged: false });
     expect(r.out).toContain('failing check(s): BlastRadius');
   });
+  it('a poll that straddles a second boundary still merges (clock-independent deadline)', () => {
+    const d = mkdtempSync(join(tmpdir(), 'mg-'));
+    writeFileSync(join(d, 'pr.json'), JSON.stringify({ headRefOid: SHA, mergeable: 'MERGEABLE', statusCheckRollup: [run('Lint', 'COMPLETED', 'SUCCESS', T1)] }));
+    // every view takes 1.2 s, so the 2 polls cross at least one whole-second boundary whatever the start offset
+    const r = spawnSync('bash', ['ops/merge-gate.sh', '1', 'abcdef1', '--repo', 'o/r', '--polls', '2', '--interval', '0'], {
+      encoding: 'utf8',
+      env: { ...process.env, MERGE_GATE_REQUIRED_JSON: '["Lint"]', MERGE_GATE_VIEW_CMD: `sleep 1.2; cat ${join(d, 'pr.json')}`, MERGE_GATE_MERGE_CMD: `echo merged > ${join(d, 'merged')}`, MERGE_GATE_MAX_TICKS: '5' },
+    });
+    expect(r.status).toBe(0);
+    expect(spawnSync('test', ['-f', join(d, 'merged')]).status).toBe(0);
+  });
   it('zero checks is never green: nothing merges', () => {
     for (const rollup of [[], null]) {
       const d = mkdtempSync(join(tmpdir(), 'mg-'));
       writeFileSync(join(d, 'pr.json'), JSON.stringify({ headRefOid: SHA, mergeable: 'MERGEABLE', statusCheckRollup: rollup }));
       const r = spawnSync('bash', ['ops/merge-gate.sh', '1', 'abcdef1', '--repo', 'o/r', '--polls', '1', '--interval', '0'], {
         encoding: 'utf8',
-        env: { ...process.env, MERGE_GATE_REQUIRED_JSON: '["Lint"]', MERGE_GATE_VIEW_CMD: `cat ${join(d, 'pr.json')}`, MERGE_GATE_MERGE_CMD: `echo merged > ${join(d, 'merged')}`, MERGE_GATE_MAX_WAIT_S: '1' },
+        env: { ...process.env, MERGE_GATE_REQUIRED_JSON: '["Lint"]', MERGE_GATE_VIEW_CMD: `cat ${join(d, 'pr.json')}`, MERGE_GATE_MERGE_CMD: `echo merged > ${join(d, 'merged')}`, MERGE_GATE_MAX_TICKS: '2' },
       });
       expect(r.status).toBe(2);
       expect(r.stdout).toContain('waiting (no checks have reported yet)');

@@ -57,7 +57,7 @@ view() {
   if [ -n "${MERGE_GATE_VIEW_CMD:-}" ]; then eval "$MERGE_GATE_VIEW_CMD"
   else gh pr view "$pr" --repo "$repo" --json headRefOid,mergeable,statusCheckRollup; fi
 }
-deadline=$((SECONDS + ${MERGE_GATE_MAX_WAIT_S:-$((maxmin * 60))})); streak=0; sha=""
+deadline=$((SECONDS + ${MERGE_GATE_MAX_WAIT_S:-$((maxmin * 60))})); streak=0; sha=""; ticks=0
 while :; do
   json="$(view 2>/dev/null)" || json=""
   if [ -z "$json" ]; then v="wait:could not read the PR"
@@ -75,6 +75,9 @@ while :; do
     refuse:*) echo "merge-gate: REFUSED PR $pr: ${v#refuse:}" >&2; exit 1 ;;
     *) streak=0; echo "merge-gate: waiting (${v#wait:})" ;;
   esac
-  if [ "$SECONDS" -ge "$deadline" ]; then echo "merge-gate: gave up after ${maxmin} min; nothing merged (last: ${v#*:})" >&2; exit 2; fi
+  # MERGE_GATE_MAX_TICKS bounds the loop by poll COUNT (test seam). $SECONDS is whole seconds, so a 1-2 s wall-clock budget is
+  # exceeded whenever a poll straddles a second boundary (CI flake, #23); a poll count does not depend on host load or the clock.
+  ticks=$((ticks + 1))
+  if [ "$SECONDS" -ge "$deadline" ] || [ "$ticks" -ge "${MERGE_GATE_MAX_TICKS:-2147483647}" ]; then echo "merge-gate: gave up after ${maxmin} min; nothing merged (last: ${v#*:})" >&2; exit 2; fi
   sleep "$interval"
 done
