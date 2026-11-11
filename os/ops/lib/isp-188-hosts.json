@@ -1,0 +1,7 @@
+{
+  "_comment": "Merchant-facing hosts checked by ops/isp-188-watch.mjs. The Egyptian ISP blocks Cloudflare's 188.114.96.0/23; a host that resolves there is unreachable for Egyptian shoppers. storeSample = a few store subdomains (add real ones as merchants go live); custom = merchant custom domains (Amelia: ameliaaurum.com).",
+  "blockedCidrs": ["188.114.96.0/23"],
+  "hosts": ["ebda.app", "store.ebda.app", "accounts.ebda.app", "api.ebda.app", "os.ebda.app"],
+  "storeSample": ["storedemo-souq.ebda.app"],
+  "custom": ["ameliaaurum.com"]
+}
