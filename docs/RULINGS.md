@@ -136,3 +136,10 @@ Rulings OBS-1 (alert job on GitHub-hosted runners, off Cloudflare), OBS-2 (Teleg
 ## Digest size (2026-11-11)
 
 Ruling DIG-1 - The daily Telegram digest is a glance, not a log: at most 12 lines and 1400 characters (pinned by `os/cloud/brain/test/policy.test.ts` and `brain.test.ts`). It carries counts (fixed / open / needs you / resolved), only the top 5 items that need Ahmad or are still broken, ONE line naming watchers that are not set up (never listed under "Done"), a 3-line social block (the separate social message is gone), and a dashboard link for the full list. Resolved items are a count. Ahmad asked "why are the messages so long" after a 26-line "Done" of config gaps and "no longer reported". Cost if wrong: an item beyond the top 5 is only on the dashboard until it moves up.
+
+## PR quality guards (2026-11-12)
+
+Ruling PRQ-1 - Slop guards are baseline-ratcheted per violation id, not per count: a count lets a new violation hide behind a fix elsewhere. The baseline refuses additions (`--update` exits 1) and a fixed violation left in the baseline fails the check. `unused-export` and `duplicate-helper` are our own small scanners (regex + brace matching, no dependency) rather than knip: knip needs each repo's full tsconfig/workspace graph and an install, the guard job must run in seconds with plain node. Cost if wrong: the scanners miss dynamic uses (a string-keyed lookup of an export) and false-positive on exports only a test uses; a false positive is silenced inline with `pq-allow(unused-export): <reason>`.
+
+Ruling PRQ-2 - The learning loop is a PR-body checklist, not a new service: a closed `review-finding` needs a checked Test line naming a test in the diff and a checked Foundation line. Cost if wrong: the Foundation line is a pointer, not proof a guard exists; the reviewer reads it.
+
