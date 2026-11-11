@@ -174,3 +174,7 @@ Ruling AIR-5 - Fork PRs are never skipped and never reviewed with secrets: the `
 
 Ruling DRN-1 - The drain ships OFF (`<name>.enabled` marker) so installing the launchd job cannot race a controller's own loop and gate one PR twice; the switch-over is a human act. Stall detection lives in the drain (it alone knows a green PR is waiting) and reaches the brain as a reconciled findings snapshot with source `drain-<name>`, not a new brain endpoint; the brain classifies `drain-stall` as a one-time alert and `drain-held` as digest. Cost if wrong: a drain that is dead AND not restarted by launchd for 60+ minutes is invisible to the brain (no missing-heartbeat watcher exists yet); the heartbeat file and the os-state status show it locally.
 
+
+## Design language (2026-11-11, design/DESIGN.md)
+
+Ruling DS-FONT-1 (docs/rulings/DS-FONT-1.md): one family for every Ebda surface, IBM Plex Sans Arabic for Arabic and Latin; measured 15% narrower than Readex Pro, uniform tabular digits; Geist and Readex retired on Ebda-owned surfaces; merchant storefront looks keep their own fonts.
