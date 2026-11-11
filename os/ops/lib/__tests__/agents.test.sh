@@ -32,7 +32,10 @@ cp "$S/agents/bbb.md" "$H/.claude/agents/bbb.md"                              # 
 # ccc absent
 # Negative control: run from this worktree/feature branch it must link nothing.
 G="$(HOME="$H" AGENTS_SRC="$S/agents" OS_LINK_ANY_CHECKOUT=0 bash "$INSTALL" 2>&1)"
-if [ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" != master ]; then
+# the same rule as ops/install-agents.sh: links only from the main checkout on main OR master (CI on a push to main IS that case;
+# the old `!= master` check failed every push to main, 2026-11-11)
+_br="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
+if [ "$(git -C "$ROOT" rev-parse --absolute-git-dir)" != "$(cd "$ROOT" && cd "$(git rev-parse --git-common-dir)" && pwd)" ] || { [ "$_br" != main ] && [ "$_br" != master ]; }; then
   { printf '%s' "$G" | grep -q SKIP && [ -z "$(find "$H/.claude/agents" -type l 2>/dev/null)" ]; } && ok "refuses to link from a worktree/feature branch" || no "linked from a non-main checkout"
 fi
 export OS_LINK_ANY_CHECKOUT=1
