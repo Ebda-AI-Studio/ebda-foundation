@@ -28,6 +28,14 @@ Pair it with half the cores per run (`--maxWorkers=50%`).
 2. **Re-entrant helper.** `host-lock.sh` exports `HOST_LOCK_HELD=<lockfile>` to the command it runs; a nested call sees the marker, re-checks that the lock is genuinely held (a stale marker must not bypass the queue) and runs directly.
 3. Repos without the hook keep the manual form: `lockf -k ~/.claude/locks/heavy-test.lock <cmd>` (full suites only; never around `git push` where a hook takes the lock).
 
+**Light steps do not take the heavy lock (PREPUSH-5, 2026-11-11).** The lock is for FULL suites. A pre-push step that is
+light (about 100 s CPU, 0.5 GB: the repo-scanner unit tests) must not queue behind it, or 8 parallel pushes wait 20+ min
+behind unrelated runs. Pattern (ebda-store `scripts/ci/prepush-slot.sh` + `pre-push-gate.sh`): (1) a pass cache keyed by the
+git tree hash of HEAD plus the test list, so a re-push of the same tree costs 0 s and only a PASS is recorded; (2) a numbered-slot
+semaphore (`~/.claude/locks/prepush-slot-N.lock`, N=4, `lockf`/`flock`, wait then exit 75, never skip) with a fixed
+`--maxWorkers=2`. CI still runs the tests. Cost if wrong: a test depending on state outside the tracked tree could be cached
+as a pass and fail only in CI. sources: ebda-store `docs/rulings/PREPUSH-5.md`.
+
 ## 2. Agent fan-out
 At most **2 heavy tracks** at once (LEAN mode); code-only tracks may run in parallel, suites queue on the lock. A new
 worktree's first push does not justify a fresh full-suite run per agent - run touched tests per task, full suite at PR end.
