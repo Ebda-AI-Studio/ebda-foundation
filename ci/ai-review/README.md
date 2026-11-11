@@ -6,7 +6,6 @@ Files: `pass-marker.mjs` (keeps `ai-review-passed` tied to the reviewed diff via
 
 ## Adopt in a product repo
 1. Copy `risky-paths.mjs`, `pass-marker.mjs`, `prompt.md`, `review.mjs` to `.github/ai-review/`.
-1b. Also copy `pass-marker.mjs`.
 2. Copy the workflow to the product repo with `on:` replaced by `pull_request_target: types: [opened, synchronize, reopened, ready_for_review, labeled]`. Everything under `jobs:` stays identical.
 3. Secret `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token` as the Claude account that pays for review; `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R <owner>/<repo>`, or once for the org). Without it every risky PR fails with an error that says so.
 4. Optional repo variable `AI_REVIEW_MODEL`.

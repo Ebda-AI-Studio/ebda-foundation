@@ -44,8 +44,8 @@ describe('risky-paths (fail closed: only docs, markdown and NEWLY ADDED tests ar
 
 describe('ai-review.yml keeps the gate out of the PR author\'s hands', () => {
   const wf = readFileSync(join(__dirname, '../.github/workflows/ai-review.yml'), 'utf8');
-  it('checks out the BASE branch (scripts and prompt), never the PR head, in both checkout jobs', () => {
-    expect((wf.match(/ref: \$\{\{ github\.event\.pull_request\.base\.ref \}\}/g) ?? []).length).toBe(2);
+  it('checks out the BASE branch (scripts and prompt), never the PR head, in every checkout (classify, review, manual-pass, fork-gate)', () => {
+    expect((wf.match(/ref: \$\{\{ github\.event\.pull_request\.base\.ref \}\}/g) ?? []).length).toBe(4);
     expect(wf).not.toMatch(/ref: \$\{\{ github\.event\.pull_request\.head/);
   });
   it('fails closed on an oversized diff instead of reviewing part of it', () => {
