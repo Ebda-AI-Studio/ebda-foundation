@@ -1,5 +1,5 @@
 # The launchd jobs that run on the Mac (Amendment A): every KEEP-MAC row of the disposition table in os/MANIFEST.md.
-# Format: label-suffix <TAB> template path relative to os/. Read by os/install.sh; the label is $OS_LAUNCHD_PREFIX.<label-suffix>.
+# Format: label-suffix <TAB> template path relative to os/ [<TAB> optin=VAR: installed only when VAR=1, ruling INSTALL-1]. Read by os/install.sh; the label is $OS_LAUNCHD_PREFIX.<label-suffix>.
 ci-runner-guard	ops/launchd/com.ebda.os.ci-runner-guard.plist
 guest-wedge-watch	ops/launchd/com.ebda.os.guest-wedge-watch.plist
 hung-job-guard	ops/launchd/com.ebda.os.hung-job-guard.plist
@@ -11,7 +11,7 @@ instinct-extract	ops/launchd/com.ebda.os.instinct-extract.plist
 session-mining	ops/launchd/com.ebda.os.session-mining.plist
 ebda-cf-backup	ops/launchd/com.ebda.os.ebda-cf-backup.plist
 os-selftest	ops/launchd/com.ebda.os.os-selftest.plist
-hands-mac-local	cloud/hands/providers/launchd/com.ebda.os.hands-mac-local.plist
+hands-mac-local	cloud/hands/providers/launchd/com.ebda.os.hands-mac-local.plist	optin=OS_HANDS_LOCAL
 acceptance-feedback	ops/launchd/com.ebda.os.acceptance-feedback.plist
 audit-pack-daily	ops/launchd/com.ebda.os.audit-pack-daily.plist
 dead-gate-detect	ops/launchd/com.ebda.os.dead-gate-detect.plist
@@ -32,3 +32,6 @@ social-content	ops/launchd/com.ebda.os.social-content.plist
 isp-188-watch	ops/launchd/com.ebda.os.isp-188-watch.plist
 drain-ebda-store	ops/launchd/com.ebda.os.drain-ebda-store.plist
 drain-ebda-foundation	ops/launchd/com.ebda.os.drain-ebda-foundation.plist
+claude-bundle-sync	ops/launchd/com.ebda.os.claude-bundle-sync.plist
+pr-shepherd	ops/launchd/com.ebda.os.pr-shepherd.plist
+sentry-stale-watch	ops/launchd/com.ebda.os.sentry-stale-watch.plist

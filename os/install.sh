@@ -118,9 +118,19 @@ NODEBIN="$(command -v node >/dev/null 2>&1 && dirname "$(command -v node)" || tr
 RUN_PATH="$HOME/.local/bin:$BREW/bin:$BREW/opt/postgresql@17/bin${NODEBIN:+:$NODEBIN}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 act mkdir -p "$LA" "$HOME/Library/Logs"
 wanted=" "; n_plist=0
-while IFS=$'\t' read -r name tmpl; do
+while IFS=$'\t' read -r name tmpl flag; do
   case "$name" in ''|'#'*) continue ;; esac
-  label="$PREFIX.$name"; wanted="$wanted$label "
+  label="$PREFIX.$name"
+  # optional 3rd column `optin=VAR`: the job is installed only when VAR=1 (env or ~/.ebda-os.local.env); otherwise it is NOT wanted,
+  # so a plist left by an earlier install is unloaded and removed below (ruling INSTALL-1)
+  case "${flag:-}" in
+    optin=*) _v="${flag#optin=}"
+      case "$_v" in *[!A-Za-z0-9_]*|'') echo "install: bad opt-in flag '$flag' for $name" >&2; exit 1 ;; esac
+      if [ "${!_v:-}" != 1 ]; then say "skip   $label (opt-in: set $_v=1 in ~/.ebda-os.local.env)"; continue; fi ;;
+    '') ;;
+    *) echo "install: unknown flag '$flag' for $name in mac-local.list" >&2; exit 1 ;;
+  esac
+  wanted="$wanted$label "
   [ -f "$OSD/$tmpl" ] || { echo "install: template missing: $tmpl" >&2; exit 1; }
   target="$LA/$label.plist"; tmp="$(mktemp)"
   sed -e "s#__HOME__#$HOME#g" -e "s#__PATH__#$RUN_PATH#g" -e "s#__OS_HOME__#$REPO#g" -e "s#__USER__#${USER:-$(id -un)}#g" "$OSD/$tmpl" > "$tmp"

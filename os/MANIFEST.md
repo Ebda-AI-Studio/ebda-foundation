@@ -92,7 +92,7 @@ Layering and cost-if-wrong: `docs/rulings/FDN-OS-1.md`.
 
 ## Installer and the launchd set (Task 5, Amendment A)
 
-`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (24 jobs: 23 KEEP-MAC plus the new hands-mac-local; table below). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
+`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (35 jobs, counted from the file; hands-mac-local is opt-in via the third column `optin=OS_HANDS_LOCAL` and skipped unless `OS_HANDS_LOCAL=1`, ruling INSTALL-1; table below). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
 
 
 ## Old-job dispositions (Task 5 fix round 1)
@@ -133,8 +133,9 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | mac-maintenance | KEEP-MAC | mac-maintenance | local disk and Umbra upkeep |
 | os-selftest | KEEP-MAC | os-selftest | checks the local install |
 | os-watch | KEEP-MAC | os-watch | self-check of the local OS runtime and Umbra |
-| pr-shepherd | PORT-BRAIN | pr-shepherd | GitHub API poll of open PRs |
-| sentry-stale-watch | PORT-BRAIN | sentry-stale | Sentry API poll |
+| claude-bundle-sync | KEEP-MAC | claude-bundle-sync | keeps the Claude Code app bundle linked to the newest build so macOS keeps one permission identity; Mac-only by nature (ruling INSTALL-1) |
+| pr-shepherd | KEEP-MAC | pr-shepherd | the brain watcher shepherds the brain's orgs; the Mac job covers ONE other org set per machine (`OS_PR_SHEPHERD_ORG`), skips when unset or equal to the brain's org (ruling INSTALL-1) |
+| sentry-stale-watch | KEEP-MAC | sentry-stale-watch | stays on the Mac until the brain's `sentry-stale` is configured for the same Sentry org; then a later PR may drop it (ruling INSTALL-1) |
 | services-watch | PORT-BRAIN | services | HTTP probes; brain health.ts covers only 2 URLs |
 | session-mining | KEEP-MAC | session-mining | claude CLI over local session files |
 | usage-sentinel | KEEP-MAC | usage-sentinel | reads local Claude usage |
