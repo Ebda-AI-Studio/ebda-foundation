@@ -13,10 +13,11 @@ export WT_DEPS_CACHE="$TMP/cache"
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/npm" <<'FAKE'
 #!/usr/bin/env bash
-echo "$*" >> "$FAKE_NPM_LOG"
+echo "$(basename "$PWD") $*" >> "$FAKE_NPM_LOG"
 case "$1" in
   ci) mkdir -p node_modules/.prisma/client node_modules/pkg; head -c 2000 /dev/zero | tr '\0' x > node_modules/.prisma/client/index.d.ts ;;
-  run) [ "$2" = db:generate ] && { mkdir -p node_modules/.prisma/client; head -c 50000 /dev/zero | tr '\0' x > node_modules/.prisma/client/index.d.ts; } ;;
+  run) [ "$2" = build ] && { mkdir -p dist; echo built > dist/index.js; }
+       [ "$2" = db:generate ] && { mkdir -p node_modules/.prisma/client; head -c 50000 /dev/zero | tr '\0' x > node_modules/.prisma/client/index.d.ts; } ;;
 esac
 exit 0
 FAKE
@@ -26,6 +27,11 @@ R="$TMP/repo"; mkdir -p "$R/packages/database/prisma"
 git -C "$R" init -q -b main; git -C "$R" config user.email t@example.invalid; git -C "$R" config user.name t
 echo '{"name":"demo","scripts":{"db:generate":"prisma generate"}}' > "$R/package.json"; echo '{"lockfileVersion":3}' > "$R/package-lock.json"
 echo 'model A { id Int @id }' > "$R/packages/database/prisma/schema.prisma"
+# workspace packages: `lib` has a git-ignored build output as main (must be built), `tracked` points at a committed file (must not)
+mkdir -p "$R/packages/lib" "$R/packages/tracked/src"
+echo '{"name":"lib","main":"dist/index.js","exports":{".":"./dist/index.js"},"scripts":{"build":"tsc"}}' > "$R/packages/lib/package.json"
+echo '{"name":"tracked","main":"./src/index.js","scripts":{"build":"tsc"}}' > "$R/packages/tracked/package.json"
+echo x > "$R/packages/tracked/src/index.js"; printf 'dist\n' > "$R/.gitignore"
 git -C "$R" add -A; git -C "$R" commit -q -m init
 size(){ wc -c < "$1/node_modules/.prisma/client/index.d.ts" | tr -d ' '; }
 big(){ [ "$(size "$1")" -ge 10000 ] && echo yes || echo no; }
@@ -42,8 +48,8 @@ head -c 2000 /dev/zero | tr '\0' x > "$ENTRY/tree/node_modules/.prisma/client/in
 : > "$FAKE_NPM_LOG"
 W2="$(mkwt w2)"; bash "$OPS/wt-deps.sh" "$W2" >"$TMP/o2" 2>&1
 ok "poisoned entry: clone is repaired with db:generate" "$(big "$W2")" "yes"
-ok "poisoned entry: no npm ci ran (clone, not install)" "$(grep -c '^ci' "$FAKE_NPM_LOG")" "0"
-ok "poisoned entry: db:generate ran once" "$(grep -c '^run db:generate' "$FAKE_NPM_LOG")" "1"
+ok "poisoned entry: no npm ci ran (clone, not install)" "$(grep -c ' ci' "$FAKE_NPM_LOG")" "0"
+ok "poisoned entry: db:generate ran once" "$(grep -c 'run db:generate' "$FAKE_NPM_LOG")" "1"
 
 # 3. a good client is left alone
 : > "$FAKE_NPM_LOG"; W3="$(mkwt w3)"; bash "$OPS/wt-deps.sh" "$W3" >"$TMP/o3" 2>&1
@@ -51,13 +57,27 @@ ok "a second clone of the still-poisoned entry is repaired again (per clone)" "$
 
 # 4. REFRESH rebuilds the entry through the script's own path
 : > "$FAKE_NPM_LOG"; W4="$(mkwt w4)"; WT_DEPS_REFRESH=1 bash "$OPS/wt-deps.sh" "$W4" >"$TMP/o4" 2>&1
-ok "refresh: ran a fresh install + generate" "$(grep -c '^ci' "$FAKE_NPM_LOG")/$(grep -c 'db:generate' "$FAKE_NPM_LOG")" "1/1"
+ok "refresh: ran a fresh install + generate" "$(grep -c ' ci' "$FAKE_NPM_LOG")/$(grep -c 'db:generate' "$FAKE_NPM_LOG")" "1/1"
 ok "refresh: entry now holds a real client" "$([ "$(wc -c < "$ENTRY/tree/node_modules/.prisma/client/index.d.ts")" -ge 10000 ] && echo yes || echo no)" "yes"
 : > "$FAKE_NPM_LOG"; W5="$(mkwt w5)"; bash "$OPS/wt-deps.sh" "$W5" >"$TMP/o5" 2>&1
 ok "after refresh a clone needs no generate" "$(grep -c 'db:generate' "$FAKE_NPM_LOG")" "0"
 ok "after refresh the clone is real" "$(big "$W5")" "yes"
 
-# 5. a repo with no prisma schema never runs generate
+# 5. workspace build outputs: a clone has no dist/, so it is built; a committed target is never built; no rebuild once present
+ok "miss: lib/dist built in the first worktree" "$([ -f "$W1/packages/lib/dist/index.js" ] && echo yes || echo no)" "yes"
+ok "clone: lib/dist built after cloning" "$([ -f "$W5/packages/lib/dist/index.js" ] && echo yes || echo no)" "yes"
+ok "package whose target is committed is never built" "$(grep -c '^tracked run build' "$FAKE_NPM_LOG")" "0"
+: > "$FAKE_NPM_LOG"; W7="$(mkwt w7)"; bash "$OPS/wt-deps.sh" "$W7" >"$TMP/o7" 2>&1
+rm -rf "$W7/packages/lib/dist"; WT_DEPS_FORCE=1 bash "$OPS/wt-deps.sh" "$W7" >"$TMP/o7b" 2>&1
+: > "$FAKE_NPM_LOG"; bash "$OPS/wt-deps.sh" "$W7" >"$TMP/o7c" 2>&1
+ok "populated worktree with a present dist: nothing rebuilt" "$(grep -c 'run build' "$FAKE_NPM_LOG")" "0"
+rm -rf "$W7/packages/lib/dist"; : > "$FAKE_NPM_LOG"; bash "$OPS/wt-deps.sh" "$W7" >"$TMP/o7d" 2>&1
+ok "populated worktree with dist removed: rebuilt (poisoned-worktree repair)" "$([ -f "$W7/packages/lib/dist/index.js" ] && echo yes || echo no)" "yes"
+: > "$FAKE_NPM_LOG"; W8="$(mkwt w8)"; WT_DEPS_HOOK=1 bash "$OPS/wt-deps.sh" "$W8" >"$TMP/o8" 2>&1
+ok "hook mode runs no npm at all (no build, no generate)" "$(grep -c . "$FAKE_NPM_LOG")" "0"
+ok "hook mode leaves no dist" "$([ -e "$W8/packages/lib/dist" ] && echo yes || echo no)" "no"
+
+# 6. a repo with no prisma schema never runs generate
 R2="$TMP/repo2"; mkdir -p "$R2"; git -C "$R2" init -q -b main; git -C "$R2" config user.email t@example.invalid; git -C "$R2" config user.name t
 echo '{"name":"plain","scripts":{"db:generate":"x"}}' > "$R2/package.json"; echo '{"lockfileVersion":3}' > "$R2/package-lock.json"
 git -C "$R2" add -A; git -C "$R2" commit -q -m init
