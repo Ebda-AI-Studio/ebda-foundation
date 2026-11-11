@@ -16,9 +16,9 @@ describe('send-only Telegram', () => {
     const hits = Object.entries(sources).flatMap(([file, text]) => [...text.matchAll(/setWebhook|deleteWebhook|getUpdates|getWebhookInfo/gi)].map((m) => `${file}: ${m[0]}`));
     expect(hits).toEqual([]);
   });
-  it('the only Telegram Bot API methods in the sources are sendMessage and answerCallbackQuery', () => {
+  it('the only Telegram Bot API methods in the sources are sendMessage, editMessageText and answerCallbackQuery', () => {
     const methods = new Set(Object.values(sources).flatMap((text) => [...text.matchAll(/api\.telegram\.org\/bot\$\{[^}]+\}\/(\w+)/g)].map((m) => m[1])));
-    expect([...methods].sort()).toEqual(['answerCallbackQuery', 'sendMessage']);
+    expect([...methods].sort()).toEqual(['answerCallbackQuery', 'editMessageText', 'sendMessage']);
   });
   it('sendTelegram talks to sendMessage only, with the bot token and chat id it was given', async () => {
     const urls: string[] = [];

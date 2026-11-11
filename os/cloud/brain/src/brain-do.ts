@@ -6,6 +6,7 @@
 //   "acted" = a job was dispatched to the hands, a question was asked, or the finding resolved. The acted-on ratio is
 //   acted / raised; a finding still unacted 24 h after it was raised is an OS bug (self-check), shown on the dashboard
 //   and in the digest, never a separate message.
+import { countPending } from './decisions';
 import { DurableObject } from 'cloudflare:workers';
 import { classifyFinding, HALT_KINDS } from './classify';
 import { authMode } from './hands-container';
@@ -1167,7 +1168,7 @@ export class BrainDO extends DurableObject<Env> {
 
   /** Build (never send) the daily digest: shared by the 05:00 send and the dashboard's preview. The preview writes nothing
    *  (the self-check's last result is read instead of re-run), so polling the dashboard costs no DO row writes. */
-  private buildDigest(now: number, preview = false, social: string | null = null) {
+  private buildDigest(now: number, preview = false, social: string | null = null, decisionsWaiting = 0) {
     const since = now - DAY;
     const fixed = Number(this.row(`SELECT COUNT(*) AS n FROM jobs WHERE finished_at > ? AND outcome IS NOT NULL AND json_extract(outcome, '$.status') IN ('merged', 'pr_opened', 'fix_deployed')`, since)?.n ?? 0);
     const resolved = Number(this.row(`SELECT COUNT(*) AS n FROM findings WHERE status = 'resolved' AND closed_at > ?`, since)?.n ?? 0);
@@ -1176,6 +1177,7 @@ export class BrainDO extends DurableObject<Env> {
     const notSetUp = this.rows(`SELECT key FROM findings WHERE kind = 'monitor-unconfigured' AND status != 'resolved' ORDER BY key`).map((r) => String(r.key).split(':')[0]!);
     // needs you / still broken, in this order: questions, OS bugs, hands paused, undelivered messages, then open monitor findings
     const needs: string[] = [];
+    if (decisionsWaiting > 0) needs.push(`${decisionsWaiting} decision${decisionsWaiting === 1 ? '' : 's'} waiting`);
     for (const q of this.rows(`SELECT text, default_opt FROM questions WHERE status IN ('pending', 'sent') ORDER BY created_at LIMIT 10`)) needs.push(`Decision: ${String(q.text)} (default "${String(q.default_opt)}")`);
     const bugs = preview ? (this.getMeta<{ fps: string[] }>('os:bugs')?.fps.length ?? 0) : this.selfCheck(now).length;
     if (bugs > 0) needs.push(`OS bug: ${bugs} finding(s) left unacted for over 24 h`);
@@ -1209,7 +1211,8 @@ export class BrainDO extends DurableObject<Env> {
   /** The one daily digest: counts, what needs Ahmad or is still broken (top 5), the social block, a dashboard link. */
   async digest(now: number = Date.now()): Promise<string> {
     const social = await this.social().summary(now).catch(() => null);
-    const { msg, rolled, pending } = this.buildDigest(now, false, social);
+    const decisionsWaiting = await countPending(this.env).catch(() => 0);
+    const { msg, rolled, pending } = this.buildDigest(now, false, social, decisionsWaiting);
     const r = await this.emit(msg, now);
     if (r === 'sent') {
       for (const m of rolled) this.sql.exec(`UPDATE messages SET status = 'rolled' WHERE dedupe_key = ?`, m.dedupe_key);

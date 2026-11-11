@@ -59,6 +59,20 @@ Footprint: at most 3 outbound requests per service per 15 min and a few dozen pe
 - `POST /hands/refused {runId, reason}` (hands token): the container could not lock down egress and exits 3; the brain sends ONE P1 message a day, marks the run failed and requeues its jobs.
 - `GET /api/state` lists `unconfigured` watcher ids; `os/ops/cutover-gate-check.sh --deployed <url>` fails while a ported watcher is unconfigured.
 
+## Decisions (one-tap approvals in Telegram)
+Code `src/decisions.ts`, tests `test/decisions.test.ts`. The controller POSTs approval questions; Ahmad answers with one tap; the controller reads the answers.
+
+| Piece | Where | Rule |
+|---|---|---|
+| Ask | `POST /api/decisions` (Bearer `INGEST_TOKEN`) | body `[{id, question, why, default, cost_if_wrong, kind, link?}]`, at most 10, one Telegram message each at ~1/s. `yes_no` -> Yes / No / Later; any other kind -> Done / Later (+ an Open URL button for `link`). Deduped by `id`: a pending or answered id is never resent. Response `{sent, duplicate, failed}` (a failed send leaves no record, so a retry resends). |
+| Read | `GET /api/decisions?status=answered\|pending` (Bearer `INGEST_TOKEN`) | records `{id, question, why, default, cost_if_wrong, kind, link?, status, createdAt, messageId, answer?, at?, by?, note?}`; answer is `yes / no / later / done` |
+| Tap | `POST /telegram/webhook` (same door as questions and social) | callback `d:<id>:<y\|n\|l\|k>`; accepted only with the correct `X-Telegram-Bot-Api-Secret-Token` AND `message.chat.id == TELEGRAM_CHAT_ID` AND presser `from.id == TELEGRAM_OWNER_ID` (default the chat id); anyone else is ignored. First tap records `{answer, at, by}`, edits the message to show the answer and removes the buttons; a second tap changes nothing. |
+| Note | same webhook | a text reply (owner, configured chat) to a decision message is stored as `note` (latest wins) via `decisionmsg:<messageId>` |
+| Digest | `BrainDO.digest` (05:00 UTC) | a needs-you line "N decisions waiting" (pending count from KV list metadata, no value reads) |
+| KV | binding `EVENTS` | `decision:<id>` (JSON, metadata `{status}`), `decisionmsg:<messageId>` -> id; both expire after 180 days |
+
+No new secret or binding; Telegram methods used are `sendMessage`, `editMessageText`, `answerCallbackQuery`. Cost: Workers Paid + free Telegram, a few KV ops per decision.
+
 ## Social posting (Facebook Pages + LinkedIn company pages)
 
 Plan, research links and Ahmad-only steps: `docs/plans/2026-11-11-social-posting.md`. Code: `src/social/` (engine, copy rules, routes,
