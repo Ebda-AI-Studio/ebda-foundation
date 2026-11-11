@@ -177,6 +177,12 @@ describe('I-6 (ruling F-I6): the drill result posted by the Mac', () => {
     expect((await post({ result: 'pass' }, 'test-ingest-token')).status).toBe(200);
     expect(await brainStub(env).lastPassAt('watcher', 'dr-drill')).not.toBeNull();
   });
+  it('ISP-188: a host resolving into the blocked range sends ONE P1 message and opens no job', async () => {
+    const h = await harness(realish(), null);
+    const f: Finding = { source: 'isp-188', kind: 'isp-block-range', key: 'ameliaaurum.com', title: 'ameliaaurum.com resolves into 188.114.96.0/23', severity: 'P1' };
+    expect(await h.run((b) => b.ingestFinding(f, T0))).toMatchObject({ lane: 'digest', jobId: null });
+    expect(h.sent.filter((t) => /ameliaaurum\.com resolves into/.test(t))).toHaveLength(1);
+  });
   it('an overdue drill sends ONE unhealed-P1 message and opens no job', async () => {
     const h = await harness(realish(), null);
     const f: Finding = { source: 'watcher', kind: 'dr-drill-overdue', key: 'dr-drill:ebda-store:overdue', title: 'no restore drill has passed in 15 days', repo: 'o/r', severity: 'P1' };

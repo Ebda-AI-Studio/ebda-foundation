@@ -117,6 +117,7 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | dr-drill | PORT-BRAIN | dr-drill | checks the age of the last restore-drill PASS (digest after 8 days, one P1 after 14); the drill itself is `restore-drill` below (ruling F-I6) |
 | restore-drill | KEEP-MAC | restore-drill | the weekly restore drill needs R2 + age secrets the hands container must not hold; `ops/restore-drill.sh` posts PASS/FAIL to the brain `POST /drill` |
 | drift-watch | KEEP-MAC | drift-watch | diffs installed copies against the repo on disk |
+| isp-188-watch | KEEP-MAC | isp-188-watch | hourly DoH check that every merchant-facing host resolves outside 188.114.96.0/23 (blocked by the Egyptian ISP, launch map ISP-188); posts `isp-block-range` findings to the brain, skips when nothing changed |
 | ebda-cf-backup | KEEP-MAC | ebda-cf-backup | pulls the Cloudflare backup to local disk |
 | ebda-foundation-bump | KEEP-MAC | ebda-foundation-bump | git operations in local checkouts |
 | fleet-dep-audit | KEEP-MAC | fleet-dep-audit | runs npm audit inside local checkouts |
