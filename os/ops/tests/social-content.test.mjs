@@ -61,3 +61,7 @@ test('model output: JSON inside the result (fenced or not) parses; missing field
   assert.equal(o.text, 't');
   assert.throws(() => parseClaudeJson(JSON.stringify({ result: '{"headline":"h"}' })), /missing sub/);
 });
+
+test('a claude error answer (is_error) fails loudly instead of parsing', () => {
+  assert.throws(() => parseClaudeJson(JSON.stringify({ is_error: true, result: 'Not logged in · Please run /login' })), /claude: Not logged in/);
+});
