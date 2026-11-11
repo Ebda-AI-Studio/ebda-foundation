@@ -60,3 +60,12 @@ Coverage target: every button, every API path, every logic branch, every page/me
 - Marketing: W1 font+tokens, W2 home + Store/Chat pages, W3 all 28 pairs at 360/390/820/1280/1440.
 - Storefront/shell: #584 #585 #587 (#587 merged), order/success pages = controller QA.
 - Every wave: verify live on Amelia / live sites at 390/820/1280/1440 before CLOSED.
+
+## STILL-OPEN added 2026-11-11 from the launch-map cross-check (business/ebda/audits/2026-11-11-launch-map-crosscheck.md)
+Items from the old launch map that are not built and were in no current list. Owner/size are suggestions.
+- F4 [S]: barcode receive / pick-orders / audit-count flows never exercised live (plan-gated off Growth). Run on a plan that includes it after the Amelia upgrade; fix what breaks. Owner: QA controller + store agent.
+- FOLD-COUNTERS [M]: per-request D1/DO/KV counts + latency to Analytics Engine (dataset `ebda_request_budget`, binding `REQUEST_BUDGET`, 1-in-20, always non-2xx/over budget) per docs/plans/2026-11-02-neon-zero.md section 9.2; not on main. Feeds alerts + SCALE-READY (X3). Owner: store agent.
+- CHAT-FDN [S]: foundation packages/foundation/src/brand.ts still says `whatsapp: Ebda WhatsApp`; store + WA vendored copies say `Ebda Chat` (Ruling CHAT-FDN-1: upstream must adopt). Change brand + bare-name regexes, re-pin store and WA locks. Owner: foundation agent.
+- PERF-PLACEMENT [S]: Smart Placement for the API Worker (neon-zero plan N-21): A/B with k6 now that Neon is gone, keep or revert with numbers (2026-10-22 trial landed in EWR). Owner: store agent.
+- PERF-LATENCY [S]: re-measure sign-in (was 3.6-3.9 s), order create (4.3 s) and the 33.5 s TTFB stall on prod after #496/#492; not in any list. Owner: QA controller.
+- ISP-188 [S]: Egyptian ISP blocks Cloudflare 188.114.96/97.x. Ebda hosts resolve to 104.21/172.67 today; add a range check to prod-watch for every merchant-facing host incl. custom domains, document in the runbook. Owner: ops/foundation agent.
