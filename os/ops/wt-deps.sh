@@ -13,6 +13,14 @@
 #   WT_DEPS_CACHE=<dir>   cache root (default ~/.cache/wt-deps)
 #   WT_DEPS_KEEP=<n>      keys kept per repo (default 2, newest by creation)
 #   WT_DEPS_FORCE=1       replace an existing non-empty node_modules with the clone
+#   WT_DEPS_REFRESH=1     rebuild this key's cache entry from a fresh install (+ prisma generate) in THIS worktree; the only
+#                         supported way to replace a poisoned entry (never hand-delete cache dirs). Not honoured in hook mode.
+#   Prisma (2026-11-11): a repo with a prisma schema must end with a GENERATED client. `prisma generate` is not part of
+#   `npm ci`, so a cache built before it ran held a ~2 KB placeholder client (Prisma.Decimal undefined -> ebda-store
+#   customer-auth-backup.test.ts failed with "reading 'isDecimal'"). After every install/clone (never in hook mode: generate
+#   runs repo code) a missing or stub (< WT_DEPS_PRISMA_MIN_BYTES, default 10000) node_modules/.prisma/client/index.d.ts is
+#   regenerated with `npm run db:generate` (else `npx --no-install prisma generate`), and a fresh cache entry is generated
+#   BEFORE it is snapshotted. WT_DEPS_PRISMA_GENERATE=0 disables.
 #   WT_DEPS_HOOK=1        HOOK MODE, set by the automatic callers (global git post-checkout, Claude PostToolUse). Those
 #                         fire on repos nobody chose, so it is CLONE-ONLY and TRUSTED-ONLY: (1) origin must be an exact
 #                         github.com URL of one of $OS_ORGS (lib/trusted-origin.sh) AND the worktree's
@@ -37,6 +45,27 @@ log() { echo "wt-deps: $*" >&2; }
 
 [ -f "$WT/package.json" ] || { [ "$CHECK" = 1 ] && exit 1; log "no package.json in $WT - nothing to do"; exit 0; }
 
+# Prisma client guarantee (see header). $1 = worktree root. Returns 0 when nothing to do or generated, 1 when generate failed.
+prisma_client_ok() {
+  local wt="$1" idx="$1/node_modules/.prisma/client/index.d.ts" min="${WT_DEPS_PRISMA_MIN_BYTES:-10000}" size
+  size="$( [ -f "$idx" ] && wc -c < "$idx" | tr -d ' ' || echo 0 )"
+  [ "$size" -ge "$min" ]
+}
+has_prisma_schema() {
+  [ -n "$(cd "$1" && find . -maxdepth 4 -name schema.prisma -not -path '*/node_modules/*' -not -path './.git/*' 2>/dev/null | head -1)" ]
+}
+ensure_prisma_client() {
+  local wt="$1"
+  [ "${WT_DEPS_PRISMA_GENERATE:-1}" = 0 ] && return 0
+  has_prisma_schema "$wt" || return 0
+  prisma_client_ok "$wt" && return 0
+  log "prisma client missing or a stub in $wt - generating"
+  if grep -q '"db:generate"' "$wt/package.json" 2>/dev/null; then (cd "$wt" && npm run db:generate >&2)
+  else (cd "$wt" && npx --no-install prisma generate >&2); fi
+  prisma_client_ok "$wt" || { log "WARN: prisma generate did not produce a real client in $wt"; return 1; }
+  log "prisma client generated in $wt"
+}
+
 # hook mode: trust gate (see header). One validator shared with the git hook dispatcher and install.sh.
 IGN=""
 if [ "${WT_DEPS_HOOK:-0}" = 1 ] && [ "$CHECK" = 0 ]; then
@@ -46,6 +75,9 @@ if [ "${WT_DEPS_HOOK:-0}" = 1 ] && [ "$CHECK" = 0 ]; then
   fi
   IGN=1   # hook mode is CLONE-ONLY: see the cache-miss rule below; no installer ever runs from a hook
 fi
+
+[ -n "$IGN" ] && WT_DEPS_REFRESH=0
+REFRESH="${WT_DEPS_REFRESH:-0}"
 
 # lockfile -> installer
 if   [ -f "$WT/package-lock.json" ]; then LOCK=package-lock.json; INSTALL=(npm ci)
@@ -76,7 +108,9 @@ plain_install() {
   log "falling back to a normal install in $WT"; (cd "$WT" && "${INSTALL[@]}"); }
 
 # already installed here? (leave a real install alone unless forced)
-if [ -d "$WT/node_modules" ] && [ -n "$(ls -A "$WT/node_modules" 2>/dev/null)" ] && [ "${WT_DEPS_FORCE:-0}" != 1 ]; then
+if [ -d "$WT/node_modules" ] && [ -n "$(ls -A "$WT/node_modules" 2>/dev/null)" ] && [ "${WT_DEPS_FORCE:-0}" != 1 ] && [ "$REFRESH" != 1 ]; then
+  # a populated node_modules is left alone, but a missing/stub prisma client is still repaired (hook mode never generates)
+  [ -z "$IGN" ] && ensure_prisma_client "$WT"
   log "$WT/node_modules already populated (WT_DEPS_FORCE=1 to replace) - skipping"; exit 0
 fi
 
@@ -123,19 +157,20 @@ clone_in() {   # clone cached tree into $WT
 }
 
 lock_dir="$RCACHE/.lock-$KEY"
-if [ ! -f "$ENTRY/.complete" ]; then
+if [ ! -f "$ENTRY/.complete" ] || [ "$REFRESH" = 1 ]; then
   # one builder per key; others wait (stale lock after 20 min is broken)
   waited=0
   until mkdir "$lock_dir" 2>/dev/null; do
-    [ -f "$ENTRY/.complete" ] && break
+    [ -f "$ENTRY/.complete" ] && [ "$REFRESH" != 1 ] && break
     if [ -n "$(find "$lock_dir" -maxdepth 0 -mmin +20 2>/dev/null)" ]; then rmdir "$lock_dir" 2>/dev/null; continue; fi
     sleep 3; waited=$((waited+3)); [ "$waited" -gt 1500 ] && { log "lock wait timeout"; plain_install; exit $?; }
   done
-  if [ ! -f "$ENTRY/.complete" ]; then
+  if [ ! -f "$ENTRY/.complete" ] || [ "$REFRESH" = 1 ]; then
     trap 'rmdir "$lock_dir" 2>/dev/null' EXIT
     log "cache MISS $REPO/$KEY - installing once in $WT"
     rm -rf "${WT:?}/node_modules"
     if ! (cd "$WT" && "${INSTALL[@]}"); then log "install failed"; exit 1; fi
+    ensure_prisma_client "$WT" || { log "prisma generate failed - not caching a stub client"; exit 1; }
     part="$RCACHE/.partial-$KEY-$$"; rm -rf "$part"; mkdir -p "$part/tree"
     list_nm "$WT" > "$part/manifest"
     ok=1
@@ -160,6 +195,10 @@ fi
 
 if clone_in; then
   touch "$ENTRY/.complete"
+  if [ -z "$IGN" ]; then ensure_prisma_client "$WT" || true
+  elif has_prisma_schema "$WT" && ! prisma_client_ok "$WT"; then
+    log "hook mode: prisma client in $WT is a stub - run by hand: bash ~/.claude/scripts/wt-deps.sh $WT (or WT_DEPS_REFRESH=1 to rebuild the cache entry)"
+  fi
   # husky's `prepare` never ran in a clone, so its (gitignored) .husky/_ stubs are missing and the repo's
   # git hooks (pre-commit/commit-msg/pre-push) would silently not fire in this worktree. Re-run husky (offline, instant).
   # NOT in hook mode: it would execute dependency code (that is what --ignore-scripts exists to prevent).
