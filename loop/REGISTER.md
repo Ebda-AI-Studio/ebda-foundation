@@ -35,6 +35,19 @@ Coverage target: every button, every API path, every logic branch, every page/me
 ## FOUND (open, not yet in a PR)
 - (add as QA finds them)
 
+### Controller live QA 2026-11-11 (prod 81f766a, Amelia) - all now in PRs
+- Storefront `/en/cart|checkout|account|search` 301 to unprefixed Arabic -> ebda-store #647 (+ rule storefront-locale-routes, fdn #34). RE-VERIFY: /en/* stays English live.
+- Shopper verify/reset/welcome emails linked to store.ebda.app (admin host) -> #647. RE-VERIFY: real signup on ameliaaurum.com, open inbox link, ar + en.
+- Payment retry returned shoppers to a 404 on the platform host -> #686. RE-VERIFY: failed-payment retry lands on the store, in locale.
+- ebda.app llms.txt listed Quote/Invite/Ads + "search by meaning (coming soon)" (public-copy rule) -> #605 + #686. RE-VERIFY: llms.txt + JSON-LD = CRM/ERP only.
+- Expense receipts + weekly audit archive written to the PUBLIC bucket -> #670 (0 archives existed; read-only count). RE-VERIFY: new receipt not fetchable via media.ebda.app.
+- Cold first-hit TTFB 0.9-2.9 s (per-colo edge-cache miss) -> #667 plan (Workers Caching; compat bump blocker). OPEN as plan.
+
+### Closed from the same pass
+- Upgrade card on plan-gated insights (#588) - VERIFIED live 2026-11-11 on Amelia insights/cohorts (gold card, upgrade + see-plans).
+- Amelia sitemap empty - NOT A BUG: store setting "hide from search engines" is ON (noindex). Default for new stores is OFF. Ahmad to decide whether to switch it off.
+- /en/products listing 8 of 9 - false alarm (9 render).
+
 ## CLOSED
 - see amelia-qa log ~/.claude/handoff/e7d59025-4986-4c96-851c-39e9198e7240-amelia-qa.md
 - 03:20Z re-verify #548 LIVE: "something for the sea" -> 5 sea products OK; "pizza" -> [] OK; "خاتم" OK; "gift for my wife" + «هدية لمراتي» -> [] (needs #550 precision/normalisation; #550 auto-closed when base deleted -> reopened by agent against main)
