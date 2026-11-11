@@ -39,6 +39,11 @@ if [ -z "$repo" ] && [ -z "${MERGE_GATE_VIEW_CMD:-}" ]; then
 fi
 if [ -n "${MERGE_GATE_REQUIRED_JSON:-}" ]; then required="$MERGE_GATE_REQUIRED_JSON"
 else
+  # a root checkout wrongly marked core.bare=true makes `git rev-parse --show-toplevel` fail, which used to surface as the misleading
+  # "no workflows dir" refusal below (2026-10-25 and 2026-11-11: the drain looped on "gate failed")
+  if [ -z "$wfdir" ] && [ "$(git config --bool core.bare 2>/dev/null)" = true ]; then
+    echo "merge-gate: this checkout is marked bare (core.bare=true) so it has no work tree; fix with: git config core.bare false (run in $(pwd)); refusing" >&2; exit 2
+  fi
   [ -n "$wfdir" ] || wfdir="$(git rev-parse --show-toplevel 2>/dev/null)/.github/workflows"
   [ -d "$wfdir" ] || { echo "merge-gate: no workflows dir at $wfdir (run from a checkout of the repo, or pass --workflows); refusing" >&2; exit 2; }
   required="$(python3 -I "$py" required "$wfdir")"
