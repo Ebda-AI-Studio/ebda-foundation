@@ -86,7 +86,7 @@ else echo "skipped (no dashboard password in EBDA_OS_DASH_PASSWORD / Keychain eb
 unset PW
 
 hr "drains (launchd)"
-launchctl list 2>/dev/null | awk -v p="${OS_LAUNCHD_PREFIX:-com.ebda.os}.drain" 'index($3,p)==1{print "  "$3" pid="$1" last-exit="$2; n++} END{if(!n) print "  none loaded (start the drain scripts by hand; see the ebda-loop skill, step 3)"}'
+launchctl list 2>/dev/null | awk -v p="${OS_LAUNCHD_PREFIX:-}.drain" 'index($3,p)==1{print "  "$3" pid="$1" last-exit="$2; n++} END{if(!n) print "  none loaded (start the drain scripts by hand; see the ebda-loop skill, step 3)"}'
 
 hr "exit-check"
 EC="$OSH/loop/exit-check.sh"
