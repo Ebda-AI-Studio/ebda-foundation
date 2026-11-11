@@ -12,7 +12,7 @@ no() { echo "FAIL: $1"; _fail=$((_fail+1)); }
 new_home() {
   local h; h="$(mktemp -d)"
   mkdir -p "$h/.claude/scripts/hooks"
-  for f in hooks/block-no-verify.sh hooks/protect-config.sh hooks/block-git-add-all.sh hooks/block-root-checkout-commit.sh hooks/warn-agent-no-model.sh hooks/deny-agent-on-usage-stop.sh hooks/post-merge-auto-cleanup.sh hooks/block-worktree-install.sh hooks/block-handoff-clobber.sh hooks/post-worktree-deps.sh self-eval-gate.sh; do
+  for f in hooks/block-no-verify.sh hooks/protect-config.sh hooks/block-git-add-all.sh hooks/block-root-checkout-commit.sh hooks/warn-agent-no-model.sh hooks/deny-agent-on-usage-stop.sh hooks/post-merge-auto-cleanup.sh hooks/block-worktree-install.sh hooks/block-handoff-clobber.sh hooks/block-stash-pop.sh hooks/post-worktree-deps.sh self-eval-gate.sh; do
     printf '#!/usr/bin/env bash\nexit 0\n' > "$h/.claude/scripts/$f"; chmod +x "$h/.claude/scripts/$f"
   done
   printf '%s' "$h"

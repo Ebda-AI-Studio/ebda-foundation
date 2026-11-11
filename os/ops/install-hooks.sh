@@ -32,6 +32,7 @@ PreToolUse	hooks/warn-agent-no-model.sh
 PreToolUse	hooks/deny-agent-on-usage-stop.sh
 PreToolUse	hooks/block-worktree-install.sh
 PreToolUse	hooks/block-handoff-clobber.sh
+PreToolUse	hooks/block-stash-pop.sh
 PostToolUse	hooks/post-merge-auto-cleanup.sh
 PostToolUse	hooks/post-worktree-deps.sh	900
 Stop	self-eval-gate.sh
