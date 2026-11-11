@@ -67,7 +67,7 @@ jobs:
           [ "$EVENT" = pull_request ] || { echo "not a PR - nothing to diff"; exit 0; }
           files="$(git diff --name-only --diff-filter=d "$BASE"...HEAD -- '*.sh')"
           [ -n "$files" ] || { echo "no shell files changed"; exit 0; }
-          command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
+          command -v shellcheck >/dev/null || { [ "$(uname -s)" = Linux ] || { echo "::error::shellcheck missing on this runner (macOS: brew install shellcheck once on the host)"; exit 1; }; sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
           # shellcheck disable=SC2086
           shellcheck -S warning $files
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -101,13 +101,13 @@ jobs:
       - name: shellcheck (warnings and above)
         if: steps.chg.outputs.changed == 'true'
         run: |
-          command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
+          command -v shellcheck >/dev/null || { [ "$(uname -s)" = Linux ] || { echo "::error::shellcheck missing on this runner (macOS: brew install shellcheck once on the host)"; exit 1; }; sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
           shellcheck -S warning os/ops/*.sh os/ops/lib/*.sh os/ops/hooks/*.sh os/ops/git-hooks/*.sh os/ops/remediation/*.sh
       - name: Tools the suites need (present on ubuntu-latest; installed if the runner image lacks them)
         if: steps.chg.outputs.changed == 'true'
         run: |
           for t in jq rsync python3; do command -v "$t" >/dev/null || need="$need $t"; done
-          [ -z "${need:-}" ] || { sudo apt-get update -qq && sudo apt-get install -y -qq $need; }
+          [ -z "${need:-}" ] || { [ "$(uname -s)" = Linux ] || { echo "::error::missing on this runner:$need (macOS: brew install them once on the host)"; exit 1; }; sudo apt-get update -qq && sudo apt-get install -y -qq $need; }
       - name: OS suites (string + literal guards, config parity, ops suites, Linux smoke)
         if: steps.chg.outputs.changed == 'true'
         run: bash os/tests/run-all.sh --quiet
