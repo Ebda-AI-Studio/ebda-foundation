@@ -18,7 +18,7 @@ export const URGENT_CVSS = 9.0;
 /** Config / access self-reports of any source (watchers, dream-scan, heal-watch): ops problems, digest only. */
 const DIGEST_KINDS = new Set(['monitor-stale', 'monitor-unconfigured', 'watcher-error', 'alert-drill', 'scan-target-missing', 'dream-scan-failed', 'dr-drill-stale', 'pr-needs-you', 'usage-starved', 'budget-warn', 'cf-usage-warn', 'cost-warn', 'footprint-unknown', 'drain-held']);
 /** Ruling F-I6: a restore drill with no PASS for 14+ days is a P1 decision for Ahmad (run it on the Mac), never a hands job. */
-const ALERT_KINDS = new Set(['monitor-silent', 'drain-stall', 'dr-drill-overdue', 'cost-stop', 'cf-usage-stop', 'budget-stop', 'isp-block-range']);
+const ALERT_KINDS = new Set(['monitor-silent', 'drain-stall', 'loop-main-red', 'loop-merge-stall', 'dr-drill-overdue', 'cost-stop', 'cf-usage-stop', 'budget-stop', 'isp-block-range']);
 /** F-01: a finding of one of these kinds halts the hands (one flag, checked before every container start). */
 export const HALT_KINDS: ReadonlySet<string> = new Set(['cost-stop', 'cf-usage-stop', 'budget-stop']);
 const OUTAGE_KINDS = new Set(['prod-outage', 'money-path-broken']);

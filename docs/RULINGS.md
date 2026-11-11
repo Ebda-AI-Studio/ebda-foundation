@@ -178,3 +178,8 @@ Ruling DRN-1 - The drain ships OFF (`<name>.enabled` marker) so installing the l
 ## Design language (2026-11-11, design/DESIGN.md)
 
 Ruling DS-FONT-1 (docs/rulings/DS-FONT-1.md): one family for every Ebda surface, IBM Plex Sans Arabic for Arabic and Latin; measured 15% narrower than Readex Pro, uniform tabular digits; Geist and Readex retired on Ebda-owned surfaces; merchant storefront looks keep their own fonts.
+
+
+## Loop watchers (2026-11-11)
+
+Ruling LOOP-WATCH-1 - Wake-on-exit watchers (`alert-wait.sh`, `loop-watchdog.sh`, gates) run ONLY as harness-tracked background tasks, never `nohup`/`&`/`disown`; the controller re-arms them on every wake; and a session-independent backstop exists: the brain `loop-stall` watcher escalates ONE P1 per incident (main CI red 30+ min, or no merge 60+ min with `ai-review-passed` PRs waiting) as `loop-main-red` / `loop-merge-stall`. Evidence: 2026-11-11 main CI red ~09:40Z, 21 P1 alerts missed because alert-wait was relaunched with `nohup ... &` (its exit woke nobody), 2 h stall, ~20 approved PRs unmerged; `os/ops/tests/loop-watchdog.test.sh`, `os/cloud/brain/test/cloud-watchers.test.ts` (loop-stall), `classify.test.ts`. Cost if wrong: the thresholds (30/60 min) can alert on a legitimately slow CI or a deliberate merge freeze (use `hold` or the watchdog ack), and a controller that ignores the hard rule is still only caught after 30-60 min by the brain, not instantly.

@@ -11,6 +11,7 @@ import * as costGuard from './cost-guard';
 import * as deployDrift from './deploy-drift';
 import * as drDrill from './dr-drill';
 import * as journey from './journey-monitor';
+import * as loopStall from './loop-stall';
 import * as pageLoad from './page-load';
 import * as prShepherd from './pr-shepherd';
 import * as sentryStale from './sentry-stale';
@@ -31,6 +32,7 @@ export const GROUPS: Record<WatcherGroup, Entry[]> = {
     { id: services.ID, intervalMs: services.INTERVAL_MS, run: services.watchServices },
     { id: pageLoad.ID, intervalMs: pageLoad.INTERVAL_MS, run: pageLoad.watchPageLoad },
     { id: journey.ID, intervalMs: journey.INTERVAL_MS, run: journey.watchJourneys },
+    { id: loopStall.ID, intervalMs: loopStall.INTERVAL_MS, run: loopStall.watchLoopStall },
   ],
   hourly: [
     { id: deployDrift.ID, intervalMs: deployDrift.INTERVAL_MS, run: deployDrift.watchDeployDrift },

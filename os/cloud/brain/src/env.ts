@@ -25,6 +25,9 @@ export interface Env {
   DEPLOY_DRIFT_GRACE_MIN?: string;
   /** pr-shepherd: hours without an update before an open PR is flagged (24) */
   PR_SHEPHERD_STALE_HOURS?: string;
+  /** loop-stall: minutes main CI stays red (30) / minutes without a merge while approved PRs wait (60) before the one escalation */
+  LOOP_RED_MIN?: string;
+  LOOP_STALL_MIN?: string;
   /** cf-workers + cost-guard: the personal Cloudflare account id; name prefixes to watch (ebda-), expected Workers, error rate (0.05) */
   CF_ACCOUNT_ID?: string;
   CF_WORKERS_PREFIXES?: string;
