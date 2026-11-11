@@ -4,7 +4,10 @@
 //   POST /github/webhook  GitHub org webhook (X-Hub-Signature-256 / GH_WEBHOOK_SECRET). POST / is kept for the old URL.
 //   GET  /pending         Mac fallback drain of signed relay events (Bearer RELAY_SECRET), wire format unchanged.
 //   POST /findings        Mac watchers / dreaming cycle / self-heal report findings (Bearer INGEST_TOKEN).
+//   POST /findings        also { findings, reconcile: { source, keep? } }: a monitor's complete listing; absent keys resolve (prod-watch).
+//   POST|DELETE /leases   HANDS-COORD controller lease on a repo {repo, holder, ttlMin<=240, note?} (Bearer INGEST_TOKEN).
 //   POST /drill           the Mac's weekly restore drill result {result:'pass'|'fail'} (Bearer INGEST_TOKEN, ruling F-I6).
+//   GET  /hands/leases[?run=id]  live controller leases for the hands (run token or HANDS_MAC_TOKEN)
 //   GET  /hands/runs/:id  POST /hands/jobs/:id/outcome  POST /hands/usage  POST /hands/claim  POST /hands/refused   (Bearer HANDS_TOKEN)
 //   POST /telegram/webhook  inline-button answers FORWARDED BY THE tg-relay SESSION (it polls @EbdaAIStudiobot; the brain is send-only and
 //                           never registers this URL with Telegram). Auth: X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
@@ -34,6 +37,16 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
+}
+
+/** Shape of the optional `reconcile` part of POST /findings; every listed finding must belong to the reconciled source. */
+export function reconcileError(rec: unknown, list: unknown[]): string | null {
+  if (!rec || typeof rec !== 'object') return 'reconcile must be an object';
+  const r = rec as Record<string, unknown>;
+  if (typeof r.source !== 'string' || !/^[\w.-]{1,64}$/.test(r.source)) return 'reconcile.source must be 1-64 chars of [A-Za-z0-9_.-]';
+  if (r.keep !== undefined && (!Array.isArray(r.keep) || r.keep.length > 50 || r.keep.some((k) => typeof k !== 'string' || !k || k.length > 100))) return 'reconcile.keep must be <= 50 non-empty strings';
+  if (list.some((f) => (f as { source?: unknown })?.source !== r.source)) return 'every finding in a reconciled listing must have source = reconcile.source';
+  return null;
 }
 
 export function brainStub(env: Env): DurableObjectStub<BrainDO> {
@@ -164,6 +177,13 @@ async function handleHands(request: Request, env: Env, path: string): Promise<Re
     const run = await brain.getRun(m[1]!);
     return run ? json(run) : json({ error: 'no such run' }, 404);
   }
+  if (request.method === 'GET' && path === '/hands/leases') {
+    // HANDS-COORD: the hands re-check the controller leases right before they touch a repo (run token with ?run=, or the Mac token)
+    const runId = new URL(request.url).searchParams.get('run');
+    if (runId !== null && !/^[\w-]{1,64}$/.test(runId)) return json({ error: 'bad run id' }, 400);
+    if (!(await handsScope(request, env, runId, brain))) return denied();
+    return json({ leases: await brain.activeLeases() });
+  }
   if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
   let body: any;
   try {
@@ -286,14 +306,42 @@ export default {
         } catch {
           return json({ error: 'bad json' }, 400);
         }
-        const list = Array.isArray(body) ? body : [body];
+        // { findings, reconcile }: a monitor's COMPLETE current listing (prod-watch). Findings of reconcile.source that are not in the
+        // listing are resolved, except keys under reconcile.keep (the monitor could not evaluate them this run: unknown is not clear).
+        const snap = body && typeof body === 'object' && !Array.isArray(body) && Array.isArray((body as any).findings) ? (body as any) : null;
+        const list = snap ? (snap.findings as unknown[]) : Array.isArray(body) ? body : [body];
         if (list.length > 100) return json({ error: 'at most 100 findings per request' }, 400);
-        if (!(await brainStub(env).admitIngest(list.length))) return json({ error: 'daily ingest limit reached' }, 429);
+        const rec = snap?.reconcile;
+        const recErr = rec === undefined ? null : reconcileError(rec, list);
+        if (recErr) return json({ error: recErr }, 400);
+        if (list.length && !(await brainStub(env).admitIngest(list.length))) return json({ error: 'daily ingest limit reached' }, 429);
         for (const f of list) {
           const err = validateFinding(f);
           if (err) return json({ error: err }, 400);
         }
-        return json(await brainStub(env).ingestMany(list as Finding[]));
+        const out = list.length ? await brainStub(env).ingestMany(list as Finding[]) : { raised: 0, deduped: 0 };
+        if (!rec) return json(out);
+        const resolved = await brainStub(env).reconcileSource(rec.source, (list as Finding[]).map((f) => f.key), rec.keep ?? []);
+        return json({ ...out, resolved });
+      }
+      if (path === '/leases' && (request.method === 'POST' || request.method === 'DELETE')) {
+        // HANDS-COORD: a controller (Claude session / Ahmad) claims or releases a repo; the hands never touch a leased repo
+        if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });
+        let b: any;
+        try {
+          b = await readJson(request);
+        } catch {
+          return json({ error: 'bad json' }, 400);
+        }
+        const repo = typeof b?.repo === 'string' ? b.repo.trim() : '';
+        const holder = typeof b?.holder === 'string' ? b.holder.trim() : '';
+        if (!/^[\w.-]{1,100}\/[\w.-]{1,100}$/.test(repo)) return json({ error: 'repo must be owner/name' }, 400);
+        if (!/^[\w.@:-]{1,100}$/.test(holder)) return json({ error: 'holder must be 1-100 chars of [A-Za-z0-9_.@:-]' }, 400);
+        if (request.method === 'DELETE') return json({ released: await brainStub(env).releaseLease(repo, holder) });
+        const ttl = Number(b?.ttlMin ?? 120);
+        if (!Number.isFinite(ttl) || ttl <= 0) return json({ error: 'ttlMin must be a positive number' }, 400);
+        const r = await brainStub(env).claimLease(repo, holder, ttl, typeof b?.note === 'string' ? b.note : undefined);
+        return json(r, r.ok ? 200 : 409);
       }
       if (path === '/drill' && request.method === 'POST') {
         if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });

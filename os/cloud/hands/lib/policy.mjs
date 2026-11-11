@@ -24,10 +24,25 @@ export function isDestructive(finding) {
   return hits(DESTRUCTIVE, finding);
 }
 
-/** May the hands work on this job unattended at all? Destructive classes need an explicit 'proceed' answer. */
+/**
+ * Launch-map row HANDS-COORD (Ahmad 2026-11-10: the AI OS is the primary DevOps operator, Ahmad the backup): the hands OPEN PRs and
+ * stop there. They never merge and never deploy; a controller session or Ahmad merges through ops/merge-gate.sh. This constant is
+ * the switch (read in lib/job.mjs step 10, before the merge gate runs); flipping it is a reviewed code change, never a config value.
+ * mayAutoMerge below stays the pure class check so the dormant merge path keeps its tests.
+ */
+export const HANDS_MAY_MERGE = false;
+
+/**
+ * May the hands work on this job unattended at all? Destructive classes need an explicit 'proceed' answer, and so does anything
+ * that touches money, auth, deploy config or production data (HANDS-COORD): the refusal note starts with `question:`, which the
+ * brain turns into one Telegram question for Ahmad instead of a PR.
+ */
 export function mayWork(job) {
   if (isDestructive(job.finding) && job.answer !== 'proceed') {
     return { ok: false, reason: 'destructive or irreversible class without an explicit proceed answer: never acted on unattended' };
+  }
+  if (hits(SENSITIVE, job.finding ?? {}) && job.answer !== 'proceed') {
+    return { ok: false, reason: 'HANDS-COORD: touches money, auth, deploy config or production data; Ahmad decides (answer proceed to let the hands open a PR)' };
   }
   return { ok: true, reason: 'ok' };
 }

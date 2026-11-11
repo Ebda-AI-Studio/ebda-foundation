@@ -16,7 +16,7 @@ import type { Classification, Finding } from './findings';
 export const URGENT_CVSS = 9.0;
 
 /** Config / access self-reports of any source (watchers, dream-scan, heal-watch): ops problems, digest only. */
-const DIGEST_KINDS = new Set(['monitor-unconfigured', 'watcher-error', 'scan-target-missing', 'dream-scan-failed', 'dr-drill-stale', 'pr-needs-you', 'usage-starved', 'budget-warn', 'cf-usage-warn', 'cost-warn', 'footprint-unknown']);
+const DIGEST_KINDS = new Set(['monitor-unconfigured', 'watcher-error', 'alert-drill', 'scan-target-missing', 'dream-scan-failed', 'dr-drill-stale', 'pr-needs-you', 'usage-starved', 'budget-warn', 'cf-usage-warn', 'cost-warn', 'footprint-unknown']);
 /** Ruling F-I6: a restore drill with no PASS for 14+ days is a P1 decision for Ahmad (run it on the Mac), never a hands job. */
 const ALERT_KINDS = new Set(['dr-drill-overdue', 'cost-stop', 'cf-usage-stop', 'budget-stop']);
 /** F-01: a finding of one of these kinds halts the hands (one flag, checked before every container start). */
@@ -45,6 +45,12 @@ export function classifyFinding(f: Finding): Classification {
   // daily digest, and never become a hands job or a Telegram question (rulings R-4a-1, R-4a-2).
   if (DIGEST_KINDS.has(kind)) {
     return { lane: 'digest', reason: 'monitor self-report (config or source access): digest only, no hands job, no question', mergePolicy: 'pr-and-question' };
+  }
+
+  // An external monitor that already messaged Ahmad itself (prod-watch, ruling OBS-2) and named no repo: the brain records it as
+  // production state (open until the monitor's listing drops it) but has nothing to hand the hands and must not ask twice.
+  if (f.source === 'prod-watch' && !f.repo) {
+    return { lane: 'digest', reason: 'production state from prod-watch (already alerted there; no repo to fix): recorded, no hands job, no question', mergePolicy: 'pr-and-question' };
   }
 
   if (ALERT_KINDS.has(kind)) {

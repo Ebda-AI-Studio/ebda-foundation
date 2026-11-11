@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { exec as realExec } from '../lib/exec.mjs';
 import { runJob } from '../lib/job.mjs';
+// HANDS-COORD: a brain with no controller leases (the lease check fails closed without one)
+const NO_LEASES = { leases: async () => ({ leases: [] }) };
 
 const gitEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@x', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@x' };
 const g = (cwd, ...args) => execFileSync('git', args, { cwd, env: gitEnv, encoding: 'utf8' });
@@ -60,6 +62,7 @@ describe('git hygiene with real git', () => {
         opts.onLine?.(JSON.stringify({ type: 'result', is_error: false, result: 'Fixed README.' }));
         return { code: 0, stdout: '', stderr: '', timedOut: false };
       }
+      if (cmd === 'gh' && args.includes('list')) return { code: 0, stdout: '[]', stderr: '', timedOut: false };
       if (cmd === 'gh') return { code: 0, stdout: 'https://github.com/o/r/pull/9\n', stderr: '', timedOut: false };
       if (cmd === 'python3') return { code: 0, stdout: '[]', stderr: '', timedOut: false }; // secrets-exposure
       return { code: 0, stdout: '', stderr: '', timedOut: false }; // npm ci / npm test / merge gate
@@ -80,7 +83,7 @@ describe('git hygiene with real git', () => {
       repos: { 'o/r': { defaultBranch: 'main', test: ['npm', 'test'], mergeGate: ['bash', 'gate', '{pr}', '{sha}', '--workflows', '{base_workflows}'] } },
     };
     const job = { id: 'job_git1', fingerprint: 'f', lane: 'nightly', mergePolicy: 'auto-when-gate-green', finding: { source: 'w', kind: 'docs', key: 'k', title: 'fix readme', repo: 'o/r' } };
-    const out = await runJob(job, { cfg, exec, env: { PATH: process.env.PATH, HOME: root }, creds: {} });
+    const out = await runJob(job, { brain: NO_LEASES, allowMerge: true, cfg, exec, env: { PATH: process.env.PATH, HOME: root }, creds: {} });
     expect(out).toMatchObject({ status: 'merged' });
     expect(existsSync(marker)).toBe(false);
     const bare = join(root, 'o', 'r.git');

@@ -26,9 +26,19 @@ describe('run-batch --dry-run --fixture', () => {
       globalThis.fetch = realFetch;
     }
     const report = JSON.parse(lines.at(-1));
-    expect(report.outcomes.map((o) => o.status)).toEqual(['merged', 'pr_opened', 'could_not_fix']);
+    expect(report.outcomes.map((o) => o.status)).toEqual(['pr_opened', 'pr_opened', 'could_not_fix']); // HANDS-COORD: the real run path never merges
     expect(report.outcomes[1].note).toMatch(/^question:/);
     expect(report.usage.length).toBeGreaterThan(0);
+  });
+  it('HANDS-COORD on the real Ebda finding (Semgrep red on ebda-store main): one PR, never merged; the auth variant is a question', async () => {
+    const lines = [];
+    const code = await main(['--dry-run', '--fixture', join(HERE, 'fixtures', 'ebda-semgrep-main-red.json')], { PATH: process.env.PATH, HOME: process.env.HOME }, (s) => lines.push(s));
+    expect(code).toBe(0);
+    const report = JSON.parse(lines.at(-1));
+    expect(report.outcomes.map((o) => o.status)).toEqual(['pr_opened', 'could_not_fix']);
+    expect(report.outcomes[1].note).toMatch(/^question: HANDS-COORD: touches money, auth/);
+    expect(lines.join('\n')).toMatch(/gh pr list --repo Ebda-AI-Studio\/ebda-store/);
+    expect(lines.join('\n')).not.toMatch(/merge-gate/);
   });
   it('I-1: a malformed HANDS_USAGE_THRESHOLD_PCT refuses every job and says why', async () => {
     const lines = [];

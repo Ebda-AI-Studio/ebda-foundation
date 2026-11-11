@@ -13,11 +13,11 @@
 //   required  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID                      the alert path
 //   required  EBDA_LOGS_CF_TOKEN (Account > Workers R2 Storage > Read), CLOUDFLARE_ACCOUNT_ID   the log rules
 //   optional  EBDA_GH_READ_TOKEN (contents:read on the commitRepo repos)  deploy commit vs main in the digest
-//   optional  EBDA_OS_BRAIN_URL + EBDA_OS_INGEST_TOKEN                     also record every alert as a brain finding
+//   optional  EBDA_OS_BRAIN_URL + EBDA_OS_INGEST_TOKEN                     send the brain this run's complete alert listing (cleared alerts resolve)
 // A missing REQUIRED secret never makes the run green: whatever can still run runs (probes first), the gap is written to the job summary
 // and the process exits 1, so the workflow goes red and GitHub's failed-run mail is the fallback channel.
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
-import { evaluateLogAlerts, evaluateProbeAlerts, decide, digestText, DEFAULT_RULES, LOG_ALERT_PREFIXES } from './lib/ebda-logs-core.mjs';
+import { evaluateLogAlerts, evaluateProbeAlerts, decide, digestText, DEFAULT_RULES, LOG_ALERT_PREFIXES, brainListing, brainKind } from './lib/ebda-logs-core.mjs';
 import { listKeys, fetchRecords } from './lib/ebda-logs-r2.mjs';
 
 const argv = process.argv.slice(2);
@@ -60,13 +60,19 @@ async function telegram(text) {
   } catch (e) { return { ok: false, error: redact(e.message) }; }
 }
 
-async function brainFindings(alerts) {
-  if (dry || !env.EBDA_OS_BRAIN_URL || !env.EBDA_OS_INGEST_TOKEN || !alerts.length) return;
+// body: a plain finding list (the drill), or { findings, reconcile } = the complete listing of this run (brainListing)
+async function brainFindings(body) {
+  if (dry || !env.EBDA_OS_BRAIN_URL || !env.EBDA_OS_INGEST_TOKEN) return;
   try {
-    const findings = alerts.map((a) => ({ source: 'prod-watch', kind: a.key.split(':')[0], key: a.key, title: a.title, severity: a.severity, detail: a.detail || undefined }));
-    const r = await fetch(`${env.EBDA_OS_BRAIN_URL.replace(/\/$/, '')}/findings`, { method: 'POST', headers: { authorization: `Bearer ${env.EBDA_OS_INGEST_TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify(findings), signal: AbortSignal.timeout(10000) });
-    say(`brain: POST /findings -> ${r.status}`);
-  } catch (e) { say(`brain: POST /findings failed (${e.message}); Telegram is the primary path, the brain may itself be down`); }
+    const r = await fetch(`${env.EBDA_OS_BRAIN_URL.replace(/\/$/, '')}/findings`, { method: 'POST', headers: { authorization: `Bearer ${env.EBDA_OS_INGEST_TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) });
+    const text = (await r.text()).slice(0, 200);
+    say(`brain: POST /findings -> ${r.status} ${redact(text)}`);
+    // the brain is the OS's single copy of production state: a refused report is a gap in this run's output, not silence
+    if (!r.ok) gaps.push(`brain: POST /findings -> ${r.status}: the AI OS did not receive this run's state`);
+  } catch (e) {
+    say(`brain: POST /findings failed (${e.message}); Telegram is the primary path, the brain may itself be down`);
+    gaps.push('brain: unreachable: the AI OS did not receive this run\'s state');
+  }
 }
 
 async function probe(p) {
@@ -126,7 +132,8 @@ if (mode === 'drill') {
   const r = await telegram(`DRILL: Ebda prod-watch end-to-end alert test. No action needed. ${new Date(now).toISOString()} ${runUrl}`);
   state.drills = [...(state.drills || []), { at: new Date(now).toISOString(), delivered: r.ok, messageId: r.messageId ?? null, error: r.error ?? null, run: runUrl }].slice(-20);
   say(r.ok ? `drill: DELIVERED, Telegram message_id ${r.messageId}` : `drill: NOT delivered: ${r.error}`);
-  await brainFindings([{ key: `alert-drill:${new Date(now).toISOString().slice(0, 10)}`, severity: 'P3', title: `alert drill ${r.ok ? 'delivered' : 'FAILED'}` }]);
+  const drillKey = `alert-drill:${new Date(now).toISOString().slice(0, 10)}`;
+  await brainFindings([{ source: 'prod-watch', kind: brainKind(drillKey), key: drillKey, severity: 'P3', title: `alert drill ${r.ok ? 'delivered' : 'FAILED'}` }]);
   failed = !r.ok;
 } else {
   const probes = await Promise.all(cfg.probes.map(probe));
@@ -168,7 +175,7 @@ if (mode === 'drill') {
     say(`telegram: ${r.ok ? `sent ${r.messageId}` : `FAILED ${r.error}`} <- ${m.split('\n')[0]}`);
     if (!r.ok) failed = true;
   }
-  await brainFindings(alerts);
+  await brainFindings(brainListing(alerts, { logsRead }));
   const hourUtc = new Date(now).getUTCHours();
   if (mode === 'digest' || (state.lastDigest !== new Date(now).toISOString().slice(0, 10) && hourUtc >= 5)) {
     if (!(await runDigest(probes))) failed = true;

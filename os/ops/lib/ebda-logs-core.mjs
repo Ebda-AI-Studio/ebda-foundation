@@ -321,3 +321,35 @@ export function digestText(state, extraLines = []) {
   if (items.length > 15) lines.push(`- ... and ${items.length - 15} more`);
   return [...lines, ...extraLines].join('\n');
 }
+
+// ---------- the brain's copy of production state (HANDS-COORD / AI OS primary operator, 2026-11-10) ----------
+// prod-watch alerts become brain findings with the brain's own kinds. Probe failures are 'prod-outage' (the brain's outage class);
+// log rules get a 'prod-' kind so the brain treats them as code problems; the drill is digest-only.
+const BRAIN_KIND = [
+  ['probe:', 'prod-outage'],
+  ['storefront-5xx', 'prod-5xx'],
+  ['api-429', 'prod-429'],
+  ['exceptions:', 'prod-exception'],
+  ['logs-silent:', 'prod-logs-silent'],
+  ['alert-drill:', 'alert-drill'],
+];
+export function brainKind(key) {
+  const hit = BRAIN_KIND.find(([p]) => key === p || key.startsWith(p));
+  return hit ? hit[1] : `prod-${String(key).split(':')[0]}`;
+}
+
+/**
+ * The COMPLETE listing prod-watch sends to the brain each run: { findings, reconcile }. A key absent from the listing resolves in the
+ * brain, except under reconcile.keep: when the logs could not be read, the log rules said nothing, so their findings stay as they are.
+ */
+export function brainListing(alerts, { logsRead }) {
+  const findings = alerts.map((a) => ({
+    source: 'prod-watch',
+    kind: brainKind(a.key),
+    key: a.key,
+    title: String(a.title).slice(0, 500),
+    ...(a.severity ? { severity: a.severity } : {}),
+    ...(a.detail ? { detail: { text: String(a.detail).slice(0, 2000) } } : {}),
+  }));
+  return { findings, reconcile: { source: 'prod-watch', ...(logsRead ? {} : { keep: [...LOG_ALERT_PREFIXES] }) } };
+}

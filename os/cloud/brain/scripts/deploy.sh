@@ -70,11 +70,26 @@ WATCHER_VARS = ["SERVICE_TARGETS", "PAGE_LOAD_TARGETS", "PAGE_LOAD_P50_MS", "JOU
     "DEPLOY_DRIFT_GRACE_MIN", "PR_SHEPHERD_STALE_HOURS", "CF_ACCOUNT_ID", "CF_WORKERS_PREFIXES", "CF_WORKERS_EXPECTED",
     "CF_WORKER_ERROR_RATE", "COST_GH_ORG", "COST_ACTIONS_WARN_MIN", "COST_ACTIONS_STOP_MIN", "CF_REQUESTS_WARN",
     "CF_REQUESTS_STOP", "SENTRY_ORG", "SENTRY_PROJECTS", "SENTRY_BASE_URL", "DR_DRILL_REPO", "DR_DRILL_STALE_DAYS",
-    "WORLD_STATUS_URLS", "WORLD_NPM_DEPS"]
-JSON_VARS = {"SERVICE_TARGETS", "PAGE_LOAD_TARGETS", "JOURNEY_CONFIG", "DEPLOY_DRIFT_TARGETS", "WORLD_STATUS_URLS", "WORLD_NPM_DEPS"}
+    "WORLD_STATUS_URLS", "WORLD_NPM_DEPS", "HANDS_CONFIG_JSON"]
+JSON_VARS = {"SERVICE_TARGETS", "PAGE_LOAD_TARGETS", "JOURNEY_CONFIG", "DEPLOY_DRIFT_TARGETS", "WORLD_STATUS_URLS", "WORLD_NPM_DEPS", "HANDS_CONFIG_JSON"}
+# committed defaults (os/config/brain-watchers.json + the hands repo config os/config/hands.ebda.json); the environment wins
+cfg_dir = os.path.join(os.path.dirname(src), "..", "..", "config")
+committed = {}
+wpath = os.path.join(cfg_dir, "brain-watchers.json")
+if os.path.exists(wpath):
+    committed = {k: (v if isinstance(v, str) else json.dumps(v, separators=(",", ":"))) for k, v in json.load(open(wpath, encoding="utf-8")).items() if not k.startswith("_")}
+    unknown = set(committed) - set(WATCHER_VARS)
+    if unknown:
+        sys.exit("deploy: brain-watchers.json has unknown keys: " + ", ".join(sorted(unknown)))
+hpath = os.path.join(cfg_dir, "hands.ebda.json")
+if os.path.exists(hpath):
+    h = json.load(open(hpath, encoding="utf-8")); h.pop("_comment", None)
+    committed["HANDS_CONFIG_JSON"] = json.dumps(h, separators=(",", ":"))
+if os.environ.get("OS_CF_ACCOUNT_ID"):
+    committed.setdefault("CF_ACCOUNT_ID", os.environ["OS_CF_ACCOUNT_ID"].strip())
 extra = ""
 for name in WATCHER_VARS:
-    val = os.environ.get("OS_BRAIN_" + name)
+    val = os.environ.get("OS_BRAIN_" + name) or committed.get(name)
     if not val:
         continue
     if name in JSON_VARS:
