@@ -124,8 +124,10 @@ export interface Env {
   TELEGRAM_CHAT_ID?: string;
   /** user id allowed to press the question buttons; defaults to TELEGRAM_CHAT_ID (a private chat's id is the owner's user id) */
   TELEGRAM_OWNER_ID?: string;
-  /** shared secret the tg-relay sends (X-Telegram-Bot-Api-Secret-Token) when it forwards a button answer to POST /telegram/webhook; NOT a Telegram webhook secret */
+  /** secret_token the brain registers with Telegram as its webhook secret_token; Telegram echoes it as X-Telegram-Bot-Api-Secret-Token on every POST /telegram/webhook */
   TELEGRAM_WEBHOOK_SECRET?: string;
+  /** '0' turns off the short "Got it" reply to an inbox message (default on) */
+  TELEGRAM_INBOX_ACK?: string;
   /** F-06b: the HMAC KEY for per-run container tokens (never itself a bearer) */
   HANDS_TOKEN?: string;
   /** F-06b: the Mac's own bearer; it can only claim as mac-local and report on its own runs */

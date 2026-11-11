@@ -1,8 +1,8 @@
 // Decisions: approval questions Ahmad answers with ONE TAP in Telegram. The controller session POSTs a list to /api/decisions
 // (INGEST_TOKEN); each becomes one Telegram message with inline buttons; the tap arrives through the SAME door as every other button
-// (POST /telegram/webhook, forwarded by the tg-relay session, X-Telegram-Bot-Api-Secret-Token + chat + owner checks in index.ts) and is
+// (POST /telegram/webhook, delivered by Telegram itself since the brain registers the webhook, X-Telegram-Bot-Api-Secret-Token + chat + owner checks in index.ts) and is
 // recorded here. The controller reads answers with GET /api/decisions?status=answered. No new secret, no new Telegram consumer
-// (send-only: sendMessage, editMessageText, answerCallbackQuery).
+// (sendMessage, editMessageText, answerCallbackQuery).
 //
 // KV (binding EVENTS): `decision:<id>` = Decision JSON, list metadata {status} (so listing and counting never read the values);
 // `decisionmsg:<telegramMessageId>` = <id> (maps a free-text reply back to its decision). Both expire after 180 days.

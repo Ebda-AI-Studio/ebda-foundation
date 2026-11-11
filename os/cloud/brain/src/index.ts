@@ -10,8 +10,9 @@
 //   POST /drill           the Mac's weekly restore drill result {result:'pass'|'fail'} (Bearer INGEST_TOKEN, ruling F-I6).
 //   GET  /hands/leases[?run=id]  live controller leases for the hands (run token or HANDS_MAC_TOKEN)
 //   GET  /hands/runs/:id  POST /hands/jobs/:id/outcome  POST /hands/usage  POST /hands/claim  POST /hands/refused   (Bearer HANDS_TOKEN)
-//   POST /telegram/webhook  inline-button answers FORWARDED BY THE tg-relay SESSION (it polls @EbdaAIStudiobot; the brain is send-only and
-//                           never registers this URL with Telegram). Auth: X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
+//   POST /telegram/webhook  Telegram's own webhook (the brain is the single consumer of @EbdaAIStudiobot; register it with
+//                           POST /api/telegram/webhook/set). Taps + replies + the owner's inbox text. Auth: X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
+//   /api/telegram/webhook/{set,info,delete}  /api/telegram/send  /api/inbox  /api/inbox/ack   (Bearer INGEST_TOKEN, src/tg-inbox.ts)
 //   POST|GET /api/decisions  one-tap approval questions (Bearer INGEST_TOKEN): POST {id,question,why,default,cost_if_wrong,kind,link?}[] <= 10 ->
 //                         one Telegram message each; GET ?status=answered|pending reads the answers. Taps arrive via /telegram/webhook (src/decisions.ts).
 //   /social/*             social posting: drafts/edits/calendar (INGEST_TOKEN), decide/brands (SOCIAL_DECIDE_TOKEN), /social/d/:id signed
@@ -32,6 +33,7 @@ import { cronName } from './schedule';
 import { validateAlert, type PlatformAlert } from './alerts';
 import { answerDecision, listDecisions, noteDecision, postDecisions, MAX_PER_CALL, validateDraft } from './decisions';
 import { handleSocial } from './social/routes';
+import { ackInbox, handleSend, handleWebhookAdmin, listInbox, recordInbox } from './tg-inbox';
 import { validateUsage } from './usage';
 import { watchAdvisories } from './watchers/advisories';
 import { checkAll, parseTargets } from './watchers/health';
@@ -150,6 +152,11 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
   const msg = update?.message;
   if (!cb && msg?.reply_to_message?.message_id && typeof msg.text === 'string') {
     if (String(msg.chat?.id ?? '') === String(env.TELEGRAM_CHAT_ID ?? '') && String(msg.from?.id ?? '') === String(env.TELEGRAM_OWNER_ID || env.TELEGRAM_CHAT_ID || '')) await noteDecision(env, Number(msg.reply_to_message.message_id), msg.text);
+    return new Response(null, { status: 200 });
+  }
+  // inbox: any other text/file message from the owner in the configured chat is stored for the controller (src/tg-inbox.ts)
+  if (!cb && msg) {
+    await recordInbox(env, update);
     return new Response(null, { status: 200 });
   }
   // only button answers from the configured chat are accepted; everything else is acknowledged and ignored
@@ -362,6 +369,29 @@ export default {
         if (!rec) return json(out);
         const resolved = await brainStub(env).reconcileSource(rec.source, (list as Finding[]).map((f) => f.key), rec.keep ?? []);
         return json({ ...out, resolved });
+      }
+      if (path.startsWith('/api/telegram/') || path === '/api/inbox' || path === '/api/inbox/ack') {
+        if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });
+        if (path === '/api/telegram/send' && request.method === 'POST') return await handleSend(request, env);
+        const wh = path.match(/^\/api\/telegram\/webhook\/(set|info|delete)$/);
+        if (wh) return await handleWebhookAdmin(wh[1]!, request.method, env);
+        if (path === '/api/inbox' && request.method === 'GET') {
+          const since = Number(url.searchParams.get('since') ?? 0);
+          if (!Number.isFinite(since) || since < 0) return json({ error: 'since must be a ms timestamp' }, 400);
+          return json({ items: await listInbox(env, since) });
+        }
+        if (path === '/api/inbox/ack' && request.method === 'POST') {
+          let b: any;
+          try {
+            b = await readJson(request);
+          } catch {
+            return json({ error: 'bad json' }, 400);
+          }
+          const ids = Array.isArray(b?.ids) ? b.ids : [];
+          if (!ids.length || ids.length > 100 || !ids.every((i: unknown) => typeof i === 'string' && /^inbox:\d{13}:\d+$/.test(i))) return json({ error: 'ids: 1-100 inbox keys' }, 400);
+          return json(await ackInbox(env, ids));
+        }
+        return json({ error: 'not found' }, 404);
       }
       if (path === '/api/decisions' && (request.method === 'POST' || request.method === 'GET')) {
         if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });
