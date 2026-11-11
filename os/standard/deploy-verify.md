@@ -10,10 +10,17 @@ feature, and a green suite is evidence about the test environment, never about p
 deployed?" is answered from the running system, and the changed path is measured live afterwards —
 reporting both what was verified AND what could not be, with the reason.
 
+## Ebda procedure (Cloudflare Workers) - run after EVERY merge to main
+1. **List every pipeline the merge should have triggered** (path filters differ per workflow; `gh run list --commit <main-tip-sha>`): Workers deploy for api / web / admin / storefront / brain, plus docs, migrations and cron schedules. Each must be COMPLETED + SUCCESS. A cancelled run is a deploy that did not happen and nothing retries it; one green pipeline says nothing about the others.
+2. **Compare running commit to main tip**: `curl -s <host>/health` -> `commit` / `deploymentId` vs `git rev-parse origin/main`. `commit: null` is UNKNOWN (use `deploymentId` / `wrangler deployments list`), not failure. A bare 200 is also returned by the previous release.
+3. **Measure the changed path live** (a real round-trip, the rendered page in the right locale, read-only SQL, a live response header). Status codes are not evidence of rendering.
+4. **Schedules**: after a deploy touching crons, confirm the live schedule list and one tick (Cloudflare cron weekday: 1 = Sunday, 0 is rejected).
+5. **Report both halves** with a verdict per claim (criterion 15): VERIFIED (evidence), NOT VERIFIED (reason), INCONCLUSIVE. A report with no "could not verify" section is incomplete. Production writes while verifying stay guest-shaped; never complete a purchase.
+
 ## Criteria
 | # | Criterion | Solid (grade 2) | Gap detection | Severity |
 |---|---|---|---|---|
-| 1 | Deploy-target command simulated before risky push | Railway path runs `cd <rootDirectory> && rm -rf node_modules && npm ci --omit=dev`; Vercel path runs `npm ci && npm run build` locally before pushing dep/build/config changes | grep `package.json` scripts / `docs/DEPLOYMENT.md` / pre-push hook for a documented `npm ci --omit=dev` (Railway) or `npm ci && npm run build` (Vercel) simulation step; absent = no local mirror | High |
+| 1 | Deploy-target command simulated before risky push | Railway path runs `cd <rootDirectory> && rm -rf node_modules && npm ci --omit=dev`; Vercel path runs `npm ci && npm run build` locally before pushing dep/build/config changes | grep `package.json` scripts / `docs/DEPLOYMENT.md` / pre-push hook for a documented `npm ci --omit=dev` (Node service) or `npm ci && npm run build` (Workers build) simulation step; absent = no local mirror | High |
 | 2 | Lockfile pinned to deploy-target Node/npm version | `engines.node` (and npm) declared and matched when regenerating the lockfile | grep `package.json` for an `"engines"` key with a `"node"` field; missing `engines.node` = dimension 1 unverified | High |
 | 3 | Lockfile platform-complete (Linux optional deps pinned) | macOS-skipped Linux-only optional deps are explicitly pinned (e.g. `@emnapi/*`) so the Linux deploy doesn't miss them | grep `package.json`/`package-lock.json` for explicit platform-specific optional deps (`@emnapi/`, `@img/`, `lightningcss-linux`, `@next/swc-linux`); macOS-only lockfile lacking the linux variants = drift | High |
 | 4 | Lockfile scope correct (prod deps survive `--omit=dev`) | Runtime deps live in `dependencies`, not `devDependencies`, so `npm ci --omit=dev` doesn't drop them | run `npm ci --omit=dev` then check runtime imports resolve; grep for runtime packages misplaced under `devDependencies` | High |
