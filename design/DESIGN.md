@@ -26,7 +26,14 @@ the face. Numbers and Latin runs inside Arabic stay LTR (`<bdi>` / `dir="ltr"`).
 - Radius: control 12 (buttons, inputs, selects, nav, tabs, chips) · surface 14 (cards, popovers, modals, sheets) · pill (status pills, avatars, switches).
 - Control height: sm 32 · md 40 (44 on phones) · lg 44. Nav: sidebar 44, tab 40 (44 phones), rail 40, bottom bar 56. Every target is 44px on phones (sm gets a hit area).
 - Elevation: 0 flat hairline (default) · 1 cards · 2 menus · 3 modals. No coloured shadows; border before shadow.
-- Motion: 150ms colour/press, 200ms menus/tabs, 300ms sheets, one easing. Transform only for sheets and menus. Reduced motion removes slides.
+- Motion (MOTION-1): 150ms colour/press, 200ms menus/tabs/entrances, 250ms sheets and drawers; nothing longer in app chrome. One easing `cubic-bezier(0.16, 1, 0.3, 1)` exposed as `--ease`, durations as `--dur-fast` 150 / `--dur` 200 / `--dur-sheet` 250. Transform only for sheets, drawers, menus and entrances. Reduced motion removes every animation and transition. Slides and tab transitions mirror in RTL (drive the sign from `dir`, never hard-code `translateX(100%)`). CSS only; never per-letter or per-word text animation (breaks Arabic joining).
+
+### States and feedback (MOTION-1)
+
+- Focus: one ring on every interactive element, 2px solid `focus` colour (4.4:1 on cream, gold-lift on night grounds), 2px offset; never remove it, never change the element's radius on focus.
+- Hover: colour, border or tint only. Pressed: a deeper tint than hover (no translate, no scale). Disabled: 50% opacity, no hover.
+- Loading: a skeleton that holds the final layout height replaces any bare "..." or spinner on a region (lists, cards, panels, screens). A spinner is only for an action already in flight on a button. Skeleton pulse is opacity only, respects reduced motion, and the region carries `role="status"` with an `aria-label`.
+- Elevation tokens: `--elev-2` menus and popovers, `--elev-3` toasts, drawers and modals; no other literal `box-shadow`.
 
 ## Arabic and RTL (non-negotiable)
 
