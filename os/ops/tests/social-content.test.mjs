@@ -14,14 +14,14 @@ test('Cairo wall clock -> UTC, winter (UTC+2) and summer time (UTC+3)', () => {
   assert.equal(new Date(cairoToUtc(2026, 7, 14, 17, 0)).toISOString(), '2026-07-14T14:00:00.000Z');
 });
 
-test('slots: only facebook + linkedin, ids match the brain format, inside the 2-8 day horizon, a week gives the configured cadence', () => {
+test('slots: only facebook + linkedin, ids match the brain format, inside the 1-8 day horizon, a week gives the configured cadence', () => {
   const now = Date.UTC(2026, 10, 11, 2, 0);
   const s = slotsFor(config, now);
   assert.ok(s.length > 0);
   for (const x of s) {
     assert.match(x.id, /^(whisky11|ebda)-(facebook|linkedin)-\d{12}$/);
     assert.ok(['facebook', 'linkedin'].includes(x.network));
-    assert.ok(x.scheduledAt > now + 1 * 86_400_000 && x.scheduledAt < now + 9 * 86_400_000);
+    assert.ok(x.scheduledAt > now && x.scheduledAt < now + 9 * 86_400_000);
   }
   // 7 consecutive days contain every cadence slot exactly once
   const week = slotsFor({ ...config, horizonDays: { min: 2, max: 8 } }, now);

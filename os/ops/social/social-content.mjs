@@ -136,16 +136,21 @@ async function main() {
   const max = Number(process.env.SOCIAL_MAX_DRAFTS || 8);
   const existing = new Set();
   let edits = [];
+  let enabled = () => true;
   if (!dry) {
     const cal = await brain(`/social/calendar?from=${now}&to=${now + (config.horizonDays.max + 1) * DAY}`);
     if (cal.status !== 200) throw new Error(`calendar HTTP ${cal.status}`);
     for (const r of cal.body) existing.add(r.id);
     const e = await brain('/social/edits');
     edits = e.status === 200 ? e.body : [];
+    // only generate for networks the brain can publish (LinkedIn stays off until its API is approved)
+    const st = await brain('/social/status');
+    if (st.status !== 200) throw new Error(`status HTTP ${st.status}`);
+    enabled = (brand, network) => st.body?.brands?.[brand]?.networks?.[network]?.enabled === true;
   }
   const work = [
     ...edits.map((e) => ({ id: e.id, brand: e.brand, network: e.network, scheduledAt: e.scheduledAt, edit: { text: e.text, note: e.note } })),
-    ...slotsFor(config, now).filter((s) => !existing.has(s.id)),
+    ...slotsFor(config, now).filter((s) => !existing.has(s.id) && enabled(s.brand, s.network)),
   ].slice(0, max);
   let ok = 0;
   for (const w of work) {

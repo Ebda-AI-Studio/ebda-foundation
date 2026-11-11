@@ -25,6 +25,10 @@ export function copyViolations(text: string): string[] {
   if (/\b\d[\d,.]*\+?\s*(?:k\s+)?(?:clients?|customers?|merchants?|stores?|users?|businesses|companies|projects|downloads|orders)\b/i.test(text)) out.push('contains a count of clients/customers/users');
   if (/\b(?:rated\s+\d|\d(?:[.,]\d)?\s*(?:\/\s*5\s*)?stars?|(?:customer|client|user|5-star)\s+reviews?|testimonials?|trusted by|award-winning)\b/i.test(text)) out.push('contains a rating/review/social-proof claim');
   if (/[٠-٩]+\s*[٪%]/.test(text)) out.push('contains a percentage');
+  // public-copy rule (Ahmad): Ebda AI Studio, Ebda Store and Ebda Chat are live (present tense); "coming soon" only for CRM / ERP;
+  // never registration or pre-launch wording
+  if (/\b(?:pre-?launch|wait-?list|early access|launching soon|register (?:now|today|your interest)|sign up to be notified|beta access)\b/i.test(text) || /(?:قائمة الانتظار|سجل اهتمامك|قبل الإطلاق)/.test(text)) out.push('contains pre-launch / registration wording');
+  if ((/\bcoming soon\b/i.test(text) || /قريب[اًا]/.test(text)) && !/\b(?:CRM|ERP)\b/.test(text)) out.push('"coming soon" is only for CRM / ERP');
   return out;
 }
 

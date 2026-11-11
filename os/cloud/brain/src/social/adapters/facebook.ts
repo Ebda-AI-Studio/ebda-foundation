@@ -94,4 +94,20 @@ export class FacebookAdapter implements NetworkAdapter {
       return undefined;
     }
   }
+
+  async checkPage(brand: Brand, fetchImpl: typeof fetch): Promise<{ ok: boolean; pageId?: string; name?: string; error?: string }> {
+    const c = this.c(brand);
+    if (!c) return { ok: false, error: this.disabledReason(brand) ?? 'not configured' };
+    const u = new URL(`https://graph.facebook.com/${this.version}/${c.pageId}`);
+    u.searchParams.set('fields', 'id,name');
+    u.searchParams.set('access_token', c.pageToken);
+    try {
+      const r = await fetchImpl(u.toString());
+      const j = (await r.json().catch(() => null)) as any;
+      if (!r.ok) return { ok: false, pageId: c.pageId, error: `facebook HTTP ${r.status} code ${j?.error?.code ?? '?'}: ${String(j?.error?.message ?? '').slice(0, 120)}` };
+      return { ok: true, pageId: String(j?.id ?? c.pageId), name: String(j?.name ?? '') };
+    } catch (e) {
+      return { ok: false, pageId: c.pageId, error: `fetch failed: ${(e as Error).message}` };
+    }
+  }
 }

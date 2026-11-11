@@ -202,6 +202,8 @@ export class SocialEngine {
     let n = 0;
     for (const p of due) {
       if (this.brandMode(p.brand, now).paused) continue;
+      // never ask Ahmad to approve a post its network cannot publish (LinkedIn until the API is approved)
+      if (this.adapters[p.network].disabledReason(p.brand)) continue;
       const exp = Math.floor((p.scheduled_at + PUBLISH_GRACE_MS) / 1000);
       const secret = this.env.SOCIAL_LINK_SECRET;
       const base = this.env.HANDS_BRAIN_URL;
@@ -347,6 +349,35 @@ export class SocialEngine {
 
   calendar(from: number, to: number): Array<Record<string, unknown>> {
     return this.rows(`SELECT id, brand, network, rev, status, scheduled_at, approved_by, remote_id, last_error FROM social_posts WHERE orig_scheduled_at BETWEEN ? AND ? ORDER BY orig_scheduled_at LIMIT 500`, from, to);
+  }
+
+  /** Read-only self-check for GET /social/status: mode per brand, each network's readiness, and for Facebook a live Page read and a
+   *  feed read. Publishes nothing, writes nothing, and never returns a token. */
+  async status(now: number): Promise<Record<string, unknown>> {
+    const brands: Record<string, unknown> = {};
+    for (const brand of BRANDS) {
+      const m = this.brandMode(brand, now);
+      const networks: Record<string, unknown> = {};
+      for (const net of NETWORKS) {
+        const a = this.adapters[net];
+        const disabled = a.disabledReason(brand);
+        if (disabled) {
+          networks[net] = { enabled: false, reason: disabled };
+          continue;
+        }
+        const page = a.checkPage ? await a.checkPage(brand, this.fetchImpl()) : undefined;
+        const feed = a.recentPosts ? (await a.recentPosts(brand, now - DAY, this.fetchImpl())) !== null : undefined;
+        networks[net] = { enabled: true, ...(page ? { page } : {}), ...(feed === undefined ? {} : { feedReadable: feed }) };
+      }
+      const counts = Object.fromEntries(this.rows(`SELECT status, COUNT(*) AS n FROM social_posts WHERE brand = ? GROUP BY status`, brand).map((r) => [String(r.status), Number(r.n)]));
+      brands[brand] = { label: BRAND_LABEL[brand], mode: m.mode, paused: m.paused, keepApproval: m.keepApproval, firstApprovedAt: m.firstApprovedAt, autoFrom: m.autoFrom, posts: counts, networks };
+    }
+    return {
+      brands,
+      telegram: Boolean(this.env.TELEGRAM_BOT_TOKEN && this.env.TELEGRAM_CHAT_ID),
+      signedLinks: Boolean(this.env.SOCIAL_LINK_SECRET && /^https:\/\//.test(this.env.HANDS_BRAIN_URL ?? '')),
+      decideDoor: Boolean(this.env.SOCIAL_DECIDE_TOKEN),
+    };
   }
 
   getPost(id: string): PostRow | null {

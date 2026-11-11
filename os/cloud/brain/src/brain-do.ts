@@ -1192,6 +1192,9 @@ export class BrainDO extends DurableObject<Env> {
   socialCalendar(from: number, to: number) {
     return this.social().calendar(from, to);
   }
+  socialStatus(now: number = Date.now()) {
+    return this.social().status(now);
+  }
   socialPost(id: string) {
     return this.social().getPost(id);
   }

@@ -71,7 +71,7 @@ Instagram and TikTok are Ahmad's own and never posted by the OS.
 | Approval | `socialTick` on the 5-min `tick` | preview to Telegram 24 h ahead; publishes only Ahmad-approved revisions until 14 days after his first approval (per brand), then auto |
 | Publish | `src/social/adapters/{facebook,linkedin}.ts` | claim then call; lost answer = `uncertain`, reconciled from the Page feed, never blind-retried |
 | Digest | `socialDigest` on the 05:00 `digest` cron | one message a day: mode, posts, failures, disabled networks, Instagram shares on the Page |
-| Routes | `/social/drafts`, `/social/edits`, `/social/calendar` (INGEST_TOKEN); `/social/decide`, `/social/brands/:brand` (SOCIAL_DECIDE_TOKEN); `/social/d/:id` (signed link) | |
+| Routes | `/social/drafts`, `/social/edits`, `/social/calendar`, `/social/status` (read-only self-check) (INGEST_TOKEN); `/social/decide`, `/social/brands/:brand` (SOCIAL_DECIDE_TOKEN); `/social/d/:id` (signed link) | |
 
 Secrets: `SOCIAL_FACEBOOK`, `SOCIAL_LINKEDIN`, `SOCIAL_LINK_SECRET`, `SOCIAL_DECIDE_TOKEN`. Unset = that network / door is disabled and the
 digest says why. Vars: `SOCIAL_APPROVAL_DAYS` (14), `SOCIAL_APPROVAL_LEAD_HOURS` (24), `SOCIAL_FB_SPACING_MIN` (180),
