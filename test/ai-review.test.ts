@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,17 +7,44 @@ import { join } from 'node:path';
 // @ts-expect-error plain .mjs without types
 import { isRisky, riskyPaths } from '../ci/ai-review/risky-paths.mjs';
 
-describe('risky-paths', () => {
-  it('matches whole tokens in money/auth/data paths, plurals and camelCase', () => {
-    for (const p of ['apps/api/src/refunds/service.ts', 'packages/database/migrations/001.sql', 'src/PermissionGuard.ts', 'apps/web/checkout/page.tsx', 'x/webhooks/kashier.ts']) {
+describe('risky-paths (fail closed: only docs/markdown/tests are exempt)', () => {
+  it('exempts markdown, docs/, and test files', () => {
+    for (const p of ['README.md', 'apps/web/CHANGELOG.mdx', 'docs/plans/x.md', 'docs/img/a.png', 'apps/api/src/refunds/refund.test.ts', 'apps/api/test/helpers.ts', 'packages/x/__tests__/a.ts', 'e2e/checkout.spec.ts']) {
+      expect(isRisky(p), p).toBe(false);
+    }
+  });
+  it('requires review for the data paths the first (word-list) classifier missed', () => {
+    for (const p of ['packages/database/src/index.ts', 'packages/database/prisma/schema.prisma', 'apps/api/src/routes/order.routes.ts', 'apps/api/src/services/order.service.ts', 'apps/api/src/services/cross-store.service.ts', 'packages/database/migrations/002_rls.sql']) {
       expect(isRisky(p), p).toBe(true);
     }
   });
-  it('does not match a risky word hidden inside another word', () => {
-    for (const p of ['apps/web/codemod.ts', 'src/author.ts', 'docs/README.md', 'src/decode.ts', 'src/priceless.ts']) expect(isRisky(p), p).toBe(false);
+  it('requires review for the gate itself, CI, scripts and configs, so the gate cannot be edited to pass', () => {
+    for (const p of ['.github/ai-review/review.mjs', '.github/ai-review/prompt.md', '.github/ai-review/risky-paths.mjs', '.github/workflows/ai-review.yml', '.github/workflows/ci.yml', 'scripts/ci/merge-gate.sh', 'package.json', 'eslint.slop.mjs', 'vitest.config.ts']) {
+      expect(isRisky(p), p).toBe(true);
+    }
   });
-  it('filters a list and ignores blank lines', () => {
-    expect(riskyPaths(['a.md', '', 'src/wallet/x.ts'])).toEqual(['src/wallet/x.ts']);
+  it('does not let a docs/ or test-looking name smuggle code through', () => {
+    for (const p of ['docs/build.mjs', 'docs/../apps/api/src/x.ts', 'apps/api/src/contest.ts', 'apps/api/src/test-utils.ts', 'apps/api/src/readme.md.ts']) expect(isRisky(p), p).toBe(true);
+  });
+  it('an all-safe diff yields no paths; one risky file among safe ones is reported alone; blanks are ignored', () => {
+    expect(riskyPaths(['README.md', '', 'a.test.ts'])).toEqual([]);
+    expect(riskyPaths(['README.md', 'apps/api/src/x.ts', '  '])).toEqual(['apps/api/src/x.ts']);
+  });
+  it('CLI prints only the paths that need review', () => {
+    const out = spawnSync('node', [join(__dirname, '../ci/ai-review/risky-paths.mjs')], { input: 'README.md\napps/api/src/x.ts\n', encoding: 'utf8' });
+    expect(out.stdout).toBe('apps/api/src/x.ts\n');
+  });
+});
+
+describe('ai-review.yml keeps the gate out of the PR author\'s hands', () => {
+  const wf = readFileSync(join(__dirname, '../.github/workflows/ai-review.yml'), 'utf8');
+  it('checks out the BASE branch (scripts and prompt), never the PR head, in both jobs', () => {
+    expect((wf.match(/ref: \$\{\{ github\.event\.pull_request\.base\.ref \}\}/g) ?? []).length).toBe(2);
+    expect(wf).not.toMatch(/ref: \$\{\{ github\.event\.pull_request\.head/);
+  });
+  it('fails closed on an oversized diff instead of reviewing part of it', () => {
+    expect(wf).toMatch(/-ge 400000/);
+    expect(wf).not.toMatch(/head -c/);
   });
 });
 

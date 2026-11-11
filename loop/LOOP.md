@@ -19,7 +19,7 @@ foundation -> build -> QA -> finding -> foundation. ebda-foundation is the sourc
 Say **loop** (or "run the loop" / "start the loop") and the controller follows the `ebda-loop` skill (`os/skills/ebda-loop/SKILL.md`, installed to `~/.claude/skills/ebda-loop` by `os/install.sh`). It is NOT the built-in `/loop <interval>` timer skill. One cycle: re-triage STILL-OPEN + FOUND -> dispatch Sonnet builders (money > auth > data > ops > UX) -> merge through the drains + review gate -> deploy verify -> QA on Amelia -> audits on cadence -> alerts -> exit check. It stops only when `loop/exit-check.sh` passes all 6 criteria. Status at any time: `bash os/ops/loop-status.sh` (also on the brain status page when present).
 
 ## Review gate (CI, not the controller's laptop)
-PRs touching money/auth/data/migrations get the label `risky-path` and are reviewed by `.github/workflows/ai-review.yml` (`ci/ai-review/README.md`). Pass = label `ai-review-passed` (stripped on every new push). No secret or any infra error = the check fails (Ruling AIR-1). The drain holds a `risky-path` PR until it carries `ai-review-passed`.
+Every PR except an all-safe one (markdown, docs/, tests) gets the label `risky-path` and is reviewed by `.github/workflows/ai-review.yml` (`ci/ai-review/README.md`). Pass = label `ai-review-passed` (stripped on every new push). No secret or any infra error = the check fails (Ruling AIR-1). The drain holds a `risky-path` PR until it carries `ai-review-passed`.
 
 ## Exit criteria
 The loop stops ONLY when ALL are true, each measured, not claimed (Ahmad 2026-11-11):
