@@ -1,0 +1,160 @@
+{
+  "_comment": "HANDS-COORD dry-run on a REAL finding measured 2026-11-10: the Semgrep workflow is red on ebda-store main (run 42833927550 @911ba7f, the newest Semgrep run on main). Job 2 is the same failure flagged as touching auth, which must become a question for Ahmad.",
+  "config": {
+    "jobCapMin": 45,
+    "runCapMin": 90,
+    "claudeModel": "sonnet",
+    "maxTurns": 80,
+    "usageThresholdPct": 80,
+    "repos": {
+      "Ebda-AI-Studio/ebda-store": {
+        "defaultBranch": "main",
+        "install": [
+          "npm",
+          "ci",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund"
+        ],
+        "test": [
+          "npm",
+          "test"
+        ],
+        "mergeGate": [
+          "bash",
+          "{os_home}/ops/merge-gate.sh",
+          "{pr}",
+          "{sha}",
+          "--repo",
+          "{repo}",
+          "--workflows",
+          "{base_workflows}"
+        ],
+        "protectedPaths": [
+          ".github/**",
+          "**/wrangler*.jsonc",
+          "**/wrangler*.toml",
+          "**/migrations/**"
+        ]
+      },
+      "Ebda-AI-Studio/ebda-whatsapp": {
+        "defaultBranch": "main",
+        "install": [
+          "npm",
+          "ci",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund"
+        ],
+        "test": [
+          "npm",
+          "test"
+        ],
+        "mergeGate": [
+          "bash",
+          "{os_home}/ops/merge-gate.sh",
+          "{pr}",
+          "{sha}",
+          "--repo",
+          "{repo}",
+          "--workflows",
+          "{base_workflows}"
+        ],
+        "protectedPaths": [
+          ".github/**",
+          "**/wrangler*.jsonc",
+          "**/migrations/**"
+        ]
+      },
+      "Ebda-AI-Studio/ebda-foundation": {
+        "defaultBranch": "main",
+        "install": [
+          "npm",
+          "ci",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund"
+        ],
+        "test": [
+          "npm",
+          "test"
+        ],
+        "mergeGate": [
+          "bash",
+          "{os_home}/ops/merge-gate.sh",
+          "{pr}",
+          "{sha}",
+          "--repo",
+          "{repo}",
+          "--workflows",
+          "{base_workflows}"
+        ],
+        "protectedPaths": [
+          "os/**",
+          ".github/**"
+        ]
+      }
+    }
+  },
+  "batch": {
+    "runId": "run_dryrun_semgrep0001",
+    "kind": "nightly",
+    "perJobCapMin": 45,
+    "usageThresholdPct": 80,
+    "createdAt": 1793999000000,
+    "leases": [],
+    "jobs": [
+      {
+        "id": "job_semgrepmain000001",
+        "fingerprint": "semgrep-main",
+        "lane": "nightly",
+        "mergePolicy": "pr-and-question",
+        "finding": {
+          "source": "ci",
+          "kind": "ci-failure",
+          "key": "Ebda-AI-Studio/ebda-store@911ba7f:Semgrep",
+          "title": "Semgrep red on ebda-store main (911ba7f)",
+          "repo": "Ebda-AI-Studio/ebda-store",
+          "url": "https://github.com/Ebda-AI-Studio/ebda-store/actions/runs/42833927550",
+          "severity": "P2",
+          "detail": {
+            "workflow": "Semgrep",
+            "sha": "911ba7f",
+            "dryRun": {
+              "claude": "fix",
+              "tests": "pass",
+              "gate": "green"
+            }
+          }
+        }
+      },
+      {
+        "id": "job_semgrepauth00001",
+        "fingerprint": "semgrep-auth",
+        "lane": "nightly",
+        "mergePolicy": "pr-and-question",
+        "finding": {
+          "source": "ci",
+          "kind": "ci-failure",
+          "key": "Ebda-AI-Studio/ebda-store@911ba7f:Semgrep:auth",
+          "title": "Semgrep red on ebda-store main (911ba7f)",
+          "repo": "Ebda-AI-Studio/ebda-store",
+          "url": "https://github.com/Ebda-AI-Studio/ebda-store/actions/runs/42833927550",
+          "severity": "P2",
+          "detail": {
+            "workflow": "Semgrep",
+            "sha": "911ba7f",
+            "dryRun": {
+              "claude": "fix",
+              "tests": "pass",
+              "gate": "green"
+            }
+          },
+          "touches": [
+            "auth"
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "ebda-os-hands",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "Ebda OS hands: run-batch.mjs pulls the brain's batch, fixes each job with Claude Code headless, opens PRs, merges only pre-approved classes through the repo merge gate.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "dry-run": "node run-batch.mjs --dry-run --fixture fixtures/batch.json",
+    "lint:dockerfile": "node scripts/check-dockerfile.mjs"
+  },
+  "devDependencies": {
+    "vitest": "4.1.12"
+  }
+}

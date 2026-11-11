@@ -1,0 +1,3 @@
+# Suites that cannot pass until the Task 3 content lands (standard/, skills/, agents/, schemas/, template/).
+# run-tests.sh prints each as SKIP (never silent) and counts them; Task 3 deletes the line it makes green.
+# format: <class>/<suite-name>   # what it needs

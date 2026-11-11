@@ -1,0 +1,11 @@
+. "$(dirname "$0")/assert.sh"
+. "$(dirname "$0")/../../ops/remediation/classify.sh"
+assert_eq "CLASS_A"  "$(classify lockfile-drift)" "lockfile is A"
+assert_eq "CLASS_A"  "$(classify dep-bump)"       "dep-bump is A"
+assert_eq "CLASS_B"  "$(classify code-health)"    "code-health is B"
+assert_eq "CLASS_B"  "$(classify n-plus-one)"     "n+1 is B"
+assert_eq "EXCLUDED" "$(classify rls-policy)"     "rls excluded"
+assert_eq "EXCLUDED" "$(classify db-migration)"   "migration excluded"
+assert_eq "EXCLUDED" "$(classify secret-leak)"    "secret excluded"
+assert_eq "CLASS_B"  "$(classify unknown-xyz)"    "unknown defaults to B (human-reviewed PR)"
+report

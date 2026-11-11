@@ -1,0 +1,18 @@
+# Old-fleet jobs that had no plist template in ops/launchd (daemons and scheduled scripts the predecessor ran). One name per line. Read by ops/cutover-gate-check.sh.
+dream
+reflect
+daily-brief
+page-load-monitor
+self-heal
+heal-watch
+findings-watch
+app-error-heal
+event-listener
+dashboard
+code-health
+cost-attribution
+runner-hook-health
+predecessor-client-backup-1
+predecessor-client-backup-2
+predecessor-product-monitor-1
+predecessor-product-monitor-2

@@ -1,0 +1,172 @@
+name: CI
+
+# Every runs-on reads repo variable EBDA_RUNS_ON (the Umbra runner when set) and falls back to ubuntu-latest when unset.
+# setup-node's remote npm cache is for hosted runners only: on Umbra ~/.npm already persists locally.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Typecheck, test, lint workflows
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run lint:workflows
+
+  audit:
+    name: Dependency audit
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
+      - run: npm ci
+      - run: npm audit --audit-level=low
+
+  # OS layer (os/): shellcheck, then os/tests/run-all.sh (string + literal guards, config parity, the ops suites, Linux smoke). Affected-only: on a PR it does nothing
+  # unless os/ or this workflow changed (one checkout + one git diff, ~10 s). On push to main it always runs.
+  os:
+    name: OS layer (shellcheck, guards, suites, Linux smoke)
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 25
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Did os/ change?
+        id: chg
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ] && ! git diff --name-only "$BASE"...HEAD | grep -Eq '^(os/|\.github/workflows/ci\.yml$)'; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "os/ untouched - skipping"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: shellcheck (warnings and above)
+        if: steps.chg.outputs.changed == 'true'
+        run: |
+          command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
+          shellcheck -S warning os/ops/*.sh os/ops/lib/*.sh os/ops/hooks/*.sh os/ops/git-hooks/*.sh os/ops/remediation/*.sh
+      - name: Tools the suites need (present on ubuntu-latest; installed if the runner image lacks them)
+        if: steps.chg.outputs.changed == 'true'
+        run: |
+          for t in jq rsync python3; do command -v "$t" >/dev/null || need="$need $t"; done
+          [ -z "${need:-}" ] || { sudo apt-get update -qq && sudo apt-get install -y -qq $need; }
+      - name: OS suites (string + literal guards, config parity, ops suites, Linux smoke)
+        if: steps.chg.outputs.changed == 'true'
+        run: bash os/tests/run-all.sh --quiet
+
+  # OS brain Worker (os/cloud/brain): typecheck, vitest on workerd, npm audit. Affected-only like `os`: on a PR it does nothing
+  # unless os/cloud/ or this workflow changed. Its own lockfile; ~/.npm persists on Umbra, the remote cache is for hosted runners.
+  brain:
+    name: OS brain Worker (typecheck, workerd tests, audit)
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    defaults:
+      run:
+        working-directory: os/cloud/brain
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Did os/cloud/ change?
+        id: chg
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ] && ! git diff --name-only "$BASE"...HEAD | grep -Eq '^(os/cloud/|\.github/workflows/ci\.yml$)'; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "os/cloud/ untouched - skipping"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.chg.outputs.changed == 'true'
+        with:
+          node-version: 22
+          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
+          cache-dependency-path: os/cloud/brain/package-lock.json
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm ci
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm run typecheck
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm test
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm audit --audit-level=low
+
+  # OS hands (os/cloud/hands): vitest with every leaf mocked, the --dry-run fixture walk, engine-free Dockerfile checks,
+  # npm audit. Affected-only like `brain` (os/cloud/ or this workflow). Builds no image and spends no container minutes.
+  hands:
+    name: OS hands (tests, dry-run, Dockerfile checks, audit)
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    defaults:
+      run:
+        working-directory: os/cloud/hands
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Did os/cloud/ change?
+        id: chg
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ] && ! git diff --name-only "$BASE"...HEAD | grep -Eq '^(os/cloud/|os/config/hands\.example\.json$|\.github/workflows/ci\.yml$)'; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "os/cloud/ untouched - skipping"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.chg.outputs.changed == 'true'
+        with:
+          node-version: 22
+          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
+          cache-dependency-path: os/cloud/hands/package-lock.json
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm ci
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm test
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm run dry-run
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm run lint:dockerfile
+      - if: steps.chg.outputs.changed == 'true'
+        run: npm audit --audit-level=low
+      - name: Audit the pinned Claude Code CLI lockfile (image dependency)
+        if: steps.chg.outputs.changed == 'true'
+        working-directory: os/cloud/hands/claude-cli
+        run: npm audit --audit-level=low

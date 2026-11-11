@@ -1,0 +1,19 @@
+{
+  "name": "revenue-handler-untested",
+  "class": "no-test-coverage",
+  "severity": "high",
+  "title": "revenue-critical handler that no test imports",
+  "detail": "A payment-provider / order / cart / checkout / refund / payment-webhook handler that no test or spec file anywhere in the repo imports — the exact 'only the tested path works' gap. Untested revenue paths ship silent money bugs (wrong charge, double charge, missing confirmation email, unhandled alternate provider).",
+  "fix": "add an integration/e2e test that imports this module and exercises its happy path plus at least one edge path (alternate provider, failure, retry/idempotency).",
+  "globs": [
+    "**/payment-providers/*.provider.ts",
+    "**/services/**/*refund*.ts",
+    "**/services/**/checkout*.ts",
+    "**/routes/**/webhook*.ts",
+    "**/routes/**/payment*.ts"
+  ],
+  "match_mode": "file-without-sibling-test",
+  "include_regex": ".",
+  "cap": 40,
+  "source_lesson": "standard/testing.md + docs/audits/2026-07-17-untested-flows-payment-mobile-audit.md"
+}

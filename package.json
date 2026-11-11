@@ -1,0 +1,19 @@
+{
+  "name": "ebda-foundation-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "vitest run && node test/parity-fixture.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint:workflows": "node ops/workflow-lint.mjs .github/workflows"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  }
+}

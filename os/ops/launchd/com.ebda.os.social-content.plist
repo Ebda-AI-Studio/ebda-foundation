@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>__HOME__</string>
+		<key>PATH</key>
+		<string>__PATH__</string>
+		<!-- claude -p needs USER/LOGNAME to find its login under launchd (measured 2026-11-11: 'Not logged in' without them) -->
+		<key>USER</key>
+		<string>__USER__</string>
+		<key>LOGNAME</key>
+		<string>__USER__</string>
+	</dict>
+	<key>Label</key>
+	<string>com.ebda.os.social-content</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>__HOME__/.claude/scripts/social-content.sh</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/Library/Logs/ebda-os-social-content.log</string>
+	<key>StandardOutPath</key>
+	<string>__HOME__/Library/Logs/ebda-os-social-content.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>4</integer>
+		<key>Minute</key>
+		<integer>20</integer>
+	</dict>
+</dict>
+</plist>

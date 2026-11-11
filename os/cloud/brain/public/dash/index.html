@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="light">
+  <title>لوحة تشغيل Ebda OS</title>
+  <link rel="preload" href="/dash/fonts/plex-ar-400-arabic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/dash/dash.css">
+  <script src="/dash/dash.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main" data-i18n="skip">انتقل للمحتوى</a>
+  <header class="top">
+    <div class="wrap top-row">
+      <a class="wordmark" href="/dash/">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 1024.00 1024.00" width="32" height="32" class="logo" aria-hidden="true" focusable="false"><defs><linearGradient id="ntx" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#171718"/><stop offset="1" stop-color="#070707"/></linearGradient></defs><rect x="0" y="0" width="1024" height="1024" rx="229.07" fill="url(#ntx)"/><g transform="translate(318.278 143.360) scale(4.94819)"><defs><linearGradient id="gx-lint" gradientUnits="userSpaceOnUse" x1="47.04" y1="5.06" x2="58.87" y2="78.05"><stop offset="0.0" stop-color="#DAB27A"/><stop offset="0.056" stop-color="#DAB27A"/><stop offset="0.167" stop-color="#D2AA73"/><stop offset="0.278" stop-color="#CCA46E"/><stop offset="0.389" stop-color="#C8A06A"/><stop offset="0.5" stop-color="#C49C67"/><stop offset="0.611" stop-color="#BE9662"/><stop offset="0.722" stop-color="#B78E5C"/><stop offset="0.833" stop-color="#AE8656"/><stop offset="0.944" stop-color="#A57E52"/><stop offset="1.0" stop-color="#A57E52"/></linearGradient><linearGradient id="gx-col" gradientUnits="userSpaceOnUse" x1="54.53" y1="77.53" x2="89.44" y2="116.79"><stop offset="0.0" stop-color="#A27B4E"/><stop offset="0.056" stop-color="#A27B4E"/><stop offset="0.167" stop-color="#A17A4D"/><stop offset="0.278" stop-color="#9D774B"/><stop offset="0.389" stop-color="#987448"/><stop offset="0.5" stop-color="#946F44"/><stop offset="0.611" stop-color="#906C42"/><stop offset="0.722" stop-color="#8E6A40"/><stop offset="0.833" stop-color="#8B673F"/><stop offset="0.944" stop-color="#8A663E"/><stop offset="1.0" stop-color="#8A663E"/></linearGradient><linearGradient id="gx-left" gradientUnits="userSpaceOnUse" x1="-10.44" y1="99.88" x2="48.82" y2="87.05"><stop offset="0.0" stop-color="#B99160"/><stop offset="0.056" stop-color="#B99160"/><stop offset="0.167" stop-color="#B0895B"/><stop offset="0.278" stop-color="#A68156"/><stop offset="0.389" stop-color="#9F7B51"/><stop offset="0.5" stop-color="#9A774D"/><stop offset="0.611" stop-color="#957249"/><stop offset="0.722" stop-color="#906D45"/><stop offset="0.833" stop-color="#8C6A43"/><stop offset="0.944" stop-color="#8B6942"/><stop offset="1.0" stop-color="#8B6942"/></linearGradient></defs><path d="M65.70 67.60 L78.30 73.90 L78.30 126.70 L65.70 120.50Z" fill="url(#gx-col)"/><path d="M0.00 35.80 L78.30 0.00 L78.30 74.90Z" fill="url(#gx-lint)"/><path d="M0.00 37.00 L42.60 58.30 L42.10 127.80 L0.20 149.00Z" fill="url(#gx-left)"/></g></svg>
+        <span class="wm-name" data-i18n="studio">ابدأ ستوديو للذكاء الاصطناعي</span>
+        <span class="wm-site" data-i18n="site">لوحة تشغيل النظام</span>
+      </a>
+      <div class="tools">
+        <span class="stamp" id="stamp" aria-live="polite"></span>
+        <button type="button" class="btn ghost" id="refresh" data-i18n="refresh">حدّث</button>
+        <button type="button" class="btn ghost" id="lang" lang="en">English</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="wrap" tabindex="-1">
+    <p class="alert" id="error" role="alert" hidden></p>
+
+    <section class="state" id="state" aria-labelledby="h-state" data-on="unknown">
+      <span class="medal" aria-hidden="true"></span>
+      <div class="state-body">
+        <h1 id="h-state" class="state-title"><span id="stateTitle" data-i18n="loading">بنحمّل الحالة…</span></h1>
+        <p class="state-why" id="stateWhy"></p>
+        <p class="state-note" id="stateNote"></p>
+      </div>
+    </section>
+
+    <section class="glance" aria-labelledby="h-glance">
+      <h2 id="h-glance" class="visually-hidden" data-i18n="glance">النهارده باختصار</h2>
+      <dl class="kpis">
+        <div><dt data-i18n="open">ملاحظات مفتوحة</dt><dd id="open">–</dd></div>
+        <div><dt data-i18n="queue">في الطابور</dt><dd id="queue">–</dd><p class="sub" id="queueNote"></p></div>
+        <div><dt data-i18n="acted">اتعمل فيها حاجة (7 أيام)</dt><dd id="acted7">–</dd><p class="sub" id="acted1"></p></div>
+        <div><dt data-i18n="messages">رسايل النهارده</dt><dd id="msgs">–</dd><p class="sub" id="msgsNote"></p></div>
+        <div id="bugsBox"><dt data-i18n="bugs">فاتت 24 ساعة من غير تصرف</dt><dd id="bugs">–</dd><p class="sub" data-i18n="bugsNote">كل واحدة منهم غلطة في النظام نفسه.</p></div>
+      </dl>
+    </section>
+
+    <div class="grid">
+      <div class="col-main">
+        <section class="sec" aria-labelledby="h-q">
+          <h2 id="h-q" data-i18n="decisions">قرارات مستنياك</h2>
+          <ul class="questions" id="questions"></ul>
+          <p class="empty" id="questionsEmpty" data-i18n="noDecisions" hidden>مفيش حاجة مستنياك. النظام بيتصرف في الباقي لوحده.</p>
+        </section>
+
+        <section class="sec" aria-labelledby="h-f">
+          <h2 id="h-f" data-i18n="findings">آخر الملاحظات</h2>
+          <div class="table" tabindex="0" role="region" aria-labelledby="h-f">
+            <table>
+              <thead><tr><th scope="col" data-i18n="colFinding">الملاحظة</th><th scope="col" data-i18n="colLane">المسار</th><th scope="col" data-i18n="colStatus">الحالة</th><th scope="col" class="opt" data-i18n="colRaised">اتسجلت</th></tr></thead>
+              <tbody id="findings"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="sec" aria-labelledby="h-r">
+          <h2 id="h-r" data-i18n="runs">اللي النظام عمله</h2>
+          <ul class="rows" id="runs"></ul>
+        </section>
+      </div>
+
+      <aside class="col-side">
+        <section class="sec" aria-labelledby="h-b">
+          <h2 id="h-b" data-i18n="budget">المصروف قصاد الحدود</h2>
+          <div class="meters" id="meters"></div>
+        </section>
+
+        <section class="sec" aria-labelledby="h-g">
+          <h2 id="h-g" data-i18n="gaps">مراقبين مش شغالين</h2>
+          <ul class="rows gaps" id="gaps"></ul>
+        </section>
+
+        <section class="sec" aria-labelledby="h-h">
+          <h2 id="h-h" data-i18n="health">صحة الإنتاج</h2>
+          <ul class="rows" id="health"></ul>
+        </section>
+
+        <section class="sec" aria-labelledby="h-d">
+          <h2 id="h-d" data-i18n="digest">معاينة الملخص اليومي</h2>
+          <p class="sub" data-i18n="digestNote">ده اللي هيتبعت على تليجرام الساعة 05:00 UTC لو الملخص اتعمل دلوقتي.</p>
+          <pre class="digest-text" id="digest" dir="ltr" lang="en" tabindex="0"></pre>
+        </section>
+      </aside>
+    </div>
+  </main>
+  <footer class="foot"><div class="wrap" data-i18n="footer">ابدأ ستوديو للذكاء الاصطناعي · عقل Ebda OS · الصفحة دي ليك انت بس</div></footer>
+</body>
+</html>

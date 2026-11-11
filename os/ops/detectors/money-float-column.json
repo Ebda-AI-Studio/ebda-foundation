@@ -1,0 +1,13 @@
+{
+  "name": "money-float-column",
+  "class": "money",
+  "severity": "critical",
+  "title": "money field typed Float/Decimal (must be integer minor units)",
+  "detail": "Money must be stored + computed as integer minor units (fils/cents), never Float/Decimal — float math silently loses precision on amounts and produces off-by-a-fraction charges/refunds/ledger drift. A Prisma schema field named like a money amount typed Float or Decimal is the root sink.",
+  "fix": "store the amount as Int (minor units, e.g. fils); do all math in integers via the centralized money helper; convert to display units only at the edge.",
+  "globs": ["**/schema.prisma", "**/*.prisma"],
+  "match_mode": "line-present",
+  "include_regex": "\\b(amount|price|total|subtotal|fee|balance|discount|refund(ed)?Amount|paidAmount|cost|costPrice)\\w*\\s+(Float|Decimal)\\b",
+  "cap": 25,
+  "source_lesson": "standard/money.md#1-integer-minor-units-no-floats"
+}

@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ebda.app/schemas/hooks.schema.json",
+  "title": "Claude Code settings.json hooks block",
+  "description": "The shape ops/validate-hooks.sh enforces. Kept as a schema so the contract is readable and diffable, not buried in a validator; the validator ALSO checks things a schema cannot express, notably that every command path exists and is executable.",
+  "type": "object",
+  "properties": {
+    "hooks": {
+      "type": "object",
+      "description": "Event name -> list of matcher groups.",
+      "propertyNames": {
+        "enum": [
+          "PreToolUse",
+          "PostToolUse",
+          "Stop",
+          "SubagentStop",
+          "Notification",
+          "SessionStart",
+          "SessionEnd",
+          "PreCompact",
+          "UserPromptSubmit"
+        ]
+      },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "properties": {
+            "matcher": {
+              "type": "string"
+            },
+            "hooks": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "command"
+                    ]
+                  },
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "timeout": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "async": {
+                    "type": "boolean",
+                    "description": "Run the hook without blocking the tool call."
+                  }
+                },
+                "required": [
+                  "type",
+                  "command"
+                ],
+                "additionalProperties": true,
+                "description": "Unknown keys are permitted deliberately: Claude Code adds hook options over time and a closed schema would fail every config using a newer one. ops/validate-hooks.sh reports them as warnings, never as failures."
+              }
+            }
+          },
+          "required": [
+            "hooks"
+          ],
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

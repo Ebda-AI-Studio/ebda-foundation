@@ -1,0 +1,20 @@
+# Gitleaks config: extends the built-in ruleset, then allowlists three proven TEST FIXTURES by their literal text (commit-independent, so it holds
+# across squash merges; a .gitleaksignore fingerprint is pinned to a commit SHA and stops matching when the commit is rewritten).
+#
+# RULE: only add PROVEN test or example values here, never silence a real secret. Real credentials are injected at runtime (Worker secrets, the
+# macOS Keychain) and never appear as literals in this tree.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "test fixtures that look like secrets (not credentials)"
+regexTarget = "line"
+regexes = [
+  # os/cloud/brain/test/cost-abuse.test.ts: the PEM wrapper around an RSA key generated AT RUNTIME by the test (crypto.subtle.generateKey); nothing is committed.
+  '''const pem = `-----BEGIN PRIVATE KEY-----''',
+  # os/cloud/hands/test/diffcheck.test.mjs: the input of the secret-scanner's own unit test (an obviously fake 'abc...xyz123456' key).
+  '''abcdefghijklmnopqrstuvwxyz123456''',
+  # os/ops/lib/__tests__/keychain.test.sh: hex-encodes the PEM header TEXT only (no key material) to test the decoder. The pattern stops before the trailing dashes because a TOML literal string cannot end in a quote.
+  '''hex '-----BEGIN PRIVATE KEY''',
+]

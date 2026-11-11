@@ -1,0 +1,26 @@
+{
+  "repos": [
+    "example-app",
+    "example-api"
+  ],
+  "health_domains": [
+    "app.example.com",
+    "admin.example.com"
+  ],
+  "originality_entities": [
+    "example-client",
+    "example-brand"
+  ],
+  "railway_services": [
+    "example-api|example-repo|RAILWAY_ENV_ID|RAILWAY_SERVICE_ID|main"
+  ],
+  "vercel_services": [
+    "example-web|VERCEL_PROJECT_ID|example-repo|main"
+  ],
+  "dream_products": [
+    "example-app|/Users/you/Desktop/projects/Example/internal-projects/example-app|https://app.example.com|example-org/example-app"
+  ],
+  "heal_services": [
+    "example-api|Example API|railway|https://api.example.com/health|200|railway-redeploy|railway_project=ID,railway_service=api,railway_env=production"
+  ]
+}

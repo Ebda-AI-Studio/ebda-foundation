@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Every OS test suite, in one command: the string, standard-links and identity-literal guards, the config parity check, the ops suites (lib/shell/node/remediation) and the Linux smoke.
+# Exit non-zero when any part fails. Usage: bash os/tests/run-all.sh [--quiet]
+set -uo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+rc=0
+echo "== no-force-strings =="; bash "$ROOT/os/tests/no-force-strings.test.sh" || rc=1
+echo "== no-literal-config =="; bash "$ROOT/os/tests/no-literal-config.test.sh" || rc=1
+echo "== standard-links =="; node "$ROOT/os/tests/standard-links.test.mjs" || rc=1
+echo "== os-local-list =="; bash "$ROOT/os/tests/os-local-list.test.sh" || rc=1
+echo "== os-config-parity =="; bash "$ROOT/os/tests/os-config-parity.test.sh" || rc=1
+echo "== install-dryrun =="; bash "$ROOT/os/tests/install-dryrun.test.sh" || rc=1
+echo "== no-bare-fetch-default =="; bash "$ROOT/os/tests/no-bare-fetch-default.test.sh" || rc=1
+echo "== brain-deploy-dry =="; bash "$ROOT/os/tests/brain-deploy-dry.test.sh" || rc=1
+echo "== cutover-gate =="; bash "$ROOT/os/tests/cutover-gate.test.sh" || rc=1
+echo "== force-purge-check =="; bash "$ROOT/os/tests/force-purge-check.test.sh" || rc=1
+echo "== ops suites ==";       bash "$ROOT/os/ops/run-tests.sh" "$@" || rc=1
+echo "== linux-smoke ==";      bash "$ROOT/os/tests/linux-smoke.test.sh" || rc=1
+[ "$rc" -eq 0 ] && echo "os run-all: PASS" || echo "os run-all: FAIL"
+exit "$rc"

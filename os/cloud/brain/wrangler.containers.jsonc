@@ -1,0 +1,18 @@
+// Task 7 fragment: the Cloudflare Container for the hands. scripts/deploy.sh merges it into wrangler.deploy.jsonc ONLY when
+// OS_BRAIN_CONTAINERS=1 (so the vitest runtime, which reads wrangler.jsonc, never tries to build an image). It is committed now so the
+// limits are reviewed now (F-02), and test/config.test.ts fails when they are loosened.
+{
+  "containers": [
+    {
+      "class_name": "HandsContainer",
+      "image": "../hands/Dockerfile",
+      "image_build_context": "../..",
+      // smallest instance that fits the job (1/2 vCPU, 4 GiB, 8 GB); the allowlist in config.test.ts is lite | basic | standard-1
+      "instance_type": "standard-1",
+      // one nightly + one urgent lane; never more
+      "max_instances": 2
+    }
+  ],
+  "durable_objects": { "bindings": [{ "name": "BRAIN", "class_name": "BrainDO" }, { "name": "HANDS_CONTAINER", "class_name": "HandsContainer" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BrainDO"] }, { "tag": "v2", "new_sqlite_classes": ["HandsContainer"] }]
+}

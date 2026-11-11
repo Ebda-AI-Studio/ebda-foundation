@@ -1,0 +1,7 @@
+# context is os/; the Dockerfile copies only named paths, this keeps the context upload small
+**/node_modules
+**/.wrangler
+**/dist
+**/test
+**/tests
+**/__tests__
