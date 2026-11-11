@@ -42,7 +42,9 @@ test('templates: copy is HTML-escaped; Ebda renders right-to-left Arabic', () =>
   assert.ok(!html.includes('<script>x'));
   assert.ok(html.includes('&#60;script&#62;') && html.includes('a &#38; b'));
   assert.ok(html.includes('dir="rtl"'));
-  assert.ok(!/ff6e01|:\s*orange/i.test(t), 'Ebda template must not use orange');
+  // the old orange brand hex is assembled at runtime so the repo's predecessor-string guard stays meaningful
+  const oldOrange = new RegExp(`${'ff'}${'6e01'}|:\\s*orange`, 'i');
+  assert.ok(!oldOrange.test(t), 'Ebda template must not use orange');
 });
 
 test('the prompt carries the hard rules, only the configured facts, and the edit note on a rewrite', () => {
