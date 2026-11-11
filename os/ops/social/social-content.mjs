@@ -5,7 +5,7 @@
 // Plan: docs/plans/2026-11-11-social-posting.md. Instagram and TikTok are Ahmad's own and are never generated here.
 //
 // env: OS_BRAIN_URL, INGEST_TOKEN (from $OS_SERVICES_ENV via social-content.sh), optional CLAUDE_BIN, CHROME_BIN, SOCIAL_MAX_DRAFTS (8)
-// flags: --dry-run (generate + render, print, post nothing)
+// flags: --dry-run (reads the calendar if it can, generates + renders, prints, POSTS NOTHING)
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -137,7 +137,9 @@ async function main() {
   const existing = new Set();
   let edits = [];
   let enabled = () => true;
-  if (!dry) {
+  // the calendar/status reads are read-only, so a dry run with brain access skips the same slots a real run would
+  const canRead = Boolean(process.env.OS_BRAIN_URL && process.env.INGEST_TOKEN);
+  if (canRead) {
     const cal = await brain(`/social/calendar?from=${now}&to=${now + (config.horizonDays.max + 1) * DAY}`);
     if (cal.status !== 200) throw new Error(`calendar HTTP ${cal.status}`);
     for (const r of cal.body) existing.add(r.id);
@@ -152,6 +154,10 @@ async function main() {
     ...edits.map((e) => ({ id: e.id, brand: e.brand, network: e.network, scheduledAt: e.scheduledAt, edit: { text: e.text, note: e.note } })),
     ...slotsFor(config, now).filter((s) => !existing.has(s.id) && enabled(s.brand, s.network)),
   ].slice(0, max);
+  const skipped = slotsFor(config, now).filter((s) => existing.has(s.id)).length;
+  // resource-frugal: nothing new to write = no model call, no render
+  console.log(`[social-content] ${work.length} to write, ${skipped} slot(s) already drafted (skipped)${canRead ? '' : ' [no brain access: calendar not read]'}`);
+  if (!work.length) return;
   let ok = 0;
   for (const w of work) {
     const b = config.brands[w.brand];
