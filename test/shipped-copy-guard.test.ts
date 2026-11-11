@@ -24,7 +24,8 @@ export function stringLiterals(src: string): string[] {
 export function bareHits(files: Record<string, string>): string[] {
   return Object.entries(files).flatMap(([f, text]) => {
     const parts = f.endsWith('.ts') ? stringLiterals(text) : text.split('\n');
-    return parts.filter((s) => BARE_EN.test(s) || BARE_AR.test(s)).map((s) => `${f}: ${s.trim().slice(0, 100)}`);
+    // the registered legal entity name (LEGAL-NAME-2) is the one literal allowed to be "Ebda Studio"; the Store's guard exempts it the same way
+    return parts.filter((s) => (BARE_EN.test(s) || BARE_AR.test(s)) && !(f.endsWith('foundation/src/brand.ts') && s === 'Ebda Studio')).map((s) => `${f}: ${s.trim().slice(0, 100)}`);
   });
 }
 
