@@ -26,7 +26,7 @@ the face. Numbers and Latin runs inside Arabic stay LTR (`<bdi>` / `dir="ltr"`).
 - Radius: control 12 (buttons, inputs, selects, nav, tabs, chips) · surface 14 (cards, popovers, modals, sheets) · pill (status pills, avatars, switches).
 - Control height: sm 32 · md 40 (44 on phones) · lg 44. Nav: sidebar 44, tab 40 (44 phones), rail 40, bottom bar 56. Every target is 44px on phones (sm gets a hit area).
 - Elevation: 0 flat hairline (default) · 1 cards · 2 menus · 3 modals. No coloured shadows; border before shadow.
-- Motion (MOTION-1): 150ms colour/press, 200ms menus/tabs/entrances, 250ms sheets and drawers; nothing longer in app chrome. One easing `cubic-bezier(0.16, 1, 0.3, 1)` exposed as `--ease`, durations as `--dur-fast` 150 / `--dur` 200 / `--dur-sheet` 250. Transform only for sheets, drawers, menus and entrances. Reduced motion removes every animation and transition. Slides and tab transitions mirror in RTL (drive the sign from `dir`, never hard-code `translateX(100%)`). CSS only; never per-letter or per-word text animation (breaks Arabic joining).
+- Motion (MOTION-1): 150ms colour/press, 200ms menus/tabs/entrances, 250ms sheets and drawers; nothing longer in app chrome. One easing `cubic-bezier(0.2, 0, 0, 1)`; tokens `--ebda-ease`, `--ebda-dur-fast` 150 / `--ebda-dur-base` 200 / `--ebda-dur-slow` 250 (`MOTION` in `tokens.ts`). A product may alias them locally (`--ease`, `--dur-*`) with the same values, never different ones. Transform only for sheets, drawers, menus and entrances. Reduced motion removes every animation and transition. Slides and tab transitions mirror in RTL (drive the sign from `dir`, never hard-code `translateX(100%)`). CSS only; never per-letter or per-word text animation (breaks Arabic joining).
 
 ### States and feedback (MOTION-1)
 
@@ -44,6 +44,7 @@ Check every borrowed rule against Arabic before adopting it.
 ### Signed numbers (SIGN-1, non-negotiable)
 
 Points, money deltas, stock adjustments, refunds, discounts and percentage changes render through ONE formatter per product (ebda-store: `formatSigned` in `@ebda/shared/region`), never a hand-built `'-'`/`'+'` prefix.
+
 - Zero never carries a sign: `-0`, `+0` and a value that rounds to zero (`-0.04` at one decimal) print plain `0`.
 - The sign and the number are one unit: wrap in a bidi isolate (`<bdi dir="ltr">` in JSX, Unicode LRI...PDI in strings, emails and CSV) so Arabic never moves the minus to the far side ("N-").
 - Minus is U+2212, not a hyphen. Plus shows only where the direction is the meaning (earned, credit).
