@@ -120,7 +120,7 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | restore-drill | KEEP-MAC | restore-drill | the weekly restore drill needs R2 + age secrets the hands container must not hold; `ops/restore-drill.sh` posts PASS/FAIL to the brain `POST /drill` |
 | drift-watch | KEEP-MAC | drift-watch | diffs installed copies against the repo on disk |
 | isp-188-watch | KEEP-MAC | isp-188-watch | hourly DoH check that every merchant-facing host resolves outside 188.114.96.0/23 (blocked by the Egyptian ISP, launch map ISP-188); posts `isp-block-range` findings to the brain, skips when nothing changed |
-| ebda-cf-backup | KEEP-MAC | ebda-cf-backup | pulls the Cloudflare backup to local disk |
+| ebda-cf-backup | DROP | - | Ruling CF-BACKUP-1 (Ahmad 2026-11-11): GitHub cf-backup.yml (02:17) is the backup; app.ebda.cf-backup-pull keeps the local copy |
 | ebda-foundation-bump | KEEP-MAC | ebda-foundation-bump | git operations in local checkouts |
 | fleet-dep-audit | KEEP-MAC | fleet-dep-audit | runs npm audit inside local checkouts |
 | gate-guard | KEEP-MAC | gate-guard | checks gates against local runner and checkouts |

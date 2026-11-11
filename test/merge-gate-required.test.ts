@@ -21,6 +21,10 @@ describe('merge-gate-required', () => {
   it('a job whose if is exactly the fork guard is required', () => {
     expect(requiredChecks(dir(wf({ a: GUARD, b: null })))).toEqual(['Job a', 'Job b']);
   });
+  it('an always() aggregator on PRs is required even when it needs conditional jobs (with or without !cancelled())', () => {
+    const t = `name: t\non:\n  pull_request:\njobs:\n  lint:\n    name: Lint\n    if: needs.x.outputs.y != ''\n    runs-on: u\n    steps:\n      - run: true\n  gate:\n    name: Gate\n    needs: [lint]\n    if: always() && github.event_name == 'pull_request'\n    runs-on: u\n    steps:\n      - run: true\n  gate2:\n    name: Gate2\n    needs: [lint]\n    if: always() && !cancelled() && github.event_name == 'pull_request'\n    runs-on: u\n    steps:\n      - run: true\n  main:\n    name: MainOnly\n    if: always() && github.event_name != 'pull_request'\n    runs-on: u\n    steps:\n      - run: true\n`;
+    expect(requiredChecks(dir(t))).toEqual(['Gate', 'Gate2']);
+  });
   it('a job with any other if stays non-required', () => {
     expect(requiredChecks(dir(wf({ a: "github.ref == 'refs/heads/main'", b: `${GUARD} && false`, c: null })))).toEqual(['Job c']);
   });

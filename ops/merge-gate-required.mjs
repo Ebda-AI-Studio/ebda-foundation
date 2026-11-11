@@ -13,6 +13,11 @@ import { join } from 'node:path';
 
 // the fork guard (workflow-lint demands it on every PR job) skips only fork PRs, so it still counts as always-on
 const ALWAYS_IF = /^(github\.event_name == 'pull_request'|github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository)$/;
+// An aggregator that runs even when the jobs it needs were (legitimately) skipped (`always() [&& !cancelled()] &&
+// github.event_name == 'pull_request'`, e.g. ebda-store's `Unit Tests (affected)`) always reports on a PR, so it is
+// required regardless of its needs. Without this the gate never required those checks (fail-open). Same regex as
+// ebda-store scripts/ci/merge-gate-required.mjs.
+const ALWAYS_RUN_IF = /^always\(\) (&& !cancelled\(\) )?&& github\.event_name == 'pull_request'$/;
 
 export function parseWorkflow(text) {
   const lines = text.split('\n');
@@ -61,6 +66,7 @@ export function requiredChecks(dir) {
     const always = id => {
       const j = jobs[id];
       if (!j) return false;
+      if (j.if !== null && ALWAYS_RUN_IF.test(j.if)) return true;
       if (j.if !== null && !ALWAYS_IF.test(j.if)) return false;
       return j.needs.every(always);
     };

@@ -4,8 +4,8 @@
 #
 # OWNERSHIP PARTITION (no job runs in both places → no double-alerts):
 #   - cloud VM owns everything in THIS file.
-#   - the Mac keeps ONLY inherently-Mac-local jobs (ebda-cf-backup =
-#     local pg_dump to the Mac disk; mac-maintenance = Mac storage hygiene). When the cloud tier is live,
+#   - the Mac keeps ONLY inherently-Mac-local jobs (e.g.
+#     mac-maintenance = Mac storage hygiene; ebda-cf-backup was DROPPED by Ruling CF-BACKUP-1). When the cloud tier is live,
 #     UNLOAD the duplicated launchd jobs on the Mac (cloud-install.sh prints the list).
 #
 # Format (PIPE-delimited, exactly 3 columns; whitespace around fields is trimmed):
