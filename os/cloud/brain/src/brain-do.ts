@@ -96,6 +96,9 @@ export interface QuestionRow { id: string; text: string; options: string[]; defa
 export interface ActedOn { raised: number; acted: number; ratio: number | null }
 
 /** GET /api/state: everything the dashboard shows. */
+/** one row of the platform alert feed (GET /api/alerts) */
+export interface AlertRow { id: number; source: string; level: string; title: string; text: string; url: string | null; repo: string | null; at: number; last_at: number; count: number }
+
 export interface BrainState {
   generatedAt: number;
   /** HANDS-COORD controller leases that are live now */
@@ -390,8 +393,19 @@ export class BrainDO extends DurableObject<Env> {
   }
 
   /** Alerts with id > since, newest first (at most `limit`). */
-  async alertsSince(since: number, limit = 100): Promise<Array<Record<string, unknown>>> {
-    return this.rows(`SELECT id, source, level, title, text, url, repo, at, last_at, count FROM alerts WHERE id > ? ORDER BY id DESC LIMIT ?`, since, Math.max(1, Math.min(500, limit))).map((r) => ({ ...r }));
+  async alertsSince(since: number, limit = 100): Promise<AlertRow[]> {
+    return this.rows(`SELECT id, source, level, title, text, url, repo, at, last_at, count FROM alerts WHERE id > ? ORDER BY id DESC LIMIT ?`, since, Math.max(1, Math.min(500, limit))).map((r) => ({
+      id: Number(r.id),
+      source: String(r.source),
+      level: String(r.level),
+      title: String(r.title),
+      text: String(r.text),
+      url: r.url === null ? null : String(r.url),
+      repo: r.repo === null ? null : String(r.repo),
+      at: Number(r.at),
+      last_at: Number(r.last_at),
+      count: Number(r.count),
+    }));
   }
 
   // ---------- controller leases (launch-map row HANDS-COORD) ----------
