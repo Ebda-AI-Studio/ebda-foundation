@@ -7,6 +7,7 @@
 //  - Text over 4096 chars is split on a newline/space boundary; parts go in order, buttons ride on the last part.
 import { z } from 'zod';
 import type { Env } from './env';
+import { scrub } from './tg-inbox';
 
 export const MAX_PART = 4096;
 export const MAX_PENDING = 500;
@@ -35,6 +36,14 @@ export function splitText(text: string, max = MAX_PART): string[] {
   }
   out.push(rest);
   return out;
+}
+
+/** Strip the bot token (and any `bot<digits>:<secret>` URL fragment) from anything stored or returned: a fetch error can carry the request URL. */
+export function redact(env: Env, reason: string): string {
+  const t = env.TELEGRAM_BOT_TOKEN;
+  let r = t ? reason.split(t).join('[redacted]') : reason;
+  r = r.replace(/bot\d+:[\w-]+/g, 'bot[redacted]');
+  return String(scrub(env, r)).slice(0, 300);
 }
 
 type Row = Record<string, SqlStorageValue>;
@@ -73,7 +82,7 @@ export class TgScheduler {
   list(status?: string): Record<string, unknown>[] {
     const q = `SELECT id, send_at, status, parts_done, attempts, next_at, last_error, sent_at, length(text) AS chars, substr(text, 1, 80) AS preview FROM tg_scheduled`;
     const r = status ? this.rows(`${q} WHERE status = ? ORDER BY send_at LIMIT 500`, status) : this.rows(`${q} ORDER BY send_at LIMIT 500`);
-    return r.map((x) => ({ ...x, sendAt: new Date(Number(x.send_at)).toISOString() }));
+    return r.map((x) => ({ ...x, last_error: x.last_error == null ? null : redact(this.env, String(x.last_error)), sendAt: new Date(Number(x.send_at)).toISOString() }));
   }
 
   /** Only a row that has not started sending can be removed. */
@@ -104,14 +113,14 @@ export class TgScheduler {
           continue;
         }
         if (r.kind === 'lost') {
-          this.sql.exec(`UPDATE tg_scheduled SET status = 'uncertain', last_error = ? WHERE id = ?`, r.reason, id);
+          this.sql.exec(`UPDATE tg_scheduled SET status = 'uncertain', last_error = ? WHERE id = ?`, redact(this.env, r.reason), id);
           out.uncertain++;
           state = 'uncertain';
           break;
         }
         attempts++;
         const exhausted = attempts > BACKOFF_MS.length;
-        this.sql.exec(`UPDATE tg_scheduled SET parts_done = ?, attempts = ?, status = ?, next_at = ?, last_error = ? WHERE id = ?`, done, attempts, exhausted ? 'failed' : 'pending', exhausted ? null : now + (r.retryAfterMs ?? BACKOFF_MS[attempts - 1]!), r.reason, id);
+        this.sql.exec(`UPDATE tg_scheduled SET parts_done = ?, attempts = ?, status = ?, next_at = ?, last_error = ? WHERE id = ?`, done, attempts, exhausted ? 'failed' : 'pending', exhausted ? null : now + (r.retryAfterMs ?? BACKOFF_MS[attempts - 1]!), redact(this.env, r.reason), id);
         if (exhausted) out.failed++;
         state = exhausted ? 'failed' : 'pending';
         break;

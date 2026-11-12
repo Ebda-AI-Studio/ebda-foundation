@@ -79,6 +79,28 @@ describe('scheduled telegram', () => {
     expect(flaky.sent).toHaveLength(2);
   });
 
+  it('never stores or returns the bot token from a fetch error', async () => {
+    const TOKEN = '123456789:AAFakeTokenValue_abc-DEF';
+    const h = await harness(() => {
+      throw new Error(`fetch failed for https://api.telegram.org/bot${TOKEN}/sendMessage`);
+    });
+    await h.run((b) => {
+      (b as any).env = { ...b['env'], TELEGRAM_BOT_TOKEN: TOKEN };
+      return b.tgScheduleAdd({ id: 'leak', sendAt: iso(T0), text: 'x' }, T0);
+    });
+    await h.run((b) => b.tgScheduleTick(T0));
+    const raw = await h.run((b) => JSON.stringify(b['sql'].exec('SELECT last_error FROM tg_scheduled').toArray()));
+    const listed = await h.run((b) => JSON.stringify(b.tgScheduleList()));
+    for (const out of [raw, listed]) {
+      expect(out).not.toContain(TOKEN);
+      expect(out).not.toContain('AAFakeToken');
+    }
+    expect(listed).toContain('uncertain');
+    // a legacy row written before the fix is redacted on read too
+    await h.run((b) => b['sql'].exec(`UPDATE tg_scheduled SET last_error = ? WHERE id = 'leak'`, `x https://api.telegram.org/bot${TOKEN}/y`));
+    expect(await h.run((b) => JSON.stringify(b.tgScheduleList()))).not.toContain('AAFakeToken');
+  });
+
   it('splits over 4096 chars in order, buttons on the last part, resumes without resending parts', async () => {
     const long = Array.from({ length: 9 }, (_, i) => `${i}`.repeat(1000)).join('\n');
     const parts = splitText(long);
