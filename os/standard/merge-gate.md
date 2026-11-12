@@ -28,6 +28,15 @@ A failing/cancelled check or a moved head ends the run at once (exit 1); pending
 `--max-wait-min` (180) then exit 2 with nothing merged. No derivable required list (no PR workflow) exits 2.
 Run it from a checkout of the repo (default workflows dir is `<toplevel>/.github/workflows`) or pass `--workflows`.
 
+### Cross-repo: the required list is the TARGET repo's (2026-11-12)
+`ops/merge-gate.sh 72 <sha> --repo Ebda-AI-Studio/ebda-whatsapp`, run from ebda-foundation, derived the required list from
+ebda-foundation's own workflows ("OS brain Worker", "OS hands", "OS layer", "PR sanity"...) and waited 90 minutes for checks
+ebda-whatsapp never emits. Now both gate scripts (`ops/merge-gate.sh`, `os/ops/merge-gate.sh` = the installed
+`~/.claude/scripts/merge-gate.sh`) accept `--workflows DIR` and, **when `--workflows` is absent and `--repo` is not the repo
+whose checkout supplies the workflows (compared with that checkout's `origin`), refuse with exit 2 and never read the PR.**
+A caller for another repo passes `--workflows <target checkout>/.github/workflows` or runs the installed gate from the target
+checkout. `os/ops/drain.sh` now runs the gate with `cd "$DIR"` (launchd's cwd is `/`). The hands config passes `--workflows`.
+
 ### Latest run wins (2026-11-10)
 `statusCheckRollup` keeps OLD runs of a same-name check on the same head sha. On ebda-whatsapp PR 56 (2026-11-09) the
 label check had two runs on one head: CANCELLED at 21:16:28Z (superseded by its concurrency group) and SUCCESS at

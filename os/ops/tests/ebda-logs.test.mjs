@@ -3,7 +3,7 @@
 import assert from 'node:assert';
 import {
   parseKeyWindow, keysInWindow, dayPrefixes, normalizePath, matches, aggregate, callers,
-  evaluateLogAlerts, evaluateProbeAlerts, decide, digestText, DEFAULT_RULES, LOG_ALERT_PREFIXES, brainListing, brainKind, messageScope,
+  evaluateLogAlerts, evaluateProbeAlerts, fxStaleAlert, decide, KEY_REPEAT_MS, digestText, DEFAULT_RULES, LOG_ALERT_PREFIXES, brainListing, brainKind, messageScope,
 } from '../lib/ebda-logs-core.mjs';
 
 const T0 = Date.UTC(2026, 10, 10, 12, 0, 0);
@@ -93,6 +93,58 @@ ps = evaluateProbeAlerts([{ ...up }, { ...up, name: 'web' }], { streaks: ps.stre
 assert.equal(ps.streaks.api, 0, 'a success resets the streak');
 const allDown = evaluateProbeAlerts([down('a'), down('b'), down('c')], { streaks: { a: 1, b: 1, c: 1 } });
 assert.deepEqual(allDown.alerts.map((x) => x.key), ['probe:all'], 'every host down = ONE probe:all alert');
+
+// --- FX staleness watchdog (wa /health fxAgeHours): > 48 h alerts, null is "no data yet" until 2026-11-14T00:00Z, then alerts too
+const FX_CUT = Date.UTC(2026, 10, 14, 0, 0, 0);
+const fxp = (ageHours, o = {}) => ({ name: 'wa', url: 'https://wa.ebda.app/health', ok: true, status: 200, fx: { ageHours, maxHours: 48, noDataUntil: '2026-11-14T00:00:00Z' }, ...o });
+const fxKeys = (probe, now) => evaluateProbeAlerts([probe], {}, 2, now).alerts.map((x) => x.key);
+assert.deepEqual(fxKeys(fxp(72.5), FX_CUT - 1e9), ['probe:wa-fx'], 'KNOWN-BAD: 72.5 h old FX must alert');
+assert.deepEqual(fxKeys(fxp(48.0001), T0), ['probe:wa-fx'], 'just over 48 h alerts');
+assert.deepEqual(fxKeys(fxp(48), T0), [], 'exactly 48 h is fresh enough');
+assert.deepEqual(fxKeys(fxp(3.2), FX_CUT + 1e9), [], 'a fresh rate never alerts');
+assert.deepEqual(fxKeys(fxp(null), FX_CUT - 1), [], 'null before the cut-off = no data yet, no alert');
+assert.deepEqual(fxKeys(fxp(null), FX_CUT), ['probe:wa-fx'], 'null from the cut-off on alerts');
+assert.deepEqual(fxKeys(fxp(undefined), FX_CUT + 1e9), ['probe:wa-fx'], 'a missing field reads as null');
+assert.deepEqual(fxKeys(fxp(null, { ok: false, status: 0, error: 'timeout' }), FX_CUT + 1e9), [], 'a failed probe says nothing about FX (probe:wa covers it)');
+assert.equal(fxStaleAlert({ name: 'api', ok: true }, T0), null, 'a probe without fx config is never FX-checked');
+assert.equal(fxStaleAlert(fxp(72), T0).severity, 'P1');
+{ // dedupe like every probe alert: one message while it fires, one "resolved" when it clears
+  const fxAlert = evaluateProbeAlerts([fxp(72)], {}, 2, T0).alerts;
+  let dd = decide(fxAlert, {}, T0);
+  assert.equal(dd.messages.length, 1, 'FX stale sends once');
+  dd = decide(fxAlert, dd.state, T0 + 10 * 60000);
+  assert.equal(dd.messages.length, 0, 'deduped while still stale');
+  dd = decide([], dd.state, T0 + 20 * 60000);
+  assert.deepEqual(dd.messages, ['resolved: probe:wa-fx']);
+}
+
+{ // a failed wa probe keeps probe:wa-fx OPEN (unknown), no false "resolved"
+  let st = decide(evaluateProbeAlerts([fxp(72)], {}, 2, T0).alerts, {}, T0).state;
+  const bad = evaluateProbeAlerts([fxp(null, { ok: false, status: 0, error: 'timeout' })], {}, 2, T0 + 60000);
+  assert.deepEqual(bad.unknownKeys, ['probe:wa-fx'], 'failed probe reports the FX key unknown');
+  const dd = decide(bad.alerts.filter((a) => a.key.endsWith('-fx')), st, T0 + 60000, { unknownKeys: bad.unknownKeys });
+  assert.deepEqual(dd.messages, [], 'no false resolved while the probe is down');
+  assert.ok(dd.state.open.includes('probe:wa-fx'), 'key stays open');
+  const ok = decide([], dd.state, T0 + 120000);
+  assert.deepEqual(ok.messages, ['resolved: probe:wa-fx'], 'known-good again, no FX alert => resolves');
+}
+{ // 24 h repeat for the stale-FX key (default 6 h for others), so it cannot eat the daily budget
+  assert.equal(KEY_REPEAT_MS['probe:wa-fx'], 24 * 3600000);
+  const fa = evaluateProbeAlerts([fxp(72)], {}, 2, T0).alerts;
+  let dd = decide(fa, {}, T0);
+  dd = decide(fa, dd.state, T0 + 7 * 3600000);
+  assert.equal(dd.messages.length, 0, 'no 6 h re-page for FX');
+  dd = decide(fa, dd.state, T0 + 25 * 3600000);
+  assert.equal(dd.messages.length, 1, 're-pages after 24 h');
+}
+// malformed fxNoDataUntil fails closed (no grace) and logs
+{
+  const orig = console.error; let logged = 0; console.error = () => { logged++; };
+  const bad = fxp(null); bad.fx.noDataUntil = 'not-a-date';
+  assert.equal(fxStaleAlert(bad, 0)?.key, 'probe:wa-fx', 'bad date = no grace, null alerts');
+  console.error = orig;
+  assert.equal(logged, 1, 'bad date is logged');
+}
 
 // --- decide: dedupe, repeat, resolve, budget, P2 to digest, unknown never resolves
 const p1 = { key: 'probe:api', severity: 'P1', title: 'api down' };

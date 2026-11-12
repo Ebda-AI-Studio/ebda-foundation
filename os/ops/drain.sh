@@ -109,7 +109,8 @@ cycle() {
     gate_running "$p" && { log "skip #$p: a gate is already running"; continue; }
     si_acquire "drain-$NAME-pr$p" >/dev/null 2>&1 || { log "skip #$p: another drain holds it"; continue; }
     log "gate #$p ${sha:0:8}"
-    if "$GATE" "$p" "$sha" --repo "$REPO" --interval 30 --max-wait-min "$MAXWAIT"; then
+    # run from the TARGET checkout: the gate derives the required checks from <cwd toplevel>/.github/workflows (launchd's cwd is /)
+    if ( cd "$DIR" && "$GATE" "$p" "$sha" --repo "$REPO" --interval 30 --max-wait-min "$MAXWAIT" ); then
       log "MERGED #$p"; merged=$((merged + 1)); epoch > "$PROG"; rm -f "$SD/$NAME.held.$p"
     else
       log "gate failed #$p ${sha:0:8}"; epoch > "$fk"
