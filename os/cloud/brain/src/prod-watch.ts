@@ -53,7 +53,7 @@ export async function runProdWatch(env: Env, sink: Sink, now: number, fetchImpl:
   const state = JSON.parse((await env.EVENTS.get(STATE_KEY)) ?? '{}') as WatchState;
   const pr = evaluateProbeAlerts(probes, state, 2, now);
   // the brain reads no logs: log-rule keys are owned by the GitHub run and never resolved from here
-  const d = decide(pr.alerts, { ...state, streaks: pr.streaks }, now, { unknownPrefixes: LOG_ALERT_PREFIXES });
+  const d = decide(pr.alerts, { ...state, streaks: pr.streaks }, now, { unknownPrefixes: LOG_ALERT_PREFIXES, unknownKeys: pr.unknownKeys });
   for (const m of d.messages) {
     await sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, { dedupeKey: `pw:${m.slice(0, 60)}`, kind: 'p1-unhealed', text: `${m}\n(prod-watch, brain cron)` }, fetchImpl).catch(() => undefined);
   }

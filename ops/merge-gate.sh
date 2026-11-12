@@ -37,14 +37,14 @@ while [ "$#" -gt 0 ]; do
 done
 [ "${#want}" -ge 7 ] || { echo "merge-gate: expected sha must be at least 7 chars" >&2; exit 64; }
 here="$(cd "$(dirname "$0")" && pwd)"
-root="$(git -C "$here" rev-parse --show-toplevel)"   # works in this repo (ops/) and in a vendored copy (scripts/foundation/)
+root="$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$here" rev-parse --show-toplevel)"   # works in this repo (ops/) and in a vendored copy (scripts/foundation/)
 [ -n "$repo" ] || repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" || true
 [ -n "$repo" ] || { echo "merge-gate: could not tell which repo (pass --repo OWNER/NAME)" >&2; exit 64; }
 if [ -n "${MERGE_GATE_REQUIRED_JSON:-}" ]; then required="$MERGE_GATE_REQUIRED_JSON"
 else
   if [ -z "$wfdir" ]; then
     # no explicit dir: $root's workflows are only right when --repo IS the repo that owns $root; fail closed otherwise
-    origin="$(git -C "$root" remote get-url origin 2>/dev/null | sed -E 's#^.*[:/]([^/:]+/[^/]+)$#\1#; s#\.git$##')"
+    origin="$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$root" remote get-url origin 2>/dev/null | sed -E 's#/+$##; s#^.*[:/]([^/:]+/[^/]+)$#\1#; s#\.git$##')"
     if [ -z "$origin" ] || [ "$(printf %s "$origin" | tr 'A-Z' 'a-z')" != "$(printf %s "$repo" | tr 'A-Z' 'a-z')" ]; then
       echo "merge-gate: --repo $repo is not the checkout at $root (origin: ${origin:-unknown}); its workflows would give the wrong required checks. Pass --workflows <$repo checkout>/.github/workflows; refusing" >&2; exit 2
     fi

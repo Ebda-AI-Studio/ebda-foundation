@@ -301,6 +301,14 @@ ok "  ...says which fix to apply"                            "$(grep -c 'is not 
 ok "--repo matching this checkout's origin (case-insensitive) is judged from its workflows (0)" "$rc" "0"
 ( cd "$XR" && $GE env MERGE_GATE_VIEW_CMD="cat $TMP/green.json" bash "$OPS/merge-gate.sh" 7 abcdef1 --repo Org-Y/repo-y --workflows "$XR/.github/workflows" --interval 0 --polls 1 --dry-run >"$TMP/out" 2>&1 ); rc=$?
 ok "--repo of another repo WITH --workflows is allowed (0)" "$rc" "0"
+# an exported GIT_DIR pointing at ANOTHER repo must not make the origin check read that repo (hooks export GIT_DIR)
+OT="$TMP/other-repo"; mkdir -p "$OT"; $GE git -C "$OT" init -q; $GE git -C "$OT" remote add origin https://github.com/Org-Y/repo-y.git
+( cd "$XR" && GIT_DIR="$OT/.git" MERGE_GATE_VIEW_CMD="cat $TMP/green.json" bash "$OPS/merge-gate.sh" 7 abcdef1 --repo Org-Y/repo-y --interval 0 --polls 1 --dry-run >"$TMP/out" 2>&1 ); rc=$?
+ok "exported GIT_DIR at another repo cannot fake the origin match (refuse 2)" "$rc" "2"
+# a trailing slash on origin is normalised
+$GE git -C "$XR" remote set-url origin https://github.com/Org-X/repo-x/
+( cd "$XR" && $GE env MERGE_GATE_VIEW_CMD="cat $TMP/green.json" bash "$OPS/merge-gate.sh" 7 abcdef1 --repo Org-X/repo-x --interval 0 --polls 1 --dry-run >"$TMP/out" 2>&1 ); rc=$?
+ok "origin with a trailing slash still matches (0)" "$rc" "0"
 # the drain runs the gate from the TARGET checkout (launchd's cwd is /)
 grep -q '( cd "$DIR" && "$GATE"' "$OPS/drain.sh" && ok "drain.sh runs the gate from --dir" 1 1 || ok "drain.sh runs the gate from --dir" 0 1
 echo "---"; echo "merge-gate: $pass passed, $fail failed"; [ "$fail" = 0 ]

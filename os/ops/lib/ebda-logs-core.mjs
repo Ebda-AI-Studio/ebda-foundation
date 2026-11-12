@@ -266,8 +266,14 @@ export function evaluateProbeAlerts(probes, state, failBudget = 2, nowMs = Date.
   } else {
     for (const p of failing) alerts.push({ key: `probe:${p.name}`, severity: 'P1', title: `${p.name} down (${p.error || `HTTP ${p.status}`}, ${streaks[p.name]} checks in a row)`, detail: p.url });
   }
-  for (const p of probes) { const a = fxStaleAlert(p, nowMs); if (a) alerts.push(a); }
-  return { alerts, streaks };
+  // a failed probe says nothing about its FX age: that key is UNKNOWN (stays open, never "resolved"), like unknownPrefixes
+  const unknownKeys = [];
+  for (const p of probes) {
+    if (p.fx && !p.ok) { unknownKeys.push(`probe:${p.name}-fx`); continue; }
+    const a = fxStaleAlert(p, nowMs);
+    if (a) alerts.push(a);
+  }
+  return { alerts, streaks, unknownKeys };
 }
 
 /**
@@ -275,14 +281,17 @@ export function evaluateProbeAlerts(probes, state, failBudget = 2, nowMs = Date.
  * fire when its own cron is dead, so the outside probe reads /health `fxAgeHours` too. p.fx = { ageHours, maxHours, noDataUntil } is
  * set by the prober only for a probe configured with fxMaxAgeHours. Alerts (P1, key probe:<name>-fx, deduped by decide()) when
  * ageHours > maxHours; a null/missing age is "no data yet" and alerts only from noDataUntil (ISO) on. A probe that itself failed says
- * nothing about FX (its own probe:<name> alert covers it).
+ * nothing about FX: evaluateProbeAlerts reports its key in `unknownKeys` so decide() keeps it open (no false "resolved").
  */
 export function fxStaleAlert(p, nowMs) {
   if (!p.fx || !p.ok) return null;
   const { ageHours, maxHours, noDataUntil } = p.fx;
+  // a malformed noDataUntil must not silently disable the alert: no grace period, and say so
+  const graceOk = !noDataUntil || !Number.isNaN(Date.parse(noDataUntil));
+  if (!graceOk) console.error(`prod-watch: ${p.name} fxNoDataUntil "${noDataUntil}" is not a date; no grace period applied`);
   const key = `probe:${p.name}-fx`;
   if (ageHours === null || ageHours === undefined || Number.isNaN(Number(ageHours))) {
-    if (noDataUntil && !(nowMs >= Date.parse(noDataUntil))) return null;
+    if (noDataUntil && graceOk && !(nowMs >= Date.parse(noDataUntil))) return null;
     return { key, severity: 'P1', title: `${p.name} FX rate has no observation (fxAgeHours null after ${noDataUntil}): the daily FX cron never wrote a row`, detail: p.url };
   }
   if (Number(ageHours) <= maxHours) return null;
@@ -298,7 +307,8 @@ export function fxStaleAlert(p, nowMs) {
  *   - at most `dailyBudget` messages a day; past it, alerts fold into the digest (the 'probe:all' P1 is exempt: an outage always gets through).
  * Returns {messages:[text], digestItems:[alert], state}.
  */
-export function decide(alerts, state, nowMs, { repeatMs = 6 * 3600000, dailyBudget = 6, unknownPrefixes = [] } = {}) {
+export const KEY_REPEAT_MS = { 'probe:wa-fx': 24 * 3600000 }; // a stale daily value re-pages once a day, not every 6 h, so it cannot eat the budget
+export function decide(alerts, state, nowMs, { repeatMs = 6 * 3600000, dailyBudget = 6, unknownPrefixes = [], unknownKeys = [], keyRepeatMs = KEY_REPEAT_MS } = {}) {
   const st = { sent: { ...(state.sent || {}) }, day: { ...(state.day || {}) }, open: [...(state.open || [])], digest: [...(state.digest || [])] };
   const today = new Date(nowMs).toISOString().slice(0, 10);
   if (st.day.date !== today) st.day = { date: today, count: 0 };
@@ -316,7 +326,7 @@ export function decide(alerts, state, nowMs, { repeatMs = 6 * 3600000, dailyBudg
       if (!st.digest.some((d) => d.key === a.key)) st.digest.push({ key: a.key, title: a.title, at: nowMs });
       continue;
     }
-    const due = !prev || !st.open.includes(a.key) || nowMs - prev.last >= repeatMs;
+    const due = !prev || !st.open.includes(a.key) || nowMs - prev.last >= (keyRepeatMs[a.key] ?? repeatMs);
     if (!due) continue;
     const text = `P1 ${a.title}${a.detail ? `\n${a.detail}` : ''}`;
     if (send(text, a.key === 'probe:all')) st.sent[a.key] = { first: prev && st.open.includes(a.key) ? prev.first : nowMs, last: nowMs, n: (prev?.n || 0) + 1 };
@@ -325,7 +335,7 @@ export function decide(alerts, state, nowMs, { repeatMs = 6 * 3600000, dailyBudg
   }
   for (const k of [...st.open]) {
     if (firing.has(k)) continue;
-    if (unknownPrefixes.some((p) => k.startsWith(p))) continue; // its source was unreadable this run: unknown is not resolved
+    if (unknownKeys.includes(k) || unknownPrefixes.some((p) => k.startsWith(p))) continue; // its source was unreadable this run: unknown is not resolved
     st.open = st.open.filter((x) => x !== k);
     if (st.sent[k]) send(`resolved: ${k}`, false);
   }

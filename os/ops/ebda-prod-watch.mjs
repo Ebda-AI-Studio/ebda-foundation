@@ -183,7 +183,7 @@ if (mode === 'drill') {
   const brainUp = await brainHealthy();
   const scope = messageScope(alerts, { brainUp, logsRead });
   say(`brain: ${brainUp ? 'up, it messages the probe alerts' : 'NOT answering: this run messages the probe alerts too'}`);
-  const d = decide(scope.alerts, state, now, { unknownPrefixes: scope.unknownPrefixes });
+  const d = decide(scope.alerts, state, now, { unknownPrefixes: scope.unknownPrefixes, unknownKeys: pr.unknownKeys });
   Object.assign(state, d.state);
   for (const m of d.messages) {
     const r = await telegram(`${m}\n${runUrl}`);
