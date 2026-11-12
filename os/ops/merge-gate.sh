@@ -44,7 +44,18 @@ else
   if [ -z "$wfdir" ] && [ "$(git config --bool core.bare 2>/dev/null)" = true ]; then
     echo "merge-gate: this checkout is marked bare (core.bare=true) so it has no work tree; fix with: git config core.bare false (run in $(pwd)); refusing" >&2; exit 2
   fi
-  [ -n "$wfdir" ] || wfdir="$(git rev-parse --show-toplevel 2>/dev/null)/.github/workflows"
+  if [ -z "$wfdir" ]; then
+    top="$(git rev-parse --show-toplevel 2>/dev/null)"
+    # the cwd checkout's workflows are only right when --repo IS that checkout's repo; fail closed otherwise (2026-11-12:
+    # a gate run from ebda-foundation for ebda-whatsapp #72 required foundation's checks and waited 90 min)
+    if [ -n "$repo" ]; then
+      origin="$(git -C "${top:-.}" remote get-url origin 2>/dev/null | sed -E 's#^.*[:/]([^/:]+/[^/]+)$#\1#; s#\.git$##')"
+      if [ -z "$origin" ] || [ "$(printf %s "$origin" | tr 'A-Z' 'a-z')" != "$(printf %s "$repo" | tr 'A-Z' 'a-z')" ]; then
+        echo "merge-gate: --repo $repo is not the checkout at ${top:-$(pwd)} (origin: ${origin:-unknown}); its workflows would give the wrong required checks. Run from a checkout of $repo or pass --workflows; refusing" >&2; exit 2
+      fi
+    fi
+    wfdir="$top/.github/workflows"
+  fi
   [ -d "$wfdir" ] || { echo "merge-gate: no workflows dir at $wfdir (run from a checkout of the repo, or pass --workflows); refusing" >&2; exit 2; }
   required="$(python3 -I "$py" required "$wfdir")"
 fi

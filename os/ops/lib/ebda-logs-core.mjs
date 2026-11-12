@@ -253,7 +253,7 @@ export function evaluateLogAlerts(windowRecords, silenceRecords, rules = DEFAULT
  * Probe results -> alerts. probes = [{name, url, ok, status, ms, error?, commit?}]. A probe alerts after `failBudget` consecutive fails
  * (streaks live in state.streaks). Every probe down at once = one 'probe:all' P1 instead of N messages.
  */
-export function evaluateProbeAlerts(probes, state, failBudget = 2) {
+export function evaluateProbeAlerts(probes, state, failBudget = 2, nowMs = Date.now()) {
   const streaks = { ...(state.streaks || {}) };
   const failing = [];
   for (const p of probes) {
@@ -266,7 +266,27 @@ export function evaluateProbeAlerts(probes, state, failBudget = 2) {
   } else {
     for (const p of failing) alerts.push({ key: `probe:${p.name}`, severity: 'P1', title: `${p.name} down (${p.error || `HTTP ${p.status}`}, ${streaks[p.name]} checks in a row)`, detail: p.url });
   }
+  for (const p of probes) { const a = fxStaleAlert(p, nowMs); if (a) alerts.push(a); }
   return { alerts, streaks };
+}
+
+/**
+ * External watchdog for a daily-cron value (Ebda Chat FX rate, 2026-11-12). The worker alarms on staleness itself, but that alarm cannot
+ * fire when its own cron is dead, so the outside probe reads /health `fxAgeHours` too. p.fx = { ageHours, maxHours, noDataUntil } is
+ * set by the prober only for a probe configured with fxMaxAgeHours. Alerts (P1, key probe:<name>-fx, deduped by decide()) when
+ * ageHours > maxHours; a null/missing age is "no data yet" and alerts only from noDataUntil (ISO) on. A probe that itself failed says
+ * nothing about FX (its own probe:<name> alert covers it).
+ */
+export function fxStaleAlert(p, nowMs) {
+  if (!p.fx || !p.ok) return null;
+  const { ageHours, maxHours, noDataUntil } = p.fx;
+  const key = `probe:${p.name}-fx`;
+  if (ageHours === null || ageHours === undefined || Number.isNaN(Number(ageHours))) {
+    if (noDataUntil && !(nowMs >= Date.parse(noDataUntil))) return null;
+    return { key, severity: 'P1', title: `${p.name} FX rate has no observation (fxAgeHours null after ${noDataUntil}): the daily FX cron never wrote a row`, detail: p.url };
+  }
+  if (Number(ageHours) <= maxHours) return null;
+  return { key, severity: 'P1', title: `${p.name} FX rate is stale (${Number(ageHours).toFixed(1)} h old, limit ${maxHours} h): the daily FX cron is not running`, detail: p.url };
 }
 
 /**
