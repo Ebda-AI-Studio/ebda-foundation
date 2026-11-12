@@ -108,6 +108,18 @@ Secrets: `SOCIAL_FACEBOOK`, `SOCIAL_LINKEDIN`, `SOCIAL_LINK_SECRET`, `SOCIAL_DEC
 digest says why. Vars: `SOCIAL_APPROVAL_DAYS` (14), `SOCIAL_APPROVAL_LEAD_HOURS` (24), `SOCIAL_FB_SPACING_MIN` (180),
 `SOCIAL_FB_MAX_DEFER_HOURS` (24), `SOCIAL_GRAPH_VERSION` (v27.0), `SOCIAL_LINKEDIN_VERSION` (202610).
 
+## Scheduled Telegram sends
+
+`src/tg-schedule.ts`, tests `test/tg-schedule.test.ts`. A message waits in the BrainDO's SQLite (`tg_scheduled`) until its time; the existing 5-minute `tick` sends what is due. No new cron, secret or binding. Cost: a few SQLite rows, free Telegram.
+
+| Piece | Behaviour |
+|---|---|
+| Add | `POST /api/telegram/schedule` (Bearer `INGEST_TOKEN`) body `{id, sendAt (ISO 8601 with offset), text (<= 20000), buttons?: [{text, url (https)}] (<= 4)}`, Zod at the edge. `sendAt` more than 5 min in the past -> 400. A duplicate `id` -> 409 (also after it was sent). More than 500 pending -> 429. Response `{ok, id, sendAt, parts}` |
+| List | `GET /api/telegram/schedule[?status=pending\|sent\|failed\|uncertain]` -> `{items: [{id, sendAt, status, parts_done, attempts, next_at, last_error, sent_at, chars, preview}]}` (the full text is never echoed) |
+| Delete | `DELETE /api/telegram/schedule/:id` removes a row that has not started sending; otherwise 409, unknown id 404 |
+| Send | at most 10 per tick, oldest first. Text over 4096 chars is split on a newline/space and sent in order; buttons ride on the last part |
+| Exactly once | the part counter is advanced (durable) BEFORE the network call, so a crash between send and mark never resends. A definite Telegram refusal rolls the counter back and retries after 5 min, then 15 min (`retry_after` honoured), then `failed`. A lost answer (no response) becomes `uncertain` and is never retried: check the chat |
+
 ## Design
 
 | Piece | Where | Notes |

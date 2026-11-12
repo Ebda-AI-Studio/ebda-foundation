@@ -13,6 +13,7 @@
 //   POST /telegram/webhook  Telegram's own webhook (the brain is the single consumer of @EbdaAIStudiobot; register it with
 //                           POST /api/telegram/webhook/set). Taps + replies + the owner's inbox text. Auth: X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
 //   /api/telegram/webhook/{set,info,delete}  /api/telegram/send  /api/inbox  /api/inbox/ack   (Bearer INGEST_TOKEN, src/tg-inbox.ts)
+//   POST|GET /api/telegram/schedule, DELETE /api/telegram/schedule/:id  scheduled Telegram sends, sent by the 5-min tick (Bearer INGEST_TOKEN, src/tg-schedule.ts)
 //   POST|GET /api/decisions  one-tap approval questions (Bearer INGEST_TOKEN): POST {id,question,why,default,cost_if_wrong,kind,link?}[] <= 10 ->
 //                         one Telegram message each; GET ?status=answered|pending reads the answers. Taps arrive via /telegram/webhook (src/decisions.ts).
 //   /social/*             social posting: drafts/edits/calendar (INGEST_TOKEN), decide/brands (SOCIAL_DECIDE_TOKEN), /social/d/:id signed
@@ -33,6 +34,7 @@ import { cronName } from './schedule';
 import { validateAlert, type PlatformAlert } from './alerts';
 import { answerDecision, listDecisions, noteDecision, postDecisions, MAX_PER_CALL, validateDraft } from './decisions';
 import { handleSocial } from './social/routes';
+import { handleSchedule } from './tg-schedule';
 import { ackInbox, handleSend, handleWebhookAdmin, listInbox, recordInbox } from './tg-inbox';
 import { validateUsage } from './usage';
 import { watchAdvisories } from './watchers/advisories';
@@ -373,6 +375,7 @@ export default {
       if (path.startsWith('/api/telegram/') || path === '/api/inbox' || path === '/api/inbox/ack') {
         if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });
         if (path === '/api/telegram/send' && request.method === 'POST') return await handleSend(request, env);
+        if (path === '/api/telegram/schedule' || path.startsWith('/api/telegram/schedule/')) return await handleSchedule(request, path, brainStub(env));
         const wh = path.match(/^\/api\/telegram\/webhook\/(set|info|delete)$/);
         if (wh) return await handleWebhookAdmin(wh[1]!, request.method, env);
         if (path === '/api/inbox' && request.method === 'GET') {
@@ -490,6 +493,8 @@ export default {
         await brain.tick(now);
         // social: previews a day ahead, the approval gate, publishing at the slot (a social failure never blocks the OS tick)
         await brain.socialTick(now).catch((e: Error) => console.error('social tick', e.message));
+        // scheduled Telegram sends that are due (claim-then-send inside the DO)
+        await brain.tgScheduleTick(now).catch((e: Error) => console.error('tg schedule tick', e.message));
         return;
       }
       case 'quarter':
