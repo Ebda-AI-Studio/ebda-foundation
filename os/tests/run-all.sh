@@ -15,6 +15,7 @@ echo "== brain-deploy-dry =="; bash "$ROOT/os/tests/brain-deploy-dry.test.sh" ||
 echo "== cutover-gate =="; bash "$ROOT/os/tests/cutover-gate.test.sh" || rc=1
 echo "== force-purge-check =="; bash "$ROOT/os/tests/force-purge-check.test.sh" || rc=1
 echo "== drain =="; bash "$ROOT/os/tests/drain.test.sh" || rc=1
+echo "== relabel-after-review =="; bash "$ROOT/os/tests/relabel-after-review.test.sh" || rc=1
 echo "== ops suites ==";       bash "$ROOT/os/ops/run-tests.sh" "$@" || rc=1
 echo "== linux-smoke ==";      bash "$ROOT/os/tests/linux-smoke.test.sh" || rc=1
 [ "$rc" -eq 0 ] && echo "os run-all: PASS" || echo "os run-all: FAIL"

@@ -3,6 +3,7 @@
 #
 #   drain.sh --repo OWNER/NAME --dir CHECKOUT [--gate PATH] [--hold-risky] [--name N] [--interval S]
 #            [--stall-min 60] [--held-min 120] [--max-wait-min 20] [--once]
+#            [--main-workflow CI] [--review-workflow "AI review"] [PR_NUMBER ...]
 #
 # Every cycle: list open PRs into main that are green and mergeable, and merge each through the merge gate (head pinned, three
 # consecutive polls, explicit required checks: never `gh pr merge` directly). With --hold-risky a PR labelled `risky-path` (set by
@@ -10,6 +11,18 @@
 #   --gate     the merge-gate script, absolute or relative to --dir (default: $HOME/.claude/scripts/merge-gate.sh). It runs as
 #              `<gate> <pr> <sha> --repo R --interval 30 --max-wait-min M`. DRAIN_REQUIRED_JSON, when set, becomes MERGE_GATE_REQUIRED_JSON.
 #   --once     one cycle, then exit (tests, manual runs).
+#   PR_NUMBER  optional: restrict the drain to these PRs (one whole number per argument). A single argument holding whitespace
+#              ("12 13 14" quoted) is exit 2: a loop once received its list as ONE quoted string, skipped everything and exited 0.
+#              An explicit list that parses to zero PRs, or none of which is open on the first cycle, is exit 2 / 4, never a quiet 0.
+#   --main-workflow    name of the repo's main CI workflow (default CI). MAIN-RED STOP (Ruling MERGE-NO-REFRESH-1): before every
+#              cycle AND before every single merge the latest COMPLETED push run of that workflow on main is read; anything but
+#              success (or unreadable / no such run) merges nothing: "MAIN NOT GREEN <sha> - paused", sleep, retry.
+#   --review-workflow  name of the AI-review workflow (default "AI review"). With --hold-risky a risky-path PR needs the label AND
+#              this workflow at its HEAD sha: >=1 success, no failure/cancelled/timed_out/action_required/startup_failure run, none
+#              still running. A label alone, or status==completed, is not review.
+# Never refreshes a branch: the drain does not call update-branch or rebase (Ruling MERGE-NO-REFRESH-1; the org ruleset never required
+# up-to-date, and a refresh restarts CI + review on every PR). Main's push CI is the integration check.
+# Every PR considered gets one log line (`PR #n sha state`), and each cycle opens with `considering N PRs`.
 # Safety:
 #   - OFF until switched over: does nothing unless $OS_STATE_DIR/drain/<name>.enabled exists (so installing the launchd job never
 #     races a controller's own loop). Turn on: touch it. Turn off: rm it, or touch <name>.stop. A global ~/.claude/handoff/drain.stop
@@ -21,18 +34,26 @@
 # findings snapshot (source drain-<name>) to the brain. Progress = a merge, or nothing waiting. Eligible PRs waiting with no progress for
 # --stall-min opens ONE finding `drain-stall` (P1; the brain alerts once per finding and resolves it when the next snapshot omits it);
 # risky PRs held longer than --held-min open `drain-held` (digest). Brain unreachable: the finding stays visible in the heartbeat file.
-# Exit: 0 normally / when off or stopped, 2 usage.
+# Exit: 0 normally / when off or stopped, 2 usage (incl. a malformed PR list), 4 explicit PR list with none open.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
 args_help "${BASH_SOURCE[0]}" "$@"
 REPO=""; DIR=""; GATE="$HOME/.claude/scripts/merge-gate.sh"; HOLD=0; NAME=""; INTERVAL=60; STALL_MIN=60; HELD_MIN=120; MAXWAIT=20; ONCE=0
+MAIN_WF="CI"; REVIEW_WF="AI review"; PRLIST=(); EXPLICIT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="${2:?}"; shift ;; --dir) DIR="${2:?}"; shift ;; --gate) GATE="${2:?}"; shift ;; --hold-risky) HOLD=1 ;;
     --name) NAME="${2:?}"; shift ;; --interval) INTERVAL="${2:?}"; shift ;; --stall-min) STALL_MIN="${2:?}"; shift ;;
     --held-min) HELD_MIN="${2:?}"; shift ;; --max-wait-min) MAXWAIT="${2:?}"; shift ;; --once) ONCE=1 ;;
-    *) args_unknown "${BASH_SOURCE[0]}" "$1" ;;
+    --main-workflow) MAIN_WF="${2:?}"; shift ;; --review-workflow) REVIEW_WF="${2:?}"; shift ;;
+    -*) args_unknown "${BASH_SOURCE[0]}" "$1" ;;
+    *) EXPLICIT=1
+       case "$1" in
+         *[[:space:]]*) echo "drain: one argument contains whitespace ('$1'): pass each PR number as its own argument (a list quoted as one string was skipped whole once)" >&2; exit 2 ;;
+         ''|*[!0-9]*) echo "drain: PR arguments must be one whole number each, got '$1'" >&2; exit 2 ;;
+       esac
+       PRLIST+=("$1") ;;
   esac
   shift
 done
@@ -67,48 +88,95 @@ single_instance "drain-$NAME"
 epoch() { date +%s; }
 read_int() { local v; v="$(cat "$1" 2>/dev/null || true)"; case "$v" in ''|*[!0-9]*) echo 0 ;; *) echo "$v" ;; esac; }
 
-# prints "<pr> <sha> <risky 0|1> <passed 0|1>" per green+mergeable PR; exit 3 when GitHub cannot be read (unknown is not "nothing")
+# prints "<pr> <sha> <risky 0|1> <passed 0|1> <state>" for EVERY open non-explicitly-excluded PR; state is ready or why not
+# (draft|conflict|nochecks|pending|red). exit 3 when GitHub cannot be read (unknown is not "nothing")
 list_ready() {
   local raw; raw="$(gh pr list --repo "$REPO" --state open --base main --limit 60 --json number,mergeable,statusCheckRollup,isDraft,labels,headRefOid 2>/dev/null)" || return 3
   printf '%s' "$raw" | python3 -I -c '
 import json, sys
+only = set(sys.argv[1:])
 for p in json.load(sys.stdin):
-    if p.get("isDraft") or p.get("mergeable") != "MERGEABLE": continue
+    if only and str(p["number"]) not in only: continue
+    names = {l.get("name") for l in p.get("labels") or []}
+    def out(state): print(p["number"], p["headRefOid"], int("risky-path" in names), int("ai-review-passed" in names), state)
+    if p.get("isDraft"): out("draft"); continue
+    if p.get("mergeable") != "MERGEABLE": out("conflict"); continue
     cs = p.get("statusCheckRollup") or []
-    if not cs: continue                      # zero checks is "CI has not started", never green
-    ok = True
+    if not cs: out("nochecks"); continue         # zero checks is "CI has not started", never green
+    state = "ready"
     for c in cs:
         st = c.get("status") or ("COMPLETED" if c.get("state") in ("SUCCESS", "FAILURE", "ERROR") else "PENDING")
         co = c.get("conclusion") or {"SUCCESS": "SUCCESS", "FAILURE": "FAILURE", "ERROR": "FAILURE"}.get(c.get("state"), "")
-        if st != "COMPLETED" or co in ("FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"): ok = False; break
-    if not ok: continue
-    names = {l.get("name") for l in p.get("labels") or []}
-    print(p["number"], p["headRefOid"], int("risky-path" in names), int("ai-review-passed" in names))
-' 2>/dev/null || return 3
+        if st != "COMPLETED": state = "pending"
+        if st == "COMPLETED" and co in ("FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"): state = "red"; break
+    out(state)
+' ${PRLIST[@]+"${PRLIST[@]}"} 2>/dev/null || return 3
+}
+
+# MAIN-RED STOP: latest COMPLETED push run of the main CI workflow. Prints "<conclusion> <sha9>"; rc 0 only when success.
+# Unreadable, or no completed run, is "unknown" and not green (fail closed).
+main_state() {
+  local raw out
+  raw="$(gh run list --repo "$REPO" --branch main --event push --workflow "$MAIN_WF" --status completed --limit 1 --json conclusion,headSha 2>/dev/null)" || { echo "unreadable -"; return 1; }
+  out="$(printf '%s' "$raw" | python3 -I -c '
+import json, sys
+r = json.load(sys.stdin)
+print((r[0].get("conclusion") or "none") + " " + (r[0].get("headSha") or "-")[:9]) if r else print("no-completed-run -")
+' 2>/dev/null)" || { echo "unreadable -"; return 1; }
+  echo "$out"; case "$out" in "success "*) return 0 ;; *) return 1 ;; esac
+}
+
+# review at HEAD by conclusion: >=1 success, none failed/cancelled/timed_out/action_required/startup_failure, none unfinished
+review_ok() { # $1 = head sha
+  gh run list --repo "$REPO" --workflow "$REVIEW_WF" --limit 100 --json conclusion,headSha 2>/dev/null | python3 -I -c '
+import json, sys
+sha = sys.argv[1]
+c = [(r.get("conclusion") or "").lower() for r in json.load(sys.stdin) if r.get("headSha") == sha]
+bad = {"failure", "cancelled", "timed_out", "action_required", "startup_failure", ""}
+sys.exit(0 if "success" in c and not any(x in bad for x in c) else 1)
+' "$1" 2>/dev/null
 }
 
 # PR numbers repeat across repos: match this repo too, or a gate on another repo's #N would skip ours
 gate_running() { pgrep -f "merge-gate.sh $1 .*--repo $REPO " >/dev/null 2>&1; }
 
 cycle() {
-  local ready rc now merged=0 eligible=0 held=0 p sha risky passed fk fail_at oldest_held hf a
+  local ready rc now merged=0 eligible=0 held=0 p sha risky passed state fk fail_at oldest_held hf a ms n
   now="$(epoch)"
+  ms="$(main_state)" || { log "MAIN NOT GREEN $ms - paused (merging nothing)"; return 4; }
   ready="$(list_ready)"; rc=$?
   if [ "$rc" -ne 0 ]; then log "cannot read PRs of $REPO; skipping this cycle (no progress claimed, no stall judged)"; return 3; fi
+  n="$(printf '%s\n' "$ready" | awk 'NF' | wc -l | tr -d ' ')"
+  log "considering $n PRs"
+  if [ "$EXPLICIT" = 1 ] && [ "$n" = 0 ] && [ "${FIRST_CYCLE:-0}" = 1 ]; then
+    echo "drain: none of the listed PRs (${PRLIST[*]+${PRLIST[*]}}) is open on $REPO" >&2; exit 4
+  fi
   oldest_held=0
-  while read -r p sha risky passed; do
+  while read -r p sha risky passed state; do
     [ -n "$p" ] || continue
-    if [ "$HOLD" = 1 ] && [ "$risky" = 1 ] && [ "$passed" != 1 ]; then
-      held=$((held + 1)); log "HOLD #$p risky, awaiting ai-review-passed"
-      hf="$SD/$NAME.held.$p"; [ -f "$hf" ] || epoch > "$hf"
-      continue
+    if [ "$state" != ready ]; then log "PR #$p ${sha:0:8} not ready: $state"; continue; fi
+    if [ "$HOLD" = 1 ] && [ "$risky" = 1 ]; then
+      if [ "$passed" != 1 ]; then
+        held=$((held + 1)); log "PR #$p ${sha:0:8} HOLD risky, awaiting ai-review-passed"
+        hf="$SD/$NAME.held.$p"; [ -f "$hf" ] || epoch > "$hf"
+        continue
+      fi
+      if ! review_ok "$sha"; then
+        held=$((held + 1)); log "PR #$p ${sha:0:8} HOLD risky, label present but no clean '$REVIEW_WF' conclusion at this head"
+        hf="$SD/$NAME.held.$p"; [ -f "$hf" ] || epoch > "$hf"
+        continue
+      fi
     fi
     eligible=$((eligible + 1))
     fk="$SD/$NAME.failed.$p.$sha"; fail_at="$(read_int "$fk")"
-    if [ "$fail_at" -gt 0 ] && [ $((now - fail_at)) -lt 600 ]; then log "skip #$p ${sha:0:8}: gate failed $((now - fail_at))s ago"; continue; fi
-    gate_running "$p" && { log "skip #$p: a gate is already running"; continue; }
-    si_acquire "drain-$NAME-pr$p" >/dev/null 2>&1 || { log "skip #$p: another drain holds it"; continue; }
-    log "gate #$p ${sha:0:8}"
+    if [ "$fail_at" -gt 0 ] && [ $((now - fail_at)) -lt 600 ]; then log "PR #$p ${sha:0:8} skip: gate failed $((now - fail_at))s ago"; continue; fi
+    gate_running "$p" && { log "PR #$p skip: a gate is already running"; continue; }
+    si_acquire "drain-$NAME-pr$p" >/dev/null 2>&1 || { log "PR #$p skip: another drain holds it"; continue; }
+    # main may have gone red while earlier PRs of this pass were merging: re-read before EVERY merge
+    if ! ms="$(main_state)"; then
+      log "MAIN NOT GREEN $ms - paused (stopping this pass before #$p)"; si_release "drain-$NAME-pr$p"; break
+    fi
+    log "PR #$p ${sha:0:8} gate"
     # run from the TARGET checkout: the gate derives the required checks from <cwd toplevel>/.github/workflows (launchd's cwd is /)
     if ( cd "$DIR" && "$GATE" "$p" "$sha" --repo "$REPO" --interval 30 --max-wait-min "$MAXWAIT" ); then
       log "MERGED #$p"; merged=$((merged + 1)); epoch > "$PROG"; rm -f "$SD/$NAME.held.$p"
@@ -180,11 +248,13 @@ PY
   fi
 }
 
+FIRST_CYCLE=1
 while :; do
   halted && { log "drain $NAME: stop file; exiting"; exit 0; }
   [ -f "$ENABLED" ] || { log "drain $NAME: switched off; exiting"; exit 0; }
   CYC_ELIGIBLE=0; CYC_HELD=0; CYC_MERGED=0; CYC_OLDEST_HELD=0
   cycle; crc=$?
+  FIRST_CYCLE=0
   heartbeat "$crc"
   [ "$ONCE" = 1 ] && exit 0
   sleep "$INTERVAL"
