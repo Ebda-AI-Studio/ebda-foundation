@@ -23,7 +23,7 @@
 # shellcheck source=os-config.sh
 command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
 [ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
-WT_JUNK_RE='(^|/)(node_modules|dist|build|out|coverage|\.next|\.open-next|\.turbo|\.wrangler|\.vite|\.cache|\.parcel-cache|__pycache__|\.pytest_cache|\.vercel|target|\.tmp|tmp|graphify-out|\.husky/_)(/|$)|(^|/)\.DS_Store$|\.(log|tsbuildinfo|pyc)$|(^|/)\.env(\.[A-Za-z0-9_-]+)?$'
+WT_JUNK_RE='(^|/)(node_modules|dist|build|out|coverage|\.next|\.open-next|\.turbo|\.wrangler|\.vite|\.cache|\.parcel-cache|__pycache__|\.pytest_cache|\.vercel|target|\.tmp|tmp|graphify-out|\.generated|\.husky/_)(/|$)|(^|/)\.DS_Store$|\.(log|tsbuildinfo|pyc)$|(^|/)\.env(\.[A-Za-z0-9_-]+)?$'
 
 wt_dirty_count() {
   local wt="$1" n i
