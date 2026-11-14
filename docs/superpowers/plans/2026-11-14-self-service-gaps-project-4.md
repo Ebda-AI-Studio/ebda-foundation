@@ -76,7 +76,7 @@
 **Theme:** `tax`. **Files:** `platform-tax.routes.ts:21-24,94`, new `POST /stores/:id/tax/change-request` (Zod, document keys), AI pre-check extracts fields only; plain code compares against the entered number; flags go to super admin (legal stays human). Replace "contact Ebda Store support" i18n `taxVerification.verifiedNote`. **Test first:** change request creates pending row, merchant stays on the old verified state meanwhile; mismatch flagged not approved. **Policy:** `confirm`. **Override:** super admin approve/reject/revoke stays (legal).
 
 ### Task 10 (A23, Low-Medium): MFA recovery codes
-**Theme:** `tax` is wrong place; **Theme:** `account-security`. **Files:** `apps/accounts` (generate 10 single-use recovery codes at MFA enrolment, hashed; use one at login; regenerate with step-up), `docs/runbooks/mfa-recovery.md` (staff script stays as last resort, annotated). **Test first:** code works once then fails; hashed at rest; regenerate invalidates old set. **Policy:** `confirm`. **Label:** `risky` (auth).
+**Theme:** `account-security`. **Files:** `apps/accounts` (generate 10 single-use recovery codes at MFA enrolment, hashed; use one at login; regenerate with step-up), `docs/runbooks/mfa-recovery.md` (staff script stays as last resort, annotated). **Test first:** code works once then fails; hashed at rest; regenerate invalidates old set. **Policy:** `confirm`. **Label:** `risky` (auth).
 
 ### Task 11 (A24, Medium): store activity / audit log screen
 **Theme:** `account-security`. **Files:** existing audit-log API filtered to the store, `apps/admin/src/app/stores/[id]/activity` read-only table (who, what, when, cursor pagination, explicit select). **Test first:** merchant reads only own store rows; PII fields masked. **Policy:** `free`.
