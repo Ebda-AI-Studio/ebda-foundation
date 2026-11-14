@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -23,7 +23,6 @@ describe('capability-ratchet', () => {
   });
   it('passes when the PR only loses ids', () => expect(run(tree({ 'help.json': ['a|1', 'a|2'] }), tree({ 'help.json': ['a|1'] })).status).toBe(0));
   it('passes when the base has no baselines (adoption PR)', () => expect(run(tree(null), tree({ 'help.json': ['a|1'] })).status).toBe(0));
-  it('a new baseline file next to existing ones is allowed (adoption of one guard)', () => expect(run(tree({ 'help.json': [] }), tree({ 'help.json': [], 'bypass.json': ['x'] })).status).toBe(0));
   it('refuses a symlinked baseline', () => {
     const pr = tree({ 'help.json': [] });
     const out = join(pr, 'outside.json');
@@ -34,4 +33,34 @@ describe('capability-ratchet', () => {
     expect(run(base, pr).status).not.toBe(0);
   });
   it('usage error exits 2', () => expect(spawnSync('node', [SCRIPT], { encoding: 'utf8' }).status).toBe(2));
+});
+
+describe('capability-ratchet hardening', () => {
+  const raw = (files: Record<string, unknown>): string => {
+    const d = mkdtempSync(join(tmpdir(), 'cap-rat-'));
+    mkdirSync(join(d, 'capabilities/baselines'), { recursive: true });
+    for (const [n, body] of Object.entries(files)) writeFileSync(join(d, 'capabilities/baselines', n), JSON.stringify(body));
+    return d;
+  };
+  it('after adoption a NEW baseline file with ids is rejected; an empty one is allowed', () => {
+    const base = tree({ 'help.json': ['a|1'] });
+    const bad = run(base, tree({ 'help.json': ['a|1'], 'fresh.json': ['x|hidden'] }));
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toContain('x|hidden');
+    expect(run(base, tree({ 'help.json': ['a|1'], 'fresh.json': [] })).status).toBe(0);
+  });
+  it('a baseline without an ids array is invalid, not empty (PR side)', () => {
+    const r = run(tree({ 'help.json': ['a|1'] }), raw({ 'help.json': { baseline: ['a|1', 'new'] } }));
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/ids/);
+  });
+  it('a baseline without an ids array is invalid on the base side too, and a bare array is invalid', () => {
+    expect(run(raw({ 'help.json': { baseline: [] } }), tree({ 'help.json': [] })).status).toBe(1);
+    expect(run(tree({ 'help.json': [] }), raw({ 'help.json': ['a|1'] })).status).toBe(1);
+  });
+  it('the workflow job tolerates a base that has no script yet (the adoption PR)', () => {
+    const y = readFileSync(resolve(__dirname, '../.github/workflows/pr-quality.yml'), 'utf8');
+    expect(y).toMatch(/if \[ -f base\/\.github\/pr-quality\/capability-ratchet\.mjs \]/);
+    expect(y).toMatch(/::notice::/);
+  });
 });
