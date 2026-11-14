@@ -8,10 +8,14 @@
   "exports": {
     "./brand": "./src/brand.ts",
     "./buyer": "./src/buyer.ts",
+    "./capability": "./src/capability.ts",
     "./phone": "./src/phone.ts",
     "./slugs": "./src/slugs.ts",
     "./text": "./src/text.ts",
     "./tokens": "./src/tokens.ts",
     "./tokens.css": "./src/tokens.css"
+  },
+  "peerDependencies": {
+    "zod": "4.6.7"
   }
 }
