@@ -13,6 +13,8 @@ Today that is not true: 22 places need staff or have no merchant screen (4 block
 
 **Scope of the rules (Ahmad, 2026-11-14):** the AI-native, AI-first and self-service rules, the capability registry, the help-article rule and the Smart Layer apply to EVERY existing feature, every new feature, every upcoming Ebda product (CRM, ERP, Ads, Invites, Quote Studio) and anything else Ebda ships to customers. They are binding now as the foundation standard `os/standard/ai-native-self-service.md` (lens 192), not only when projects 1-4 are built.
 
+**Super admin keeps full override (Ahmad, 2026-11-14):** "as the super admin, I can turn off sites, I can upgrade as I want ... I can do whatever I want to any store, but still they have the self-service, and I can override". Self-service means no merchant capability is staff-only; it never limits the super admin, who can suspend or turn off any site, change any plan, grant add-ons and credits, impersonate for support and change any setting on any store. Every super-admin override is audit-logged. The Smart Layer never exercises super-admin powers (action boundary rule 4), even when the super admin is the one chatting.
+
 ## 2. Goals, non-goals, anti-goals
 
 **Goals**

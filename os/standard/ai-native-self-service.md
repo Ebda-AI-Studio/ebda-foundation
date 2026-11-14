@@ -8,12 +8,14 @@ Ahmad, 2026-11-14: "ebda ai studio is ai native and ai first and fully self serv
 
 Design: `docs/superpowers/specs/2026-11-14-self-service-and-ebda-assistant-design.md`.
 
+**Super admin keeps full power (Ahmad, 2026-11-14):** "as the super admin, I can turn off sites, I can upgrade as I want ... I can do whatever I want to any store, but still they have the self-service, and I can override". Self-service is about what customers can do alone; it removes nothing from the super admin. The AI never uses super-admin powers, even for the super admin.
+
 ## Grading criteria
 
 | # | Criterion | Severity |
 |---|---|---|
 | 192.1 | **Self-service:** every customer capability can be done by the customer in the product (a screen and a learnable flow), with no Ebda staff, operator or script in the normal path | Critical |
-| 192.2 | **Super admin is the exception:** a super-admin/operator-only path exists only with a written reason (abuse, legal, money dispute, platform-wide config, critical incident) annotated at the route; a CI guard fails new unannotated routes and a growing baseline | Critical |
+| 192.2 | **No customer capability is staff-only:** a capability that ONLY super admin/operator can do exists only with a written reason (abuse, legal, money dispute, platform-wide config, critical incident) annotated at the route or in its registry entry; a CI guard fails new unannotated ones and a growing baseline. This never limits the super admin: Ahmad keeps full override over every store (suspend/turn off a site, change any plan, grant add-ons/credits, impersonate for support, change any setting); every override is audit-logged | Critical |
 | 192.3 | **AI-native:** every customer capability has a capability-registry entry (id, titles ar/en, page, API actions, plan gate, roles, assistant policy free/preview/confirm/forbidden, undo class, help article, example questions ar/Franco/en, edge cases, status live/in-pr/planned); a PR adding or changing a page, route or action without its entry fails CI | Critical |
 | 192.4 | **Planned counts:** not-built features are registry entries with status `planned`, so the Smart Layer can say what is coming; the entry flips to `live` in the PR that ships it | High |
 | 192.5 | **Help article:** every customer capability, existing or new, has a help article in Egyptian Arabic and English published on help.ebda.app, linked from its registry entry; a capability without a published article fails CI | Critical |
