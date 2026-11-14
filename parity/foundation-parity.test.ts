@@ -109,4 +109,25 @@ describe('shared vectors against the vendored code', () => {
     const flat = (segs: Array<{ kind: string; text?: string; href?: string }>) => segs.map((s) => (s.kind === 'text' ? s.text : `<${s.href}|${s.text}>`)).join('');
     for (const c of v.cases) expect(flat(allowLinks([{ kind: 'text', text: c.in }], c.merchant ?? []).segments), c.in).toBe(c.out);
   });
+  it('instapay-decision: every vector verdict and reason list (money path, shared by Store and Chat)', async () => {
+    const { decideInstapay } = await load('instapay-decision');
+    const v = vector('instapay-decision.json') as { base: any; cases: Array<{ name: string; patch: Record<string, any>; verdict: string; reasons: string[] }> };
+    expect(v.cases.length).toBeGreaterThanOrEqual(30);
+    for (const c of v.cases) {
+      const input = structuredClone(v.base);
+      for (const [k, val] of Object.entries(c.patch)) input[k] = val !== null && typeof val === 'object' && !Array.isArray(val) && input[k] && typeof input[k] === 'object' ? { ...input[k], ...val } : val;
+      const d = decideInstapay(input);
+      expect({ verdict: d.verdict, reasons: d.reasons }, c.name).toEqual({ verdict: c.verdict, reasons: c.reasons });
+    }
+  });
+  it('instapay-extract: every typed-extraction vector', async () => {
+    const { parseReceiptExtraction } = await load('instapay-extract');
+    const v = vector('instapay-extract.json') as { cases: Array<{ name: string; raw: unknown; expect: unknown; flags?: Record<string, unknown> }> };
+    expect(v.cases.length).toBeGreaterThanOrEqual(30);
+    for (const c of v.cases) {
+      const p = parseReceiptExtraction(c.raw);
+      expect(p.extract, c.name).toEqual(c.expect);
+      if (c.flags) expect(p.flags, c.name).toMatchObject(c.flags);
+    }
+  });
 });
