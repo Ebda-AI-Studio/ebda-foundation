@@ -24,6 +24,7 @@ Why one repo: Ruling FDN-OS-1 (`docs/rulings/FDN-OS-1.md`). The OS port is in pr
 | `text` | `foldArabic`, `indexTokens`, `phoneDigits` | `foldArabic('أحذية')` |
 | `slugs` | `RESERVED_SLUGS`, `isReservedSlug`, `isDemoShowroomSlug`, `slugFormatError` | `isReservedSlug('wa')` |
 | `capability` + `capability-registry`, `capability-coverage`, `self-service-routes`, `smart-layer-bypass`, `help-article`, `ratchet` | `capabilitySchema`, `normalizeApi`, `checkRegistry`, `checkCoverage`, `checkSelfServiceRoutes`, `checkModelBypass`, `checkHelp`, `applyBaseline` (lens 192 guards; `docs/standard/capability-registry.md`) | `checkRegistry(files, cfg)` |
+| `smart-layer` (`@ebda/foundation/smart-layer`) | `runTurn`, the rails (`detectSecrets`, `maskForModel`, `scopeCheck`, `fence`, `checkBindingClaims`, `renderReply`, `allowLinks`), the execution gates (`validateCall`, `effectivePolicy`, `applyPreview`, `undoApplied`, `issueApproval`, `confirmApproval`), `resolveControls`, `computeReleaseId`, the eval harness (`releaseGate`, `passHatK`, `cohensKappa`) | `runTurn(adapter, ctx, { text })` (`docs/smart-layer.md`) |
 
 `vectors/*.json` are the shared test vectors (phone, buyer-key, buyer-key-probe, arabic, slugs). Not shared yet (planned, see the program plan): search hooks, studio pages, legal clauses, contracts, identity, observe, erasure, guard, ops scripts.
 
@@ -43,3 +44,20 @@ Why one repo: Ruling FDN-OS-1 (`docs/rulings/FDN-OS-1.md`). The OS port is in pr
 ## Versioning
 
 Semver. MAJOR = a breaking export or vector change: both consumer bump PRs open the same day. MINOR = additive. Every change lands with a CHANGELOG line and its vectors.
+
+## Smart Layer API
+
+`@ebda/foundation/smart-layer` is the engine behind the Ebda assistant (plan 4, `docs/smart-layer.md`). A product writes ONE adapter (`SmartLayerAdapter`: registry view, tools, help search, controls, quota, `checkRefs`, handoff, the Workers AI binding, storage) and calls:
+
+```ts
+import { runTurn, applyPreview, confirmApproval, undoApplied, resolveControls, computeReleaseId, resolveModels } from '@ebda/foundation/smart-layer';
+
+const result = await runTurn(adapter, ctx, { text, untrusted: [{ kind: 'customer_message', text: inbound }] }, { onApprovalToken: (t) => res.setConfirmToken(t) });
+// result.status: answered | refused | not_covered | handoff | off | limited; result.segments render; result.previews are cards.
+```
+
+- A turn never applies a change. A non-free tool call returns a preview card; the merchant's button calls `applyPreview` (preview class) or `confirmApproval(approvalId, token)` (confirm class) on its own route, and `undoApplied` within 24 h.
+- The confirm token leaves only through `onApprovalToken`. Never persist it, log it, or put it in a prompt.
+- `SmartLayerStorage` needs atomic `transitionPreview`, `claimApproval` and `closeApproval` (a SQL `UPDATE .. WHERE status = from`); `smart-layer/eval/memory-storage` is the reference behaviour.
+- Model ids are configuration (`resolveModels`, ruling SL-MODEL-0: provisional bake-off leaders until SL-MODEL-1). Roll out with `resolveControls` (off, answer-only, suggest, act, per-store flag, product and global kill, tool kill, shadow).
+- Add the vendored `smart-layer/` directory to the product's `capabilities/guard.config.json` `smartLayerPaths`.

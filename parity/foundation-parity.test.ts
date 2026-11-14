@@ -83,4 +83,30 @@ describe('shared vectors against the vendored code', () => {
     for (const s of v.demoShowroom.yes) expect(isDemoShowroomSlug(s), s).toBe(true);
     for (const s of v.demoShowroom.no) expect(isDemoShowroomSlug(s), s).toBe(false);
   });
+  it('smart-layer secrets: every case', async () => {
+    const { detectSecrets } = await load('smart-layer/rails/secrets');
+    const v = vector('smart-layer-secrets.json') as { tokens: Record<string, string[]>; cases: Array<{ in: string; out: string; found: string[] }> };
+    const fill = (s: string) => s.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => v.tokens[k]!.join('')); // the fake credentials are stored split
+    expect(v.cases.length).toBeGreaterThanOrEqual(15);
+    for (const c of v.cases) expect(detectSecrets(fill(c.in)), JSON.stringify(c.in)).toEqual({ text: fill(c.out), found: c.found });
+  });
+  it('smart-layer mask: every case', async () => {
+    const { maskForModel } = await load('smart-layer/rails/mask');
+    const v = vector('smart-layer-mask.json') as { cases: Array<{ in: string; out: string }> };
+    expect(v.cases.length).toBeGreaterThanOrEqual(10);
+    for (const c of v.cases) expect(maskForModel(c.in), JSON.stringify(c.in)).toBe(c.out);
+  });
+  it('smart-layer scope: every case (lexicon only)', async () => {
+    const { scopeCheck } = await load('smart-layer/rails/scope');
+    const { francoToArabic } = await load('smart-layer/rails/franco');
+    const v = vector('smart-layer-scope.json') as { franco: Array<{ in: string; has: string }>; cases: Array<{ in: string; verdict: string }> };
+    for (const c of v.franco) expect(francoToArabic(c.in)).toContain(c.has);
+    for (const c of v.cases) expect((await scopeCheck(c.in)).verdict, c.in).toBe(c.verdict);
+  });
+  it('smart-layer links: every case', async () => {
+    const { allowLinks } = await load('smart-layer/rails/links');
+    const v = vector('smart-layer-links.json') as { cases: Array<{ in: string; merchant?: string[]; out: string }> };
+    const flat = (segs: Array<{ kind: string; text?: string; href?: string }>) => segs.map((s) => (s.kind === 'text' ? s.text : `<${s.href}|${s.text}>`)).join('');
+    for (const c of v.cases) expect(flat(allowLinks([{ kind: 'text', text: c.in }], c.merchant ?? []).segments), c.in).toBe(c.out);
+  });
 });

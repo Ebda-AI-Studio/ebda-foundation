@@ -16,6 +16,7 @@
     "./ratchet": "./src/ratchet.ts",
     "./self-service-routes": "./src/self-service-routes.ts",
     "./slugs": "./src/slugs.ts",
+    "./smart-layer": "./src/smart-layer/index.ts",
     "./smart-layer-bypass": "./src/smart-layer-bypass.ts",
     "./text": "./src/text.ts",
     "./tokens": "./src/tokens.ts",
