@@ -25,8 +25,13 @@ Why one repo: Ruling FDN-OS-1 (`docs/rulings/FDN-OS-1.md`). The OS port is in pr
 | `slugs` | `RESERVED_SLUGS`, `isReservedSlug`, `isDemoShowroomSlug`, `slugFormatError` | `isReservedSlug('wa')` |
 | `capability` + `capability-registry`, `capability-coverage`, `self-service-routes`, `smart-layer-bypass`, `help-article`, `ratchet` | `capabilitySchema`, `normalizeApi`, `checkRegistry`, `checkCoverage`, `checkSelfServiceRoutes`, `checkModelBypass`, `checkHelp`, `applyBaseline` (lens 192 guards; `docs/standard/capability-registry.md`) | `checkRegistry(files, cfg)` |
 | `smart-layer` (`@ebda/foundation/smart-layer`) | `runTurn`, the rails (`detectSecrets`, `maskForModel`, `scopeCheck`, `fence`, `checkBindingClaims`, `renderReply`, `allowLinks`), the execution gates (`validateCall`, `effectivePolicy`, `applyPreview`, `undoApplied`, `issueApproval`, `confirmApproval`), `resolveControls`, `computeReleaseId`, the eval harness (`releaseGate`, `passHatK`, `cohensKappa`) | `runTurn(adapter, ctx, { text })` (`docs/smart-layer.md`) |
+| `instapay-extract` | `parseReceiptExtraction`, `parseAmountMinor`, `cairoWallTimeToEpoch`, `normalizeReference`, `INSTAPAY_EXTRACT_PROMPT`, `INSTAPAY_EXTRACT_JSON_SCHEMA` | `parseAmountMinor('١٬٢٠٠٫٥٠') === 120050`; `'1.200'` is `null` (ambiguous), never guessed |
+| `instapay-decision` | `decideInstapay`, `normalizeHandle`, `REASON_ORDER` | pure money decision: auto-confirm iff zero reasons; every comparison fails closed |
+| `instapay-state` | `nextAutoState`, `autoConfirmKey`, `revertKey`, `revertGraceUntil`, `firstPaymentCapMinor`, `isCleanPayment`, `unusedCreditsToRemove` | lifecycle table, 48 h grace, first-payment cap, 24 h clean-payment rule |
+| `instapay-dedupe` | `DuplicateIndex`, `D1DuplicateIndex`, `MemoryDuplicateIndex`, `DEDUPE_SCHEMA_SQL`, `duplicateIndexContract` | platform-global reference + image index; each product runs the contract on its real D1 |
+| `instapay-digest` | `formatDigest`, `formatWaiting`, `encodeTap`, `decodeTap`, `signBridge`, `verifyBridge` | digest text, `ip:` Telegram tap codec, HMAC bridge signature with a 5 minute window |
 
-`vectors/*.json` are the shared test vectors (phone, buyer-key, buyer-key-probe, arabic, slugs). Not shared yet (planned, see the program plan): search hooks, studio pages, legal clauses, contracts, identity, observe, erasure, guard, ops scripts.
+`vectors/*.json` are the shared test vectors (phone, buyer-key, buyer-key-probe, arabic, slugs, instapay-decision, instapay-extract). Not shared yet (planned, see the program plan): search hooks, studio pages, legal clauses, contracts, identity, observe, erasure, guard, ops scripts.
 
 **Not shared:** anything that imports a product's DB, env or domain types (tenants, checkout, payments, schema, migrations, flags, `wrangler.jsonc`, full legal documents, product copy).
 
