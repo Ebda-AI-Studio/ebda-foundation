@@ -7,7 +7,7 @@
 #
 # 2026-09-23 — three defects, all measured on this machine:
 #   1. REPOS was a HARDCODED list of four repos while SEVENTEEN had worktrees. The
-#      thirteen others (ebda-foundation, umbra, client-repo, mypovonai,
+#      thirteen others (ebda-foundation, client-repo, mypovonai,
 #      quote-studio, …) were never cleaned, so their worktrees accumulated
 #      indefinitely — ebda-foundation alone had 14. A cleanup tool that names
 #      the things it cleans stops covering anything added afterwards, silently.

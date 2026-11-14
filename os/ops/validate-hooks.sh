@@ -8,7 +8,7 @@
 #
 # The JSON Schema in schemas/hooks.schema.json is the readable contract. This
 # script enforces it WITHOUT a jsonschema dependency (not guaranteed installed on
-# the umbra guests), by hand-checking exactly what the schema encodes — and then
+# the old Linux guests), by hand-checking exactly what the schema encodes — and then
 # does the two things a schema cannot: resolve every command path, and confirm it
 # is executable.
 #

@@ -2,7 +2,7 @@
 # host-lock.sh <command...> - host-wide mutex for HEAVY test runs: only ONE full suite on this Mac at a time.
 #
 # WHY (2026-10-25). Several agents pushed in parallel and every pre-push ran the whole vitest suite (measured 105
-# concurrent vitest processes) on a 16 GB host beside the Umbra CI guest: swap 3 of 4 GB, load 30+, the guest wedged on
+# concurrent vitest processes) on a 16 GB host beside the CI runners: swap 3 of 4 GB, load 30+, the runners wedged on
 # I/O and its ext4 corrupted three times in two days. The gate is never skipped; it QUEUES.
 #
 # ONE lock for everything heavy: ~/.claude/locks/heavy-test.lock (macOS lockf(1); no flock(1) on macOS; Linux falls

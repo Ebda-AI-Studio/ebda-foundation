@@ -3,7 +3,7 @@
 #
 # WHY (2026-10-24, 3rd disk-full incident class): every agent worktree ran its own `npm ci`
 # (~2 GB node_modules each), 6 parallel agents filled the Mac disk, and a full host disk corrupts the
-# Umbra CI VM guest (feedback-umbra-sparse-disk-host-full-corrupts-guest). Now ONE install per lockfile
+# CI runners sharing the disk. Now ONE install per lockfile
 # lives in ~/.cache/wt-deps and every worktree gets a `cp -cR` clonefile copy: near-zero disk until a
 # file is written. node_modules is NEVER symlinked (tools resolve real paths and break).
 #

@@ -35,10 +35,6 @@ mkdir -p "$STATE_DIR" 2>/dev/null || true
 # regression (green→red), so the OS surfaces breakage live instead of waiting
 # for the Telegram digest. Fail-open (sourced best-effort).
 . "$HERE/lib/os-state.sh" 2>/dev/null || true
-# Fleet park state — see lib/runner-fleet.sh. FAIL CLOSED: no lib => not parked,
-# so a missing file can never silence a real runner outage.
-. "$HERE/lib/runner-fleet.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/runner-fleet.sh" 2>/dev/null || true
-command -v fleet_parked >/dev/null 2>&1 || { fleet_parked() { return 1; }; fleet_park_reason() { printf 'unknown'; }; }
 
 # Repos the OS oversees: the "repos" list in ~/.ebda-os.local.json (see os/config/local.example.json).
 REPOS=()
@@ -162,36 +158,16 @@ probe_repo_prs() {
 }
 
 probe_runners() {
-  # Don't hardcode runner names (the old windows-wsl-store* list went stale when the
-  # runners moved hosts and this probe silently checked nothing for weeks) —
-  # enumerate whatever is registered and flag any not-online. (Runner host is now
-  # the Umbra VM $OS_VM; OrbStack was retired 2026-07.)
-  local slug="$1"
-  # Fleet parked (2026-08-09) => a runner being offline is the INTENDED state, not
-  # a fault. Without this, os-watch both notes the "outage" AND fires
-  # ci-runner-guard at it, which is how a deliberately out-of-service runner kept
-  # paging every cycle. ci-runner-guard still asserts the safety invariant while
-  # parked (every repo on cloud), so standing down here is not standing down blind.
-  if fleet_parked; then
-    note "$slug: self-hosted runners offline — EXPECTED, fleet is parked ($(fleet_park_reason)). Un-park: rm $FLEET_PARK_FILE"
-    return
-  fi
-  local offline
-  offline=$(_ut "$OS_UT_FAST" gh api "repos/$GH_USER/$slug/actions/runners" \
+  # Runners are native Mac runners registered at ORG level (Umbra retired 2026-11-14), so the
+  # repo-scoped API cannot see them: enumerate the org's runners once and flag any not online.
+  # The org-wide verdict (all offline / a whole label pool offline) is ci-runner-guard's job.
+  local slug="$1" offline
+  [ -z "${_RUNNERS_PROBED:-}" ] || return 0
+  _RUNNERS_PROBED=1   # global (not local): one org-level probe per run, not one per repo
+  offline=$(_ut "$OS_UT_FAST" gh api "orgs/$GH_USER/actions/runners?per_page=100" \
        --jq '[.runners[]|select(.status!="online")|"\(.name)=\(.status)"]|join(", ")' 2>/dev/null) || return
   [ -n "$offline" ] || return
-  # G6 (2026-07-22): don't just ALERT — trigger the heal now. os-watch runs on a
-  # slow (2h) cadence, so waiting for ci-runner-guard's own 30-min cycle leaves the
-  # VM down in between (the incident that produced the OrbStack-worded alert).
-  # ci-runner-guard is idempotent + self-coordinating (wr_claim), so firing it on
-  # detection is safe; guard with _RUNNER_HEAL_FIRED so we kick it once per run.
-  local trg=""
-  if [ -z "${_RUNNER_HEAL_FIRED:-}" ] && [ -x "$HOME/.claude/scripts/ci-runner-guard.sh" ]; then
-    _RUNNER_HEAL_FIRED=1   # global (not local) — persists across repos in this run
-    nohup "$HOME/.claude/scripts/ci-runner-guard.sh" >/dev/null 2>&1 &
-    trg=" — auto-heal TRIGGERED (ci-runner-guard boots the stopped Umbra VM)"
-  fi
-  note "$slug: self-hosted runner(s) offline ($offline)$trg. If it persists, run 'umbra start $OS_VM' and check 'umbra shell $OS_VM -- systemctl status actions.runner.*'."
+  note "$GH_USER: self-hosted Mac runner(s) offline ($offline). Check the launchd services: launchctl list | grep actions.runner.$GH_USER (restart: launchctl kickstart -k gui/\$(id -u)/actions.runner.$GH_USER.<name>)."
 }
 
 for slug in ${REPOS[@]+"${REPOS[@]}"}; do

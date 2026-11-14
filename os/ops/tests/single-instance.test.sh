@@ -21,7 +21,7 @@ mk() { # shim <name> <real-path>: log, optionally sleep $SHIM_<NAME>_SLEEP, then
   printf '#!/bin/bash\necho "%s $*" >> "$CALLS"\ns="${SHIM_%s_SLEEP:-0}"; [ "$s" != 0 ] && sleep "$s"\nexec %s "$@"\n' "$n" "$up" "$real" > "$OS_SHIM_DIR/$n"
   chmod +x "$OS_SHIM_DIR/$n"
 }
-mk df /bin/df; mk du /usr/bin/du; mk rm /bin/rm; mk umbra /usr/bin/true; mk gh /usr/bin/true
+mk df /bin/df; mk du /usr/bin/du; mk rm /bin/rm; mk gh /usr/bin/true
 H() { bash "$TMP/ops/workspace-hygiene.sh" "$@"; }
 
 # ---- 1. seven parallel sweeps
@@ -40,7 +40,7 @@ ok "2 the queue was drained by the running sweep" "$([ -s "$HYGIENE_QUEUE" ] && 
 
 # ---- 3. --help acts on nothing
 mkdir -p "$P/_worktrees/victim__orphan"
-for s in workspace-hygiene mac-maintenance post-merge-cleanup anomaly-watch cf-workers-watch drift-watch guest-wedge-watch os-watch sentry-stale-watch world-watch; do
+for s in workspace-hygiene mac-maintenance post-merge-cleanup anomaly-watch cf-workers-watch drift-watch os-watch sentry-stale-watch world-watch; do
   : > "$CALLS"; out="$(bash "$OPS/$s.sh" --help 2>&1)"; rc=$?
   ok "3 $s --help: exit 0, prints its header, zero shimmed calls" "$rc/$(grep -c . "$CALLS")/$([ -n "$out" ] && echo text)" "0/0/text"
 done
@@ -62,7 +62,7 @@ ok "5 hung df: UNKNOWN, dry run, nothing deleted" "$(echo "$out" | grep -q UNKNO
 
 # ---- 6. held / stale lock
 sleep 30 & holder=$!
-for s in anomaly-watch cf-workers-watch drift-watch guest-wedge-watch os-watch sentry-stale-watch world-watch mac-maintenance; do
+for s in anomaly-watch cf-workers-watch drift-watch os-watch sentry-stale-watch world-watch mac-maintenance; do
   rm -rf "$OS_LOCK_DIR"; mkdir -p "$OS_LOCK_DIR/$s"; echo "$holder" > "$OS_LOCK_DIR/$s/pid"
   out="$(bash "$OPS/$s.sh" 2>&1)"; rc=$?
   ok "6 $s: live holder -> already running, exit 0" "$rc/$(echo "$out" | grep -c 'already running')" "0/1"

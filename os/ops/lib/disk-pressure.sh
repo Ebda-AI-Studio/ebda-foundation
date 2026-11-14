@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Guest disk-pressure classification for the CI fleet.
+# Disk-pressure classification (host disk of the Mac that runs the CI runners).
 #
-# Extracted so the rule below is testable. 2026-08-23: $OS_VM reached 0 bytes
-# free of 58G (18 runners, ~40G of _work). Every runner lost its GitHub session,
-# all 18 registrations went offline, and four repos sat with runs that could
-# never start. Nothing watched the disk.
+# Extracted so the rule below is testable. A full CI disk takes every runner
+# down and runs sit queued forever, so the level is computed once, here.
 
 # disk_pressure_level <used_pct> [warn_pct] [crit_pct]
 #   -> "unknown" | "ok" | "warn" | "crit"
@@ -33,8 +31,8 @@ disk_pressure_level() {
 # APFS: `df /` reports the sealed system volume, whose used% is meaningless —
 # 12 GB of 460 GB while the Data volume beside it is at 98%. Container FREE space
 # is shared so the available figure agrees, but used% does not. Callers pass
-# /System/Volumes/Data on macOS. Added 2026-09-04 after a 98%-full host wedged
-# $OS_VM: the guest booted and never reached sshd, console.log stayed 0 bytes.
+# /System/Volumes/Data on macOS. Added 2026-09-04 after a 98%-full host
+# wedged the CI fleet.
 host_disk_used_pct() {
   local vol="${1:-/}"
   [ -d "$vol" ] || return 0            # no path -> empty -> unknown

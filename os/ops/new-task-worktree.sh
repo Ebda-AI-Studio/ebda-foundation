@@ -30,12 +30,12 @@ if [ -x "$HOME/.claude/scripts/sessions-live.sh" ]; then
 fi
 [ -d "$ROOT/.git" ] || { echo "ERROR: no git repo at $ROOT"; exit 1; }
 
-# Disk guard (2026-10-24): a full host disk corrupts the Umbra CI VM guest (happened 2026-10-16 + 2026-10-24).
+# Disk guard (2026-10-24): a full host disk fails CI runner jobs and degrades the Mac (the native runners share this disk).
 # Refuse to add another worktree under WT_MIN_FREE_GB (default 30) free. WT_FORCE=1 overrides.
 MIN_FREE_GB="${WT_MIN_FREE_GB:-30}"
 free_kb="$(df -k "$HOME" | awk 'NR==2{print $4}')"
 if [ "${WT_FORCE:-0}" != "1" ] && [ "${free_kb:-0}" -lt $((MIN_FREE_GB*1024*1024)) ]; then
-  printf 'REFUSING: host has %s GB free (< %s GB). A full disk corrupts the Umbra CI VM.\n' "$((free_kb/1024/1024))" "$MIN_FREE_GB" >&2
+  printf 'REFUSING: host has %s GB free (< %s GB). A full disk fails CI runner jobs and degrades the Mac.\n' "$((free_kb/1024/1024))" "$MIN_FREE_GB" >&2
   # NO du scan here. `du -sk` over _worktrees/_backups/caches took 5+ MINUTES on a loaded host (2026-10-25) and ran on
   # EVERY refused call, adding disk I/O at exactly the moment the host was starved. The floor check needs only df.
   # The per-directory breakdown is opt-in: WT_REPORT=1, or run ops/worktree-report.sh.
