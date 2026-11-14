@@ -112,6 +112,14 @@ Ahmad: "there is things are not built yet so they must be counted as well so thi
 - **Enforced in ebda-foundation:** a CI guard fails any PR that adds a merchant page, route or action without a registry entry, or a `live` entry without a help article and example questions. So no future feature can ship without the assistant knowing it. The registry also feeds the help index, the golden eval set (every `preview`/`confirm` entry gets a must-confirm test) and the self-service guard.
 - The first registry is generated from the full Store and Chat capability catalogues (2026-11-14 audits: `business/ebda/audits/2026-11-14-store-capability-catalogue.*` and `...-chat-capability-catalogue.*`, in Ahmad's local business folder).
 
+### 6.8b Every feature has a published help article (Ahmad, 2026-11-14)
+Ahmad: "every existing feature or a new one must have a help article to be shared on help site".
+- **Rule (foundation standard + CI guard):** every merchant capability in any Ebda product, existing or new, has a help article in Egyptian Arabic and English, published on the help site (help.ebda.app, served from ebda-store `apps/help`). The article's front-matter names its capability id(s) and `appPath`.
+- **Guard:** a PR that adds or changes a merchant capability fails unless its registry entry points to a help article that exists and is published; a `live` registry entry without one fails CI (this tightens §6.8, where help was required only to reach `live`). Planned entries get their article when they ship, in the same PR.
+- **One help site for all products:** Ebda Chat's guides (`ebda-whatsapp/docs/help`) are published on help.ebda.app too (a Chat section), so merchants and the Smart Layer read one source.
+- **Backfill (part of the build plan):** 71 live Store capabilities and 23 live Chat capabilities have no article today, and 5 Chat guides are wrong or stale (04, 05, 06, 07/11, 09) — all written or fixed before the guard is switched to blocking.
+- Help freshness (§6.9) applies: an article older than its capability's current version is flagged.
+
 ### 6.9 The Smart Layer pipeline and hardening (worldwide research, 2026-11-14)
 Source: `business/ebda/audits/2026-11-14-smart-layer-worldwide-research.md` (Salesforce Trust Layer, NeMo rails, Shopify Sidekick, Intercom Fin, Meta Business AI, Amazon seller agents, Gorgias, Cloudflare AI Gateway/Agents SDK, MCP; failures: Air Canada, Chevrolet, Cursor, EchoLeak). Gap numbers refer to that report.
 
@@ -161,6 +169,9 @@ Source: `business/ebda/audits/2026-11-14-smart-layer-worldwide-research.md` (Sal
 ## 8. Project 3 — page-builder AI v2 (own short design later)
 
 Today (audit Part B): restyles, re-orders and hides existing sections with preview + undo; sees only section ids and scalar settings; Gemini flash-lite; 12 operations / 500 characters per ask; 150 requests + 200k tokens per store per day. Target: knows products, categories, brand, look, locale and viewport, and every editor capability; can add/move blocks, link products and collections, set images and links, fix mobile layouts, change the look, create pages; plans multi-step changes and shows them as one preview. Built on the project-2 engine with the Store adapter.
+
+## 8b. Other Ebda products (Ahmad, 2026-11-11)
+Ebda CRM, Ebda ERP, Ebda Ads, Ebda Invites and Ebda Quote Studio are **separate Ebda products** (crm/erp/ads/invite.ebda.app), not features inside Ebda Store. They connect to Store and Chat through shared accounts and data, and each plugs into the same Smart Layer with its own capability registry and help articles when it is built (the capability-registry and help-article guards apply to them from day one).
 
 ## 9. Project 4 — the remaining 18 gaps (own short design later)
 
