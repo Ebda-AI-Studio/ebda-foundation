@@ -22,7 +22,7 @@ describe('resolveControls', () => {
     expect(resolveControls({ storeFlag: 'act', global: { mode: 'answer-only' } }).mode).toBe('answer-only');
     expect(resolveControls({ storeFlag: 'answer-only', global: { mode: 'act' } }).mode).toBe('answer-only');
   });
-  it('shadow forces suggest-style behaviour', () => {
+  it('shadow behaves like suggest mode', () => {
     const c = resolveControls({ storeFlag: 'act', shadow: true });
     expect(c.mode).toBe('suggest');
     expect(c.shadow).toBe(true);
