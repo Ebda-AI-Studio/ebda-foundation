@@ -108,6 +108,7 @@ describe('shared vectors against the vendored code', () => {
     const v = vector('smart-layer-links.json') as { cases: Array<{ in: string; merchant?: string[]; out: string }> };
     const flat = (segs: Array<{ kind: string; text?: string; href?: string }>) => segs.map((s) => (s.kind === 'text' ? s.text : `<${s.href}|${s.text}>`)).join('');
     for (const c of v.cases) expect(flat(allowLinks([{ kind: 'text', text: c.in }], c.merchant ?? []).segments), c.in).toBe(c.out);
+  });
   it('instapay-decision: every vector verdict and reason list (money path, shared by Store and Chat)', async () => {
     const { decideInstapay } = await load('instapay-decision');
     const v = vector('instapay-decision.json') as { base: any; cases: Array<{ name: string; patch: Record<string, any>; verdict: string; reasons: string[] }> };
