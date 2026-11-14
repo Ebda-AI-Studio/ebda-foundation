@@ -33,3 +33,4 @@ drain-ebda-foundation	ops/launchd/com.ebda.os.drain-ebda-foundation.plist
 claude-bundle-sync	ops/launchd/com.ebda.os.claude-bundle-sync.plist
 pr-shepherd	ops/launchd/com.ebda.os.pr-shepherd.plist
 sentry-stale-watch	ops/launchd/com.ebda.os.sentry-stale-watch.plist
+main-first	ops/launchd/com.ebda.os.main-first.plist

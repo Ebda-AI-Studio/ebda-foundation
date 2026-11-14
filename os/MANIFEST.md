@@ -92,7 +92,7 @@ Layering and cost-if-wrong: `docs/rulings/FDN-OS-1.md`.
 
 ## Installer and the launchd set (Task 5, Amendment A)
 
-`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (35 jobs, counted from the file; hands-mac-local is opt-in via the third column `optin=OS_HANDS_LOCAL` and skipped unless `OS_HANDS_LOCAL=1`, ruling INSTALL-1; table below). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
+`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (36 jobs, counted from the file; hands-mac-local is opt-in via the third column `optin=OS_HANDS_LOCAL` and skipped unless `OS_HANDS_LOCAL=1`, ruling INSTALL-1; table below). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
 
 
 ## Old-job dispositions (Task 5 fix round 1)
@@ -109,6 +109,7 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | cf-workers-watch | PORT-BRAIN | cf-workers | HTTP/API poll of Cloudflare Workers state; brain health.ts covers only 2 URLs |
 | ci-alert | REPLACED-BY | cloud/brain/src/relay.ts | CI failures arrive as signed webhooks into the brain relay inbox |
 | ci-runner-guard | KEEP-MAC | ci-runner-guard | reports native Mac runner fleet health from the GitHub API |
+| main-first | KEEP-MAC | main-first | cancels superseded main CI runs + queued PR runs so a starved main CI gets a heavy runner (gh API, local ledger, every 5 min) |
 | claude-home-export | DROP | - | Ahmad 2026-11-09 turned it off: it wrote a 300 MB tgz to the Desktop every day |
 | cost-guard | PORT-BRAIN | cost-guard | billing API poll |
 | dead-gate-detect | KEEP-MAC | dead-gate-detect | inspects locally installed hooks and gates |

@@ -73,6 +73,24 @@ the GitHub API only: `gh api orgs/<org>/actions/runners` per org in `RUNNER_ORGS
 - Host disk >= `HOST_DISK_CRIT_PCT` (94) is a finding, >= `HOST_DISK_WARN_PCT` (88) a note: a full Mac disk fails jobs.
 - Every `gh` call is wall-clocked through `_ut` (lib/os-state.sh): a monitor that can block on what it monitors goes
   quiet, and quiet reads as healthy.
+
+## Main-first CI (starved main run)
+GitHub does not schedule self-hosted jobs FIFO across runs, so many builder PRs can hold both heavy runners
+(`self-hosted` + `ebda-mac`) while the main-branch CI run sits `queued` for hours. A red/pending main stops the store
+merge drain (only fixes-main PRs merge), so every other approved PR stalls. Measured 3x on 2026-11-14.
+
+`ops/main-first.sh` (launchd `com.ebda.os.main-first`, every 5 min; `--dry-run` supported; log
+`~/Library/Logs/ebda-main-first.log`; ledger `~/.whisky-os-state/main-first/`) automates the controller's manual fix,
+per repo in `MAIN_FIRST_REPOS` (default ebda-store, ebda-whatsapp, ebda-foundation). When the NEWEST main `CI` run is
+queued/in_progress and one of its jobs has been queued longer than `MAIN_FIRST_MIN` (10) minutes:
+1. cancel older main CI runs whose head is an ancestor of the newest main head (compare API);
+2. cancel QUEUED `pull_request` runs with a queued job asking for `MAIN_FIRST_LABEL` (`ebda-mac`) - never in_progress
+   runs, never a branch in `MAIN_FIRST_ALLOW_BRANCHES`, never a PR labelled `fixes-main`; one PR comment per head;
+3. when the newest main CI run completes `success`, re-request each cancelled run once (approved PRs first, oldest
+   approval first, `MAIN_FIRST_RERUN_CAP` (2) per tick); a closed PR or a moved head is dropped (the push already
+   started a fresh run); ledger entries expire after 24 h. A red main re-runs nothing.
+All reads happen before any cancel; a 5xx/504 or unparsable response skips the repo for that tick. Tests:
+`ops/tests/main-first.test.sh` (fake `gh`).
 The guard only REPORTS; it never starts, stops or rebuilds anything. The runners are launchd services on the Mac
 (`actions.runner.<org>.<name>`): restart one with `launchctl kickstart -k gui/$(id -u)/actions.runner.<org>.<name>`.
 It does not flip routing variables: routing is the owner's `EBDA_RUNS_ON` decision.
