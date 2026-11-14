@@ -11,6 +11,15 @@ useDefault = true
 description = "test fixtures that look like secrets (not credentials)"
 regexTarget = "line"
 regexes = [
+  # vectors/smart-layer-secrets.json: the Smart Layer secrets detector's own test inputs (pr 74). All fake: AWS's documented example key,
+  # the jwt.io sample token, and obviously synthetic abc/123 strings. Allowlisted by literal value so a REAL secret in that file still fails.
+  '''EAAGm0PX4ZCpsBO1234567890abcdefghijKLMNOPqrstuvwxyz''',
+  '''sk-proj-AbCdEfGhIjKlMnOpQrStUv123456''',
+  '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk''',
+  '''abcDEF1234567890abcdef1234567890abcdef12''',
+  '''9f8e7d6c5b4a39281706''',
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''ghp_abcdefghijklmnopqrstuvwxyz0123456789''',
   # os/cloud/brain/test/cost-abuse.test.ts: the PEM wrapper around an RSA key generated AT RUNTIME by the test (crypto.subtle.generateKey); nothing is committed.
   '''const pem = `-----BEGIN PRIVATE KEY-----''',
   # os/cloud/hands/test/diffcheck.test.mjs: the input of the secret-scanner's own unit test (an obviously fake 'abc...xyz123456' key).
