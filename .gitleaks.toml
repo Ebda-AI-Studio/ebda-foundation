@@ -3,12 +3,15 @@
 #
 # RULE: only add PROVEN test or example values here, never silence a real secret. Real credentials are injected at runtime (Worker secrets, the
 # macOS Keychain) and never appear as literals in this tree.
+#
+# FORMAT: keep the single legacy `[allowlist]` table. CI pins gitleaks 8.21.2 (.github/workflows/gitleaks.yml), which does not read the newer
+# array-of-tables form and silently ignores it (pr 74: the newer form made CI flag the old fixtures again). Checked with 8.21.2 and 8.30.1.
 
 [extend]
 useDefault = true
 
-[[allowlists]]
-description = "test fixtures that look like secrets (not credentials)"
+[allowlist]
+description = "test fixtures that look like secrets (not credentials) + two pr 74 history commits"
 regexTarget = "line"
 regexes = [
   # os/cloud/brain/test/cost-abuse.test.ts: the PEM wrapper around an RSA key generated AT RUNTIME by the test (crypto.subtle.generateKey); nothing is committed.
@@ -18,12 +21,8 @@ regexes = [
   # os/ops/lib/__tests__/keychain.test.sh: hex-encodes the PEM header TEXT only (no key material) to test the decoder. The pattern stops before the trailing dashes because a TOML literal string cannot end in a quote.
   '''hex '-----BEGIN PRIVATE KEY''',
 ]
-
-# pr 74 history only: the first two commits of the Smart Layer secrets-detector vectors held the fake credentials as contiguous literals (fixed
-# in a later commit: the vectors are now stored split, so the CURRENT tree needs no allowlist). The PR scan walks every commit in base..head, so
-# these two immutable commits are allowlisted by SHA (their only findings are in that one file). It deliberately has NO path rule: a path rule
-# makes `gitleaks dir` skip the file altogether (checked on v8.30.1), which would hide a real token committed there later. A squash merge
-# leaves these two entries dead, which is harmless.
-[[allowlists]]
-description = "pr 74 history: split-vector fix landed after these two commits"
+# pr 74 history only: the first two commits of the Smart Layer secrets-detector vectors held FAKE credentials as contiguous literals (fixed in
+# a later commit: the vectors are now stored split, so the current tree needs no allowlist). The PR scan walks every commit in base..head, so
+# these two immutable commits are allowlisted by SHA (their only findings are in that one file). No path rule on purpose: a path rule makes
+# gitleaks skip the file altogether, which would hide a real token committed there later. A squash merge leaves these entries dead (harmless).
 commits = ["8fde10f18ed8368b38685f1b31dc7d1d824235b4", "bb66fa3d4d172111fd70d0664163cc64acc083ef"]
