@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, cpSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 // @ts-expect-error plain .mjs without types
@@ -56,6 +56,23 @@ describe('ebda-foundation sync/check', () => {
   it('a refused dirty foundation checkout', () => {
     appendFileSync(join(src, 'packages/foundation/src/phone.ts'), '\n');
     expect(() => sync({ target, dir: 'v', parity: 'p.test.ts', root: src })).toThrow(/uncommitted/);
+  });
+});
+
+describe('peer dependency check (vendored code imports zod)', () => {
+  it('check names a product whose package.json does not declare zod at the pinned version', () => {
+    const src = fixtureFoundation();
+    const t = mkdtempSync(join(tmpdir(), 'fnd-peer-'));
+    sync({ target: t, dir: 'vendor/foundation', parity: 'test/foundation-parity.test.ts', root: src });
+    writeFileSync(join(t, 'package.json'), JSON.stringify({ name: 'p', devDependencies: {} }));
+    expect(check(t).join('\n')).toMatch(/peer dependency zod@4\.6\.7 is not declared/);
+    writeFileSync(join(t, 'package.json'), JSON.stringify({ name: 'p', devDependencies: { zod: '^4.6.7' } }));
+    expect(check(t).join('\n')).toMatch(/found \^4\.6\.7/);
+    writeFileSync(join(t, 'package.json'), JSON.stringify({ name: 'p', dependencies: { zod: '4.6.7' } }));
+    expect(check(t)).toEqual([]);
+  });
+  it('the parity template carries the same check', () => {
+    expect(readFileSync(join(ROOT, 'parity/foundation-parity.test.ts'), 'utf8')).toMatch(/peer dependencies are declared/);
   });
 });
 
