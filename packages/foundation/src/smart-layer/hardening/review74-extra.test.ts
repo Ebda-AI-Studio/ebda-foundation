@@ -78,6 +78,19 @@ describe('H1 registry is the source of truth', () => {
   });
 });
 
+describe('H1 confirm path re-checks the registry at apply time', () => {
+  it('a confirm approval issued before the capability was forbidden applies nothing and reports forbidden', async () => {
+    const f = fakeAdapter();
+    const ctx = f.ctx();
+    const { record } = await createPreviewRecord(f.adapter, ctx, f.tool('delete_product'), { productId: 'p2' }, 't');
+    const { issueApproval } = await import('../exec/approval');
+    const { approvalId, token } = await issueApproval(f.adapter, ctx, record);
+    withCaps(f, (c) => (c.id === 'catalog.delete' ? { ...c, policy: 'forbidden' } : c));
+    expect((await confirmApproval(f.adapter, ctx, approvalId, token)).status).toBe('forbidden');
+    expect(f.state.products.has('p2')).toBe(true);
+  });
+});
+
 describe('M1/M2 undo', () => {
   it('a failed inverse rolls the claim back so undo can be retried', async () => {
     const f = fakeAdapter();
