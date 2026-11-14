@@ -68,7 +68,9 @@ const row = (...c) => `| ${c.join(' | ')} |`;
 const tbl = (head, rowsArr) => [row(...head), row(...head.map(() => '---')), ...rowsArr].join('\n');
 const md = [];
 md.push(`# Workers AI bake-off, deterministic results (${date})`, '');
-md.push(`Models ${res.models.length}, prompts ${prompts.length}, k=${res.k}, graded rows ${answers.length}, errors ${res.errors}, spend ~$${res.spendUsd} (${res.neurons} neurons). Subjective quality (human labels) is NOT in these numbers: see review-30.`, '');
+const runsOf = (m) => Math.floor(answers.filter((r) => r.model === m).length / prompts.length); // full passes
+const runsNote = [...new Set(res.models.map(runsOf))].sort().map((k) => `${res.models.filter((m) => runsOf(m) === k).length} models with ${k} full pass(es)`).join(', ');
+md.push(`Models ${res.models.length} (${runsNote}; the slow ones, qwen3.8-27b p95 over a minute, glm-4.7-flash, gemma-4, llama-4-scout, were capped at one full pass for time and cost, so their run stability is n/a or partial), prompts ${prompts.length}, graded rows ${answers.length}, transient errors recorded ${res.errors} (HTTP 429s, all re-run and filled: no prompt is missing), spend ~$${res.spendUsd} (${res.neurons} neurons). Subjective quality (human labels) is NOT in these numbers: see review-30.`, '');
 md.push('## Per job (deterministic, 0-100%)', '');
 md.push('answer = no-tool-call + register + grounded facts; plan = tool name + argument subset; template = category/language args + rejection facts; safety = refuse / hit-confirm / no secret echo.', '');
 md.push(tbl(['model', 'answer', 'plan', 'template', 'safety', 'overall', 'judge (advisory)'], ranked.map((s) => row(short(s.model), pct(s.job.answer), pct(s.job.plan), pct(s.job.template), pct(s.job.safety), pct(s.overall), pct(s.judge)))), '');
@@ -80,7 +82,8 @@ md.push('## Deterministic leaders', '', ...['answer', 'plan', 'template', 'safet
 writeFileSync(new URL(`results/${date}.md`, here), md.join('\n'));
 
 // ---- review-30: anonymised side-by-side for the top 3 models
-const top = ranked.filter((s) => s.n >= 0.9 * prompts.length).slice(0, 3).map((s) => s.model);
+// eligible for a live chat turn: a full pass and p95 latency under 20 s (qwen3.8-27b p95 is ~64 s)
+const top = ranked.filter((s) => s.n >= 0.9 * prompts.length && s.p95 <= 20000).slice(0, 3).map((s) => s.model);
 const REVIEW = ['a-ar-02', 'a-ar-07', 'a-ar-12', 'a-ar-19', 'a-ar-22', 'a-ar-26', 'p-ar-04', 'p-ar-08', 't-ar-02', 't-ar-05', 't-ar-06', 's-ar-02', 's-ar-05', 'a-fr-01', 'a-fr-03', 'a-fr-06', 'a-fr-11', 'a-fr-13', 'a-fr-18', 'p-fr-06', 'p-fr-13', 't-fr-02', 't-fr-05', 's-fr-01', 's-fr-04', 'a-en-05', 'a-en-12', 'p-en-07', 't-en-01', 's-en-02'];
 const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 const perm = (id) => { const a = [0, 1, 2]; let h = hash(id); for (let i = 2; i > 0; i--) { h = (h * 1103515245 + 12345) >>> 0; const j = h % (i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
