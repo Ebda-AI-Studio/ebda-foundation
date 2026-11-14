@@ -33,13 +33,18 @@ export function firstPaymentCapMinor(a: { monthlyPriceMinor: number | null }): n
   return typeof p === 'number' && Number.isSafeInteger(p) && p > 0 ? p : 0;
 }
 
-export const CLEAN_AFTER_MS = 24 * 3600_000;
-/** Human-confirmed: clean at once unless reverted. Auto-confirmed: clean only after 24 h without a revert (two fast uploads cannot skip the cap). */
-export function isCleanPayment(p: { confirmedBy: 'human' | 'auto'; confirmedAt: number; revertedAt: number | null }, now: number): boolean {
+/** INSTAPAY-CLEAN-1 (Ahmad: "so no one waits 48 hours"). Human-confirmed: clean at once unless reverted. Auto-confirmed: clean once it has appeared in a digest
+ *  that was actually SENT to Ahmad (`digestSentAt`, stamped when the bridge confirmed the send; not older than the payment, not in the future) and has not
+ *  been reverted. No extra waiting window. Until that digest is sent the payment is NOT clean, so a merchant's next payment above the first-payment cap
+ *  waits for Ahmad instead of auto-confirming. */
+export function isCleanPayment(p: { confirmedBy: 'human' | 'auto'; confirmedAt: number; digestSentAt: number | null; revertedAt: number | null }, now: number): boolean {
   if (p.revertedAt !== null) return false;
   if (p.confirmedBy === 'human') return true;
   if (p.confirmedBy !== 'auto') return false;
-  return now - p.confirmedAt >= CLEAN_AFTER_MS;
+  const d = p.digestSentAt;
+  if (typeof d !== 'number' || !Number.isFinite(d) || !Number.isFinite(p.confirmedAt) || !Number.isFinite(now)) return false;
+  if (d < p.confirmedAt) return false; // a digest older than the payment cannot have listed it
+  return d <= now; // a digest stamped in the future was not sent yet
 }
 
 /** Credits a revert removes for ONE payment (top-up and package credits alike): what that payment granted and nobody consumed, never more than

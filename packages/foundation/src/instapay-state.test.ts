@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoConfirmKey, CLEAN_AFTER_MS, firstPaymentCapMinor, isCleanPayment, nextAutoState, REVERT_GRACE_MS, revertGraceUntil, revertKey, unusedCreditsToRemove, type AutoEvent, type AutoState } from './instapay-state';
+import { autoConfirmKey, firstPaymentCapMinor, isCleanPayment, nextAutoState, REVERT_GRACE_MS, revertGraceUntil, revertKey, unusedCreditsToRemove, type AutoEvent, type AutoState } from './instapay-state';
 
 const STATES: AutoState[] = ['pending_decision', 'auto_confirmed', 'needs_human', 'reverted', 'failed'];
 const EVENTS: AutoEvent[] = ['decide_auto', 'decide_human', 'revert', 'activation_failed'];
@@ -42,19 +42,43 @@ describe('keys, grace, cap', () => {
   });
 });
 
-describe('isCleanPayment', () => {
+describe('isCleanPayment (INSTAPAY-CLEAN-1: clean once it appeared in a SENT digest and was not reverted)', () => {
   const T = 1_000_000;
-  it('human is clean at once', () => expect(isCleanPayment({ confirmedBy: 'human', confirmedAt: T, revertedAt: null }, T)).toBe(true));
-  it('auto is not clean until 24 h: boundaries', () => {
-    expect(CLEAN_AFTER_MS).toBe(86_400_000);
-    expect(isCleanPayment({ confirmedBy: 'auto', confirmedAt: T, revertedAt: null }, T + CLEAN_AFTER_MS - 1)).toBe(false);
-    expect(isCleanPayment({ confirmedBy: 'auto', confirmedAt: T, revertedAt: null }, T + CLEAN_AFTER_MS)).toBe(true);
+  const auto = (digestSentAt: number | null, revertedAt: number | null = null) => ({ confirmedBy: 'auto' as const, confirmedAt: T, digestSentAt, revertedAt });
+  it('human is clean at once unless reverted', () => {
+    expect(isCleanPayment({ confirmedBy: 'human', confirmedAt: T, digestSentAt: null, revertedAt: null }, T)).toBe(true);
+    expect(isCleanPayment({ confirmedBy: 'human', confirmedAt: T, digestSentAt: null, revertedAt: T + 1 }, T + 1e9)).toBe(false);
   });
-  it('a reverted payment is never clean, even a human one, even after 24 h', () => {
-    expect(isCleanPayment({ confirmedBy: 'human', confirmedAt: T, revertedAt: T + 1 }, T + 10 * CLEAN_AFTER_MS)).toBe(false);
-    expect(isCleanPayment({ confirmedBy: 'auto', confirmedAt: T, revertedAt: T + 1 }, T + 10 * CLEAN_AFTER_MS)).toBe(false);
+  it('an auto payment never in a digest is NEVER clean, however old (the second payment waits for the digest)', () => {
+    expect(isCleanPayment(auto(null), T)).toBe(false);
+    expect(isCleanPayment(auto(null), T + 1e12)).toBe(false);
   });
-  it('unknown confirmer is not clean', () => expect(isCleanPayment({ confirmedBy: 'x' as any, confirmedAt: T, revertedAt: null }, T + 10 * CLEAN_AFTER_MS)).toBe(false));
+  it('clean the moment the digest was sent: no extra waiting window', () => {
+    const D = T + 3600_000;
+    expect(isCleanPayment(auto(D), D)).toBe(true);
+    expect(isCleanPayment(auto(D), D + 1)).toBe(true);
+    expect(isCleanPayment(auto(D), D - 1)).toBe(false); // evaluated before the digest was sent
+  });
+  it('a digest stamped BEFORE the confirmation cannot have contained the payment: not clean', () => {
+    expect(isCleanPayment(auto(T - 1), T + 1e9)).toBe(false);
+    expect(isCleanPayment(auto(T), T)).toBe(true);
+  });
+  it('a revert makes it permanently not clean, whether or not a digest was sent', () => {
+    expect(isCleanPayment(auto(T + 10, T + 20), T + 1e9)).toBe(false);
+    expect(isCleanPayment(auto(null, T + 20), T + 1e9)).toBe(false);
+  });
+  it('the review scenario: confirmed just after the day digest, 24 h later it is still NOT clean until the NEXT digest goes out', () => {
+    const day1Digest = T - 1000; // sent before the payment: cannot list it
+    expect(isCleanPayment(auto(day1Digest), T + 24 * 3600_000)).toBe(false);
+    const day2Digest = T + 23 * 3600_000;
+    expect(isCleanPayment(auto(day2Digest), day2Digest)).toBe(true);
+  });
+  it('garbage never counts as clean', () => {
+    for (const d of [NaN, Infinity, '5' as any, undefined as any]) expect(isCleanPayment(auto(d), T + 1e9), String(d)).toBe(false);
+    expect(isCleanPayment({ confirmedBy: 'x' as any, confirmedAt: T, digestSentAt: T, revertedAt: null }, T + 1e9)).toBe(false);
+    expect(isCleanPayment({ ...auto(T), revertedAt: undefined as any }, T + 1e9)).toBe(false);
+    expect(isCleanPayment(auto(T), NaN)).toBe(false);
+  });
 });
 
 describe('unusedCreditsToRemove (revert never claws back consumed credits, never goes negative)', () => {
