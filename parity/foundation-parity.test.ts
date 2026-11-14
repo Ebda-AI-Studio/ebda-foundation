@@ -89,4 +89,10 @@ describe('shared vectors against the vendored code', () => {
     expect(v.cases.length).toBeGreaterThanOrEqual(15);
     for (const c of v.cases) expect(detectSecrets(c.in), JSON.stringify(c.in)).toEqual({ text: c.out, found: c.found });
   });
+  it('smart-layer mask: every case', async () => {
+    const { maskForModel } = await load('smart-layer/rails/mask');
+    const v = vector('smart-layer-mask.json') as { cases: Array<{ in: string; out: string }> };
+    expect(v.cases.length).toBeGreaterThanOrEqual(10);
+    for (const c of v.cases) expect(maskForModel(c.in), JSON.stringify(c.in)).toBe(c.out);
+  });
 });
