@@ -1,6 +1,6 @@
 {
   "name": "@ebda/foundation",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "foundationCommit": "0000000000000000000000000000000000000000",
   "private": true,
   "license": "UNLICENSED",
@@ -8,10 +8,20 @@
   "exports": {
     "./brand": "./src/brand.ts",
     "./buyer": "./src/buyer.ts",
+    "./capability": "./src/capability.ts",
+    "./capability-coverage": "./src/capability-coverage.ts",
+    "./capability-registry": "./src/capability-registry.ts",
+    "./help-article": "./src/help-article.ts",
     "./phone": "./src/phone.ts",
+    "./ratchet": "./src/ratchet.ts",
+    "./self-service-routes": "./src/self-service-routes.ts",
     "./slugs": "./src/slugs.ts",
+    "./smart-layer-bypass": "./src/smart-layer-bypass.ts",
     "./text": "./src/text.ts",
     "./tokens": "./src/tokens.ts",
     "./tokens.css": "./src/tokens.css"
+  },
+  "peerDependencies": {
+    "zod": "4.6.7"
   }
 }
