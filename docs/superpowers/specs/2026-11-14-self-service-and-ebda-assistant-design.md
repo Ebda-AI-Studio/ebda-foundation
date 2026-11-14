@@ -1,4 +1,4 @@
-# Self-service + the Ebda assistant — design
+# Self-service + the Ebda AI Smart Layer — design
 
 - **Date:** 2026-11-14
 - **Owner:** Ahmad Sharaf (Ebda AI Studio)
@@ -46,6 +46,10 @@ Today that is not true: 22 places need staff or have no merchant screen (4 block
 3. Anything touching money, deleting data or sending messages to customers needs an explicit "yes".
 4. It never touches super-admin powers.
 
+**Big changes also confirm (Ahmad, 2026-11-14):** besides money, deletion and customer messages, an explicit "yes" is required for any change touching many items (default threshold: more than 20), anything visible at checkout, and any price change. Small single edits stay preview + undo.
+
+**Overwriting merchant content (Ahmad, 2026-11-14), ruling on NEVER-OVERWRITE-1:** background AI (autofill, nightly jobs, anything with no merchant present) still never overwrites merchant-written content; when the merchant ASKS the assistant or the page-builder AI to change something, it may, with preview + undo.
+
 Every action the assistant can take is declared with exactly one policy: `free` (read-only or harmless) · `preview` (show the change, apply on accept, undo available) · `confirm` (preview + an explicit "yes" step; money, deletion, customer messaging) · `forbidden` (never exposed). The policy lives next to the action definition, not in the prompt.
 
 ## 5. Approaches (chosen: A)
@@ -58,7 +62,9 @@ Every action the assistant can take is declared with exactly one policy: `free` 
 
 Ahmad chose A ("a is then"), with C's tools layer as the actions part.
 
-## 6. Project 2 — the Ebda assistant (engine in ebda-foundation)
+## 6. Project 2 — the Ebda AI Smart Layer (engine in ebda-foundation)
+
+Ahmad, 2026-11-14: "ebda ai studio is ai native and ai first and fully self service and ai is what drive it and we control the layer of inputs and outputs of this ai and this is the ebda ai smart layer". The engine below is the **Ebda AI Smart Layer**: every AI input and output in every Ebda product passes through it.
 
 ### 6.1 Shape
 A shared TypeScript module in `@ebda/foundation` (new export, e.g. `./assistant`), runtime-agnostic (Cloudflare Workers), with product adapters:
@@ -68,7 +74,9 @@ A shared TypeScript module in `@ebda/foundation` (new export, e.g. `./assistant`
 - **UI**: a side panel in Store admin and in the Ebda Chat web app (same component contract, product styling via the Ebda design tokens; RTL first). Preview cards with Apply / Undo; a distinct confirm step for `confirm` actions; "show me where" deep links into the right screen.
 
 ### 6.2 Models
-Workers AI is the default (Ahmad: "we're using Cloudflare AI, Workers AI"). The engine routes per job: chat and "how do I" on the default Workers AI model; tasks that need stronger reasoning (complex page-builder plans, template compliance checks) may route to a stronger model. Model ids are configuration, never hard-coded; the Gemini alias rule (`*-latest`) applies wherever Gemini is used.
+Workers AI is the platform (Ahmad: "we're using Cloudflare AI, Workers AI"). The engine routes per job between Workers AI models: chat and "how do I" on the bake-off winner; heavier reasoning (complex page-builder plans, template compliance checks) on the strongest Workers AI model that wins those tasks. Model ids are configuration, never hard-coded; the Gemini alias rule (`*-latest`) applies wherever Gemini is used.
+
+**Model decision (Ahmad, 2026-11-14: "2 and do the test in 1"):** Workers AI only, no outside providers. Before building, run a bake-off of ~150 real Egyptian Arabic / Franco / English merchant prompts across the available Workers AI models (graded on correctness, Egyptian register, tool-calling reliability, latency, cost); the winner becomes the default per job (chat, tool planning, template compliance). Re-run the bake-off when Cloudflare adds models.
 
 ### 6.3 Acting as the merchant
 Actions run with the merchant's own session and permissions: the assistant can never do more than the signed-in user can (team roles included). The audit trail records `actor = user X via assistant` for every applied action, with the preview that was shown.
@@ -104,13 +112,43 @@ Ahmad: "there is things are not built yet so they must be counted as well so thi
 - **Enforced in ebda-foundation:** a CI guard fails any PR that adds a merchant page, route or action without a registry entry, or a `live` entry without a help article and example questions. So no future feature can ship without the assistant knowing it. The registry also feeds the help index, the golden eval set (every `preview`/`confirm` entry gets a must-confirm test) and the self-service guard.
 - The first registry is generated from the full Store and Chat capability catalogues (2026-11-14 audits: `business/ebda/audits/2026-11-14-store-capability-catalogue.*` and `...-chat-capability-catalogue.*`, in Ahmad's local business folder).
 
+### 6.9 The Smart Layer pipeline and hardening (worldwide research, 2026-11-14)
+Source: `business/ebda/audits/2026-11-14-smart-layer-worldwide-research.md` (Salesforce Trust Layer, NeMo rails, Shopify Sidekick, Intercom Fin, Meta Business AI, Amazon seller agents, Gorgias, Cloudflare AI Gateway/Agents SDK, MCP; failures: Air Canada, Chevrolet, Cursor, EchoLeak). Gap numbers refer to that report.
+
+**One ordered pipeline (gap 1).** Every turn runs the same stages, in this order, in the engine (adapters supply data, never their own variants):
+- *Input rails:* (1) secrets detector: a pasted token/key/password is redacted and the merchant is sent to the secure screen; the assistant never asks for secrets in chat (gap 19); (2) PII masking; (3) scope + abuse check: store-related requests only, polite refusal otherwise, with Ebda's own Arabic + Franco safety classifier, because Cloudflare Guardrails / Llama Guard don't support Arabic or streaming (gap 2); (4) untrusted text (customer messages, product text, imported pages, help, merchant FAQ) enters fenced as data.
+- *Planning rails:* (5) tool retrieval: only the tools relevant to this turn (≤ ~15) are exposed, chosen from the capability registry, never the whole registry (gap 7); (6) per-turn budget: max tool calls, max tokens, max turns per conversation (gap 11).
+- *Execution rails:* (7) Zod validation of every tool argument plus an existence + ownership check of every referenced id (gap 22); (8) the policy gate (section 4) with the **big-change triggers** decided in section 4 (gap 8); (9) one durable approval object for `confirm`: single-use, bound to the payload hash, expires after 15 minutes and re-previews; decision, decider, time and reason are stored, including rejects and expiries (gap 12).
+- *Output rails:* (10) binding-claim check: plan prices, limits, refund/billing terms, legal text and policies are quoted only from typed sources (plan catalogue, store settings, legal pages), never paraphrased by the model; the Air Canada/Cursor failure (gap 3); (11) UI-truth check: every screen name, button label and `appPath` in an answer must exist in the capability registry, otherwise it's removed (gap 4); (12) link + image allowlist: only Ebda domains and the merchant's own domains render, which closes markdown/image exfiltration (gap 5); (13) Egyptian-Arabic register check.
+- *Audit:* masked prompt + masked output + rail scores + preview + decision + release id per row, retention-bounded and covered by erasure; no raw customer PII (gap 18).
+
+**Undo classes (gap 13).** Each action declares `reversible` (undo button), `compensating` (undo = an opposite action, e.g. re-enable a product) or `irreversible` (a sent WhatsApp message, a template submitted to Meta, a payment). Irreversible actions say so in the preview and are always `confirm`.
+
+**InstaPay hardening (gap 6).** The model only extracts fields (amount, recipient handle, date, reference) into a typed object; plain code decides. Text inside the receipt image is never an instruction.
+
+**Rollout controls (gap 10).** Per-store flag, suggest-only mode (the assistant proposes, a person clicks), shadow mode on the golden set, and a global kill switch, all changeable without a deploy.
+
+**Versioning (gap 24).** Prompts, tool descriptions and policies are versioned config; every journal row stores the release id, so a bad release can be rolled back.
+
+**Handoff rules (gap 17).** Triggers: low retrieval confidence, repeated failure, frustration signals, a forbidden request, or the merchant asking for a person. After handoff the assistant goes quiet on that thread until the merchant returns.
+
+**Help freshness (gap 15).** Each registry entry carries a capability version; a help article older than its capability, or two articles contradicting each other, is flagged in the weekly report and blocks the entry from `live` once stale past a threshold.
+
+**Quality metrics (gap 16), defined now:** answer helpfulness (thumb + calibrated judge), task completion (checked on the final store state, not the transcript), undo rate, confirm-reject rate, handoff rate, unanswered rate, cost per completed task.
+
+**Evaluation contract (gap 9).** Golden sets graded on the final state, a judge calibrated against human labels (agreement measured), repeated runs per task (consistency, pass^k), and a release gate: a change to the model, prompts, help or tools can't ship if the golden score drops. After launch, sampled masked conversations feed a growing ground-truth set (gap 23, later).
+
+**Cloudflare Agents SDK (gap 21), Claude's call:** keep the pure-TypeScript engine (§10b.1); where an adapter already owns a Durable Object, it may use the Agents SDK's approval primitives underneath the engine's approval object. Recorded as a ruling.
+
+**Later (gap 20):** an optional per-store autonomy setting (always-confirm / default) and a designated approver role.
+
 ## 7. Project 1 — self-service standard + the 4 blockers
 
 1. **Standard** `os/standard/self-service.md` in ebda-foundation: the principle, the action boundary, and the rule "every merchant capability has a merchant screen; super-admin-only needs a written reason (abuse, legal, money dispute, platform-wide config, critical incident)". Plus a guard that fails CI when a new super-admin/operator-only route has no reason annotation (exact mechanism left to the builder; it must run in Store and Chat CI).
 2. **Chat templates screen (blocker #1):** merchant creates/edits a template for their own WABA, submits, sees Meta's status and rejection reason, resubmits, and uses approved templates in campaigns. Fix help doc 04 to match.
 3. **Starter templates on connect (blocker #2):** when a merchant connects a number, install the default template set and sync existing templates from Meta automatically.
 4. **InstaPay auto-confirm (blockers #3 Store, #4 Chat)** — Ahmad: "yes" to AI confirming when the receipt matches:
-   - The AI reads the receipt (existing receipt reader): amount, Ebda's InstaPay handle as recipient, date within 48 h, a reference and image never seen before (duplicate check across all merchants).
+   - The AI reads the receipt (existing receipt reader) and only EXTRACTS fields; plain code decides (§6.9): amount, Ebda's InstaPay handle as recipient, date within 48 h, a reference and image never seen before (duplicate check across all merchants).
    - All match → the plan / top-up activates instantly. Anything off → waits for Ahmad.
    - Guards: a cap on a merchant's first auto-confirmed payment (about one month of their plan); the duplicate-receipt check.
    - Ahmad gets one daily digest of auto-confirmed payments with a one-tap "not received" that reverts the activation.
