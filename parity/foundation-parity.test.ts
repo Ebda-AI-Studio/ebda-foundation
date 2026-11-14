@@ -95,4 +95,11 @@ describe('shared vectors against the vendored code', () => {
     expect(v.cases.length).toBeGreaterThanOrEqual(10);
     for (const c of v.cases) expect(maskForModel(c.in), JSON.stringify(c.in)).toBe(c.out);
   });
+  it('smart-layer scope: every case (lexicon only)', async () => {
+    const { scopeCheck } = await load('smart-layer/rails/scope');
+    const { francoToArabic } = await load('smart-layer/rails/franco');
+    const v = vector('smart-layer-scope.json') as { franco: Array<{ in: string; has: string }>; cases: Array<{ in: string; verdict: string }> };
+    for (const c of v.franco) expect(francoToArabic(c.in)).toContain(c.has);
+    for (const c of v.cases) expect((await scopeCheck(c.in)).verdict, c.in).toBe(c.verdict);
+  });
 });
