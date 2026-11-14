@@ -65,6 +65,7 @@ function keywordRanges(text: string, out: Range[]): void {
       if (!tok) break;
       const raw = tok[0];
       const t = raw.replace(/[.,،؛]+$/, '');
+      if (/[:=]$/.test(t) && FILLER.has(t.slice(0, -1).toLowerCase())) { sep = true; i += raw.length; continue; } // "ده:"
       if (FILLER.has(t.toLowerCase())) { i += raw.length; continue; }
       let ok: boolean;
       if (g.otp) ok = /^[0-9٠-٩]{4,8}$/u.test(t);
