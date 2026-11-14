@@ -94,6 +94,26 @@ describe('seed: chat', () => {
   });
 });
 
+describe('seed input validation', () => {
+  const cat = (rows: unknown[]) => {
+    const f = join(mkdtempSync(join(tmpdir(), 'cap-cat-')), 'c.json');
+    writeFileSync(f, JSON.stringify(rows));
+    return f;
+  };
+  const base = JSON.parse(readFileSync(join(FX, 'store-mini.json'), 'utf8'))[0];
+  const go = (rows: unknown[]) => { const out = mkdtempSync(join(tmpdir(), 'cap-seed-')); return { out, call: () => seed({ catalogue: cat(rows), product: 'store', out, today: '2026-11-14' }) }; };
+  it('throws on a duplicate id and writes nothing', () => {
+    const { out, call } = go([base, { ...base }]);
+    expect(call).toThrow(/duplicate id onboarding\.signup/);
+    expect(readdirSync(out)).toEqual([]);
+  });
+  it.each(['../evil', 'a/b.c', 'Bad Id', 'nodot', ''])('throws on a non path-safe id %j', (id) => {
+    const { out, call } = go([{ ...base, id }]);
+    expect(call).toThrow(/id/);
+    expect(readdirSync(out)).toEqual([]);
+  });
+});
+
 describe('mappers', () => {
   it('parseRoles keywords', () => {
     expect(parseRoles('any signed-in merchant user').roles).toEqual(['owner', 'staff']);
