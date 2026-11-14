@@ -19,10 +19,11 @@ const CF_LED = /(?:cloudflare|\bcf\b)[^\n]{0,24}?token\s*[:=]\s*([A-Za-z0-9_-]{3
 
 const NB = '(?<![\\p{L}\\p{N}])';
 const NA = '(?![\\p{L}\\p{N}])';
-const PASSWORD_KW = `(?:password|passwd|passcode|pass|pwd|كلمة\\s*(?:ال)?(?:سر|مرور)|كلمه\\s*(?:ال)?(?:سر|مرور)|(?:ال)?باسو(?:و)?رد|الرقم\\s*السري|el\\s*password|el\\s*pass)`;
-const OTP_KW = `(?:otp|كود\\s*(?:ال)?تحقق|كود\\s*التفعيل|verification\\s*code|el\\s*code)`;
-const API_KW = `(?:api[\\s_-]*key|apikey|secret|token|مفتاح\\s*(?:ال)?\\p{L}*|(?:ال)?توكن)`;
-const KEYWORD = new RegExp(`${NB}(?:(?<pw>${PASSWORD_KW})|(?<otp>${OTP_KW})|(?<api>${API_KW}))${NA}`, 'giu');
+// Latin keywords need a word boundary on the left; Arabic ones do not (و / ب / ل / ال attach to the word: "والباسورد", "بالباسورد").
+const PASSWORD_KW = `(?:${NB}(?:password|passwd|passcode|pass|pwd|el\\s*password|el\\s*pass)|كلمة\\s*(?:ال)?(?:سر|مرور)|كلمه\\s*(?:ال)?(?:سر|مرور)|(?:ال)?باسو(?:و)?رد|الرقم\\s*السري)`;
+const OTP_KW = `(?:${NB}(?:otp|verification\\s*code|el\\s*code)|كود\\s*(?:ال)?تحقق|كود\\s*التفعيل)`;
+const API_KW = `(?:${NB}(?:api[\\s_-]*key|apikey|secret|token)|مفتاح\\s*(?:ال)?\\p{L}*|(?:ال)?توكن)`;
+const KEYWORD = new RegExp(`(?:(?<pw>${PASSWORD_KW})|(?<otp>${OTP_KW})|(?<api>${API_KW}))${NA}`, 'giu');
 
 /** Words that sit between a keyword and its value ("كلمة السر بتاعتي X", "password is X", "el password beta3y X"). */
 const FILLER = new Set(['بتاعتي', 'بتاعي', 'بتاعتى', 'هي', 'هو', 'هيا', 'ده', 'دي', 'الجديدة', 'الجديده', 'الحالية', 'اللي', 'وصلني', 'وصلتني', 'is', 'was', 'are', 'my', 'new', 'beta3y', 'beta3ty', 'el', 'اللى', 'هى', '=', ':', 'هيه']);
