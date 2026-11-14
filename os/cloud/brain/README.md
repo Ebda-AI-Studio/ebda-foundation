@@ -7,7 +7,7 @@ It never writes code itself (that is `os/cloud/hands/`, Task 4b) and never calls
 GitHub org webhooks ──► POST /github/webhook ──► KV (Mac fallback, GET /pending)   ┐
 Mac watchers / dream ─► POST /findings ─────────────────────────────────────────────┤
 cron */5  CI inbox, prod health, questions, urgent dispatch, self-check            ├─► BrainDO (SQLite)
-cron */15 services, page-load, journey-monitor  ·  :07 advisories + CISA KEV, deploy-drift,│
+cron */15 services (page-load + journey-monitor now gated to hourly)  ·  :07 advisories + CISA KEV, deploy-drift,│
 cron 6 h  cf-workers, sentry-stale, cost-guard, world-watch, dr-drill        pr-shepherd│   findings → classify → jobs
 cron 21:30 UTC  the ONE nightly hands batch                                         │   runs, questions, messages
 cron 05:00 UTC  the ONE daily digest                                                ┘
@@ -29,8 +29,8 @@ validates the JSON ones); the only default is `DR_DRILL_REPO`.
 | Watcher (cron) | Checks | Config (vars / secrets) | Finding keys |
 |---|---|---|---|
 | `services` (15 min) | named Ebda services through `health.ts` `checkOne` (200 with `ok:false` is down); finding after `HEALTH_FAIL_BUDGET` consecutive fails (KV streak), urgent per classifier | `SERVICE_TARGETS` `[{name,url,kind}]` | `services:<name>:down` (`prod-outage` / `money-path-broken`) |
-| `page-load` (15 min) | 3 sequential GETs per page; p50 of TTFB or total over the limit, or 2+ of 3 non-2xx | `PAGE_LOAD_TARGETS` `[{name,url}]`, `PAGE_LOAD_P50_MS` (1500) | `page-load:<name>:slow` / `:unreachable` |
-| `journey-monitor` (15 min) | guest GET journeys (home, product, cart); step fails on non-2xx, timeout or missing `contains` text. Read-only by construction: checkout/payment/order/login paths are refused at parse time | `JOURNEY_CONFIG` `[{name,steps:[{name,url,contains?}]}]` | `journey-monitor:<journey>:failed`, `:config:error` |
+| `page-load` (hourly) | 3 sequential GETs per page; p50 of TTFB or total over the limit, or 2+ of 3 non-2xx | `PAGE_LOAD_TARGETS` `[{name,url}]`, `PAGE_LOAD_P50_MS` (1500) | `page-load:<name>:slow` / `:unreachable` |
+| `journey-monitor` (hourly) | guest GET journeys (home, product, cart); step fails on non-2xx, timeout or missing `contains` text. Read-only by construction: checkout/payment/order/login paths are refused at parse time | `JOURNEY_CONFIG` `[{name,steps:[{name,url,contains?}]}]` | `journey-monitor:<journey>:failed`, `:config:error` |
 | `deploy-drift` (hourly :07) | live `/health` commit vs tip of the branch (GitHub API); drift = differs AND tip older than the grace | `DEPLOY_DRIFT_TARGETS` `[{name,healthUrl,repo,branch?}]`, `DEPLOY_DRIFT_GRACE_MIN` (120), secret `GITHUB_TOKEN` | `deploy-drift:<name>:drifted` |
 | `pr-shepherd` (hourly :07) | open PRs in `OS_ORGS` that are CONFLICTING, have a FAILURE/ERROR check rollup, or sit non-draft without update for `PR_SHEPHERD_STALE_HOURS` | `OS_ORGS`, `PR_SHEPHERD_STALE_HOURS` (24), secret `GITHUB_TOKEN` | `pr:<repo>#<n>:conflicting|failed-checks|waiting` |
 

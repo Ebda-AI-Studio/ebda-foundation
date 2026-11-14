@@ -1,11 +1,11 @@
-// page-load watcher (cron, every 15 min): fetch timing of the key Ebda pages. Three sequential GETs per page; TTFB = time to
+// page-load watcher (cron, HOURLY since 2026-11-14 frugal monitoring; was every 15 min): fetch timing of the key Ebda pages. Three sequential GETs per page; TTFB = time to
 // response headers, total = time until the body is fully read. A page whose p50 (median of 3) TTFB or total exceeds
 // PAGE_LOAD_P50_MS (default 1500) is a finding; a page that does not answer 2xx on a run counts that run as a failure and
 // 2+ failures out of 3 is a finding of its own. Read-only GETs, no cookies.
 import { finding, isHttps, isObj, numVar, parseList, reportUnconfigured, settle, type WatchCtx } from './common';
 
 export const ID = 'page-load';
-export const INTERVAL_MS = 15 * 60 * 1000;
+export const INTERVAL_MS = 60 * 60 * 1000;
 export const RUNS = 3;
 
 export interface PageTarget {

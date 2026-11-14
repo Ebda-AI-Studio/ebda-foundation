@@ -13,8 +13,9 @@ import { sendTelegram } from './telegram';
 export const PROD_WATCH_INTERVAL_MS = 10 * 60_000;
 const STATE_KEY = 'pw:state';
 const LAST_KEY = 'pw:last';
+const PROBE_LAST_PREFIX = 'pw:probe-last:';
 
-interface ProbeCfg { name: string; url: string; expect?: number; contains?: string; fxMaxAgeHours?: number; fxNoDataUntil?: string }
+interface ProbeCfg { name: string; url: string; expect?: number; contains?: string; fxMaxAgeHours?: number; fxNoDataUntil?: string; everyMinutes?: number }
 interface Sink {
   ingestMany(fs: Finding[], now: number): Promise<unknown>;
   reconcileSource(source: string, openKeys: string[], keepPrefixes: string[], now: number, seenAs?: string): Promise<number>;
@@ -49,17 +50,29 @@ export async function runProdWatch(env: Env, sink: Sink, now: number, fetchImpl:
   const last = Number((await env.EVENTS.get(LAST_KEY)) ?? 0);
   if (now - last < PROD_WATCH_INTERVAL_MS * 0.9) return null;
   await env.EVENTS.put(LAST_KEY, String(now));
-  const probes = await Promise.all((cfg.probes as ProbeCfg[]).map((p) => probeOne(p, cfg.timeoutMs ?? 10000, fetchImpl)));
+  // frugal monitoring (Ahmad 2026-11-14): a probe with everyMinutes (the demo storefronts, synthetic page loads) runs on its own slower KV
+  // gate; the host probes stay at 10 min. A skipped probe is UNKNOWN this run (its key is never resolved from a run that did not look).
+  const all = cfg.probes as ProbeCfg[];
+  const due: ProbeCfg[] = [];
+  const skipped: ProbeCfg[] = [];
+  for (const p of all) {
+    if (!p.everyMinutes) { due.push(p); continue; }
+    const lastP = Number((await env.EVENTS.get(`${PROBE_LAST_PREFIX}${p.name}`)) ?? 0);
+    if (now - lastP < p.everyMinutes * 60_000 * 0.9) { skipped.push(p); continue; }
+    await env.EVENTS.put(`${PROBE_LAST_PREFIX}${p.name}`, String(now));
+    due.push(p);
+  }
+  const probes = await Promise.all(due.map((p) => probeOne(p, cfg.timeoutMs ?? 10000, fetchImpl)));
   const state = JSON.parse((await env.EVENTS.get(STATE_KEY)) ?? '{}') as WatchState;
   const pr = evaluateProbeAlerts(probes, state, 2, now);
   // the brain reads no logs: log-rule keys are owned by the GitHub run and never resolved from here
-  const d = decide(pr.alerts, { ...state, streaks: pr.streaks }, now, { unknownPrefixes: LOG_ALERT_PREFIXES, unknownKeys: pr.unknownKeys });
+  const d = decide(pr.alerts, { ...state, streaks: pr.streaks }, now, { unknownPrefixes: LOG_ALERT_PREFIXES, unknownKeys: [...pr.unknownKeys, ...skipped.map((p) => `probe:${p.name}`)] });
   for (const m of d.messages) {
     await sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, { dedupeKey: `pw:${m.slice(0, 60)}`, kind: 'p1-unhealed', text: `${m}\n(prod-watch, brain cron)` }, fetchImpl).catch(() => undefined);
   }
   await env.EVENTS.put(STATE_KEY, JSON.stringify({ ...d.state, streaks: pr.streaks, digest: (d.state.digest ?? []).slice(-50) }));
   const listing = brainListing(pr.alerts, { logsRead: false });
   if (listing.findings.length) await sink.ingestMany(listing.findings as Finding[], now);
-  await sink.reconcileSource('prod-watch', listing.findings.map((f) => f.key), [...LOG_ALERT_PREFIXES, 'alert-drill:'], now, 'prod-watch-cf');
+  await sink.reconcileSource('prod-watch', listing.findings.map((f) => f.key), [...LOG_ALERT_PREFIXES, 'alert-drill:', ...skipped.map((p) => `probe:${p.name}`)], now, 'prod-watch-cf');
   return { probes: probes.length, failing: probes.filter((p) => !p.ok).length, messages: d.messages.length };
 }

@@ -62,4 +62,25 @@ describe('prod-watch on the brain cron', () => {
     t += PROD_WATCH_INTERVAL_MS;
     expect(await runProdWatch(on, brain, t, fakeFetch(new Set(), tg, null))).toMatchObject({ messages: 1 }); // null after the cut-off alerts too
   });
+  it('frugal monitoring: the demo storefront probes run hourly, host probes every 10 min', async () => {
+    const brain = brainStub(env);
+    const hits: string[] = [];
+    const counting = ((input: RequestInfo | URL) => {
+      const u = String(input instanceof Request ? input.url : input);
+      if (!u.includes('api.telegram.org')) hits.push(new URL(u).host);
+      return Promise.resolve(new Response('ebda "status":"ok" "ok":true data-zone=x', { status: 200 }));
+    }) as typeof fetch;
+    let t = Date.now() + 1095 * 86_400_000; // a clean KV window: no earlier test gated these keys
+    const first = await runProdWatch(on, brain, t, counting);
+    expect(hits.filter((h) => h.startsWith('storedemo-souq'))).toHaveLength(2); // first run: both storefront probes
+    const hosts = first!.probes;
+    hits.length = 0;
+    t += PROD_WATCH_INTERVAL_MS;
+    const second = await runProdWatch(on, brain, t, counting);
+    expect(hits.filter((h) => h.startsWith('storedemo-souq'))).toHaveLength(0); // 10 min later: skipped
+    expect(second!.probes).toBe(hosts - 2); // the nine host probes still ran
+    t += 50 * 60_000; // an hour after the first run
+    await runProdWatch(on, brain, t, counting);
+    expect(hits.filter((h) => h.startsWith('storedemo-souq'))).toHaveLength(2);
+  });
 });
