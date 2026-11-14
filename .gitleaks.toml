@@ -7,7 +7,7 @@
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "test fixtures that look like secrets (not credentials)"
 regexTarget = "line"
 regexes = [
@@ -18,3 +18,12 @@ regexes = [
   # os/ops/lib/__tests__/keychain.test.sh: hex-encodes the PEM header TEXT only (no key material) to test the decoder. The pattern stops before the trailing dashes because a TOML literal string cannot end in a quote.
   '''hex '-----BEGIN PRIVATE KEY''',
 ]
+
+# pr 74 history only: the first two commits of the Smart Layer secrets-detector vectors held the fake credentials as contiguous literals (fixed
+# in a later commit: the vectors are now stored split, so the CURRENT tree needs no allowlist). The PR scan walks every commit in base..head, so
+# these two immutable commits are allowlisted by SHA (their only findings are in that one file). It deliberately has NO path rule: a path rule
+# makes `gitleaks dir` skip the file altogether (checked on v8.30.1), which would hide a real token committed there later. A squash merge
+# leaves these two entries dead, which is harmless.
+[[allowlists]]
+description = "pr 74 history: split-vector fix landed after these two commits"
+commits = ["8fde10f18ed8368b38685f1b31dc7d1d824235b4", "bb66fa3d4d172111fd70d0664163cc64acc083ef"]

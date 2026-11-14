@@ -85,9 +85,10 @@ describe('shared vectors against the vendored code', () => {
   });
   it('smart-layer secrets: every case', async () => {
     const { detectSecrets } = await load('smart-layer/rails/secrets');
-    const v = vector('smart-layer-secrets.json') as { cases: Array<{ in: string; out: string; found: string[] }> };
+    const v = vector('smart-layer-secrets.json') as { tokens: Record<string, string[]>; cases: Array<{ in: string; out: string; found: string[] }> };
+    const fill = (s: string) => s.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => v.tokens[k]!.join('')); // the fake credentials are stored split
     expect(v.cases.length).toBeGreaterThanOrEqual(15);
-    for (const c of v.cases) expect(detectSecrets(c.in), JSON.stringify(c.in)).toEqual({ text: c.out, found: c.found });
+    for (const c of v.cases) expect(detectSecrets(fill(c.in)), JSON.stringify(c.in)).toEqual({ text: fill(c.out), found: c.found });
   });
   it('smart-layer mask: every case', async () => {
     const { maskForModel } = await load('smart-layer/rails/mask');
