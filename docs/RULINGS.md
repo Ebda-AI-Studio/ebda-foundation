@@ -199,3 +199,7 @@ Ruling INSTALL-1 - `os/install.sh` removes every `com.ebda.os.*` plist that is n
 ## Umbra retired (2026-11-14)
 
 Ruling UMBRA-RETIRE-1 - Umbra retired; CI runs only on native macOS runners. Evidence: 2026-11-14 no org runner uses Umbra, umbrad not running, ~/.umbra 6.7 GB freed. Cost if wrong: a repo needing Linux-only CI has no local runner and must use ubuntu-latest. It supersedes TK-22 (the old VM name) and CI-PAUSE-UMBRA-1; `ci-runner-guard.sh` now judges fleet health from the GitHub API alone (`gh api orgs/<org>/actions/runners`), and the USE_SELF_HOSTED flip, the runner-fleet park marker, runner-focus, runner-reregister and every Umbra VM lifecycle path were deleted.
+
+## Smart Layer (plan 4, 2026-11-14)
+
+One file per ruling in `docs/rulings/`: SL-PKG-1, SL-STORE-1, SL-CHAT-1, SL-STORE-2, SL-AGENTS-1, SL-GUARD-1, SL-HANDOFF-1, SL-JUDGE-1, SL-REG-1, SL-SCOPE-1, SL-MODEL-0.
