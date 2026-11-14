@@ -102,4 +102,10 @@ describe('shared vectors against the vendored code', () => {
     for (const c of v.franco) expect(francoToArabic(c.in)).toContain(c.has);
     for (const c of v.cases) expect((await scopeCheck(c.in)).verdict, c.in).toBe(c.verdict);
   });
+  it('smart-layer links: every case', async () => {
+    const { allowLinks } = await load('smart-layer/rails/links');
+    const v = vector('smart-layer-links.json') as { cases: Array<{ in: string; merchant?: string[]; out: string }> };
+    const flat = (segs: Array<{ kind: string; text?: string; href?: string }>) => segs.map((s) => (s.kind === 'text' ? s.text : `<${s.href}|${s.text}>`)).join('');
+    for (const c of v.cases) expect(flat(allowLinks([{ kind: 'text', text: c.in }], c.merchant ?? []).segments), c.in).toBe(c.out);
+  });
 });
