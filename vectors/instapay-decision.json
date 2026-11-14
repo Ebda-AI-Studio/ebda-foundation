@@ -320,6 +320,38 @@
       ]
     },
     {
+      "name": "zero amount on both sides",
+      "patch": {
+        "extract": {
+          "amountMinor": 0
+        },
+        "expected": {
+          "amountMinor": 0
+        }
+      },
+      "verdict": "needs_human",
+      "reasons": [
+        "EXTRACT_INCOMPLETE",
+        "AMOUNT_MISMATCH"
+      ]
+    },
+    {
+      "name": "negative amount on both sides",
+      "patch": {
+        "extract": {
+          "amountMinor": -5
+        },
+        "expected": {
+          "amountMinor": -5
+        }
+      },
+      "verdict": "needs_human",
+      "reasons": [
+        "EXTRACT_INCOMPLETE",
+        "AMOUNT_MISMATCH"
+      ]
+    },
+    {
       "name": "looks edited",
       "patch": {
         "flags": {

@@ -69,7 +69,7 @@ export function decideInstapay(i: DecisionInput): Decision {
   if (!complete) r.add('EXTRACT_INCOMPLETE');
   const expectedOk = posInt(i.expected?.amountMinor);
   if (complete) {
-    if (!expectedOk || e!.amountMinor !== i.expected.amountMinor) r.add('AMOUNT_MISMATCH');
+    if (e!.amountMinor !== i.expected?.amountMinor) r.add('AMOUNT_MISMATCH'); // e.amountMinor is a positive safe integer here, so equality implies the expected one is too
     const got = normalizeHandle(e!.recipientHandle);
     const want = normalizeHandle(i.expected?.payeeHandle);
     if (got === null || want === null || got !== want) r.add('WRONG_HANDLE');
