@@ -13,11 +13,11 @@ beforeEach(async () => {
 const SECRET = { store: 'test-bridge-secret-store-0123456789', chat: 'test-bridge-secret-chat-0123456789' };
 const item = (n: number, product: 'store' | 'chat' = 'store', over: Record<string, unknown> = {}): DigestItem & { reasons?: string[] } => ({ product, id: `id-${n}`, ownerLabel: `Shop ${n}`, amountMinor: 120050, kind: 'subscription', confirmedAt: 1, ...over });
 
-async function notify(body: unknown, o: { product?: string; secret?: string; ts?: number; sig?: string | null; raw?: string } = {}) {
+async function notify(body: unknown, o: { product?: string; secret?: string; ts?: number; sig?: string | null; raw?: string; direction?: 'notify' | 'revert' } = {}) {
   const raw = o.raw ?? JSON.stringify(body);
   const ts = o.ts ?? Date.now();
   const product = o.product ?? 'store';
-  const sig = o.sig === undefined ? await signBridge(o.secret ?? SECRET[product as 'store'] ?? SECRET.store, raw, ts) : o.sig;
+  const sig = o.sig === undefined ? await signBridge(o.secret ?? SECRET[product as 'store'] ?? SECRET.store, raw, ts, o.direction ?? 'notify') : o.sig;
   return SELF.fetch('https://brain.test/api/instapay/notify', { method: 'POST', headers: { 'X-Bridge-Product': product, 'X-Bridge-Ts': String(ts), ...(sig ? { 'X-Bridge-Sig': sig } : {}) }, body: raw });
 }
 const tg = (body: unknown, secret = 'test-tg-secret') => SELF.fetch('https://brain.test/telegram/webhook', { method: 'POST', headers: { 'X-Telegram-Bot-Api-Secret-Token': secret }, body: JSON.stringify(body) });
@@ -51,6 +51,26 @@ describe('POST /api/instapay/notify', () => {
     expect((await notify(body, { product: 'crm' })).status).toBe(401);
     expect((await notify(body, { ts: Date.now() - 6 * 60_000 })).status).toBe(401);
     expect(calls).toHaveLength(0);
+  });
+  it('a notify signed with the revert direction label (same secret, same body) is refused (review M6)', async () => {
+    const calls = mockNet();
+    expect((await notify({ kind: 'digest', items: [item(1)] }, { direction: 'revert' })).status).toBe(401);
+    expect(calls).toHaveLength(0);
+  });
+  it('EVERY payment gets a tap button: 45 items -> 3 messages of 20/20/5 buttons, one day claim (review M4)', async () => {
+    const calls = mockNet();
+    const r = await notify({ kind: 'digest', items: Array.from({ length: 45 }, (_, n) => item(n)) });
+    expect(r.status).toBe(200);
+    const sent = telegramCalls(calls, 'sendMessage');
+    expect(sent.map((c) => c.body.reply_markup.inline_keyboard.length)).toEqual([20, 20, 5]);
+    expect(sent.flatMap((c) => c.body.reply_markup.inline_keyboard.map((row: any[]) => row[0].callback_data))).toEqual(Array.from({ length: 45 }, (_, n) => `ip:s:id-${n}`));
+    expect((await notify({ kind: 'digest', items: [item(99)] })).status).toBe(429); // still ONE digest per product per day
+  });
+  it('a failure on page 2 releases the claim and returns 502 so the retry resends all pages', async () => {
+    let n = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => (++n === 2 ? Response.json({ ok: false }, { status: 500 }) : Response.json({ ok: true, result: { message_id: n } })));
+    expect((await notify({ kind: 'digest', items: Array.from({ length: 25 }, (_, k) => item(k)) })).status).toBe(502);
+    expect((await notify({ kind: 'digest', items: Array.from({ length: 25 }, (_, k) => item(k)) })).status).toBe(200);
   });
   it('signature is checked before parsing: a signed-but-broken body is 400, an unsigned broken body is 401', async () => {
     mockNet();
@@ -92,7 +112,7 @@ describe('POST /api/instapay/notify', () => {
     const calls = mockNet();
     const raw = JSON.stringify({ kind: 'waiting', items: [item(1, 'store', { reasons: ['AMOUNT_MISMATCH'] })] });
     const ts = Date.now();
-    const sig = await signBridge(SECRET.store, raw, ts);
+    const sig = await signBridge(SECRET.store, raw, ts, 'notify');
     expect((await notify(null, { raw, ts, sig })).status).toBe(200);
     expect((await notify(null, { raw, ts, sig })).status).toBe(409);
     expect(telegramCalls(calls, 'sendMessage')).toHaveLength(1);
@@ -144,8 +164,9 @@ describe('ip: tap', () => {
     expect(prod[0]!.body).toMatchObject({ id: 'id-1', actor: 'telegram-owner' });
     const h = new Headers(prod[0]!.init!.headers);
     const raw = String(prod[0]!.init!.body);
-    expect(await verifyBridge(SECRET.store, raw, Number(h.get('X-Bridge-Ts')), h.get('X-Bridge-Sig')!, Date.now())).toBe(true);
-    expect(await verifyBridge(SECRET.chat, raw, Number(h.get('X-Bridge-Ts')), h.get('X-Bridge-Sig')!, Date.now())).toBe(false);
+    expect(await verifyBridge(SECRET.store, raw, Number(h.get('X-Bridge-Ts')), h.get('X-Bridge-Sig')!, Date.now(), 'revert')).toBe(true);
+    expect(await verifyBridge(SECRET.chat, raw, Number(h.get('X-Bridge-Ts')), h.get('X-Bridge-Sig')!, Date.now(), 'revert')).toBe(false);
+    expect(await verifyBridge(SECRET.store, raw, Number(h.get('X-Bridge-Ts')), h.get('X-Bridge-Sig')!, Date.now(), 'notify')).toBe(false); // M6: a revert signature is not a notify signature
     expect(telegramCalls(calls, 'answerCallbackQuery')[0]!.body.text).toBe('reverted');
   });
   it('chat taps go to the chat endpoint with the chat secret', async () => {
@@ -153,7 +174,7 @@ describe('ip: tap', () => {
     await tap('ip:c:req_9');
     const prod = calls.find((c) => c.url.startsWith('https://chat-api.test/'))!;
     const h = new Headers(prod.init!.headers);
-    expect(await verifyBridge(SECRET.chat, String(prod.init!.body), Number(h.get('X-Bridge-Ts')), h.get('X-Bridge-Sig')!, Date.now())).toBe(true);
+    expect(await verifyBridge(SECRET.chat, String(prod.init!.body), Number(h.get('X-Bridge-Ts')), h.get('X-Bridge-Sig')!, Date.now(), 'revert')).toBe(true);
   });
   it('a tap from a non-owner or a foreign chat is ignored: the product is NOT called', async () => {
     const calls = mockNet();

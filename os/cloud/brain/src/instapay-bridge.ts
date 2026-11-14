@@ -4,14 +4,14 @@
 // Unlike a decision (a recorded answer the controller reads later), a tap here must ACT: the brain calls the owning product's
 // HMAC-signed revert endpoint, which is idempotent. The brain keeps no payment state, only a tiny audit + rate-limit trail in KV.
 //
-//   POST /api/instapay/notify   headers X-Bridge-Product (store|chat), X-Bridge-Ts (epoch ms), X-Bridge-Sig = HMAC-SHA256 hex over `${ts}.${rawBody}`
+//   POST /api/instapay/notify   headers X-Bridge-Product (store|chat), X-Bridge-Ts (epoch ms), X-Bridge-Sig = HMAC-SHA256 hex over `notify.${ts}.${rawBody}`
 //                               with the product's secret (INSTAPAY_BRIDGE_SECRET_STORE|CHAT), checked BEFORE any parsing.
 //                               body { kind: 'digest' | 'waiting', items: DigestItem[] (+ reasons[] for waiting) }
 // Secrets (Worker secrets): INSTAPAY_BRIDGE_SECRET_STORE, INSTAPAY_BRIDGE_SECRET_CHAT, INSTAPAY_REVERT_URL_STORE, INSTAPAY_REVERT_URL_CHAT.
 import { boundFetch } from './bound-fetch';
 import { tg } from './decisions';
 import type { Env } from './env';
-import { decodeTap, encodeTap, formatDigest, formatWaiting, isEmptyDigest, signBridge, verifyBridge, type DigestItem } from '../../../../packages/foundation/src/instapay-digest';
+import { decodeTap, encodeTap, formatDigestPages, formatWaiting, isEmptyDigest, signBridge, verifyBridge, type DigestItem } from '../../../../packages/foundation/src/instapay-digest';
 
 const MAX_BODY = 64 * 1024;
 export const MAX_DIGEST_ITEMS_ACCEPTED = 200;
@@ -58,7 +58,7 @@ export async function handleInstapayNotify(request: Request, env: Env, now: numb
   if (raw.length > MAX_BODY) return json({ error: 'too large' }, 413);
   const ts = Number(request.headers.get('X-Bridge-Ts'));
   const sig = request.headers.get('X-Bridge-Sig') ?? '';
-  if (!(await verifyBridge(secret, raw, ts, sig, now))) return json({ error: 'unauthorized' }, 401); // BEFORE any parsing effect
+  if (!(await verifyBridge(secret, raw, ts, sig, now, 'notify'))) return json({ error: 'unauthorized' }, 401); // BEFORE any parsing effect
   // a signed request cannot be replayed inside the 5-minute window
   const sigKey = `instapay:sig:${sig}`;
   if (await env.EVENTS.get(sigKey)) return json({ error: 'replayed' }, 409);
@@ -82,12 +82,15 @@ export async function handleInstapayNotify(request: Request, env: Env, now: numb
     const dayKey = `instapay:digest:${product}:${new Date(now).toISOString().slice(0, 10)}`;
     if (await env.EVENTS.get(dayKey)) return json({ error: 'digest already sent today' }, 429);
     await env.EVENTS.put(dayKey, '1', { expirationTtl: 2 * 86400 }); // claim before sending (a concurrent call sees it)
-    const d = formatDigest(list, now);
-    const r = await tg(env, 'sendMessage', { chat_id: env.TELEGRAM_CHAT_ID, text: d.text, disable_web_page_preview: true, reply_markup: { inline_keyboard: d.buttons.map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))) } });
-    if (!r.ok) {
-      await env.EVENTS.delete(dayKey); // a failed send leaves no claim, so the product's retry resends it
-      await env.EVENTS.delete(sigKey);
-      return json({ error: 'telegram send failed' }, 502);
+    // EVERY payment gets a tap button: pages of up to 20, sent in order (review M4). A failure on any page releases the claim so the product's
+    // retry resends the whole digest (a page already delivered may then appear twice, which is better than a payment with no button).
+    for (const page of formatDigestPages(list, now)) {
+      const r = await tg(env, 'sendMessage', { chat_id: env.TELEGRAM_CHAT_ID, text: page.text, disable_web_page_preview: true, reply_markup: { inline_keyboard: page.buttons.map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))) } });
+      if (!r.ok) {
+        await env.EVENTS.delete(dayKey); // a failed send leaves no claim, so the product's retry resends it
+        await env.EVENTS.delete(sigKey);
+        return json({ error: 'telegram send failed' }, 502);
+      }
     }
     return json({ sent: true, items: list.length });
   }
@@ -123,7 +126,7 @@ export async function handleInstapayTap(env: Env, data: string, now: number = Da
   const body = JSON.stringify({ id: tap.id, actor: 'telegram-owner', tappedAt: now });
   let text: string;
   try {
-    const sig = await signBridge(secret, body, now);
+    const sig = await signBridge(secret, body, now, 'revert');
     const res = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Bridge-Ts': String(now), 'X-Bridge-Sig': sig }, body, signal: AbortSignal.timeout(TAP_TIMEOUT_MS) });
     const j = (await res.json().catch(() => null)) as { result?: unknown; code?: unknown; error?: unknown } | null;
     if (res.ok) text = j?.result === 'already_reverted' || j?.result === 'already reverted' ? 'already reverted' : 'reverted';

@@ -33,16 +33,29 @@ export function isEmptyDigest(items: DigestItem[]): boolean {
   return items.length === 0;
 }
 
-export function formatDigest(items: DigestItem[], now: number): { text: string; buttons: DigestButton[][] } {
-  const shown = items.slice(0, MAX_DIGEST_ITEMS);
-  const lines = [`InstaPay auto-confirmed payments (${new Date(now).toISOString().slice(0, 10)}): ${items.length}`, ''];
-  for (const it of shown) lines.push(`- ${it.product} ${clean(it.ownerLabel)}: ${formatEgp(it.amountMinor)} (${clean(it.kind, 24)})`);
-  if (items.length > shown.length) lines.push(`+${items.length - shown.length} more`);
-  lines.push('', 'Tap "not received" if the money did not arrive; the payment goes back to unpaid with a 48 h grace.');
-  return {
-    text: lines.join('\n'),
-    buttons: shown.map((it) => [{ text: `Not received: ${formatEgp(it.amountMinor)} ${clean(it.ownerLabel, 20)}`, data: encodeTap(it.product, it.id) }]),
-  };
+export type DigestPage = { text: string; buttons: DigestButton[][] };
+
+/** EVERY item gets a tap button: pages of at most MAX_DIGEST_ITEMS (a Telegram message holds 100 buttons, but a short message stays readable).
+ *  The caller sends the pages in order as one digest. 0 items -> 0 pages. */
+export function formatDigestPages(items: DigestItem[], now: number): DigestPage[] {
+  const pages: DigestPage[] = [];
+  const n = Math.ceil(items.length / MAX_DIGEST_ITEMS);
+  for (let p = 0; p < n; p++) {
+    const shown = items.slice(p * MAX_DIGEST_ITEMS, (p + 1) * MAX_DIGEST_ITEMS);
+    const lines = [`InstaPay auto-confirmed payments (${new Date(now).toISOString().slice(0, 10)}): ${items.length}${n > 1 ? ` (page ${p + 1}/${n})` : ''}`, ''];
+    for (const it of shown) lines.push(`- ${it.product} ${clean(it.ownerLabel)}: ${formatEgp(it.amountMinor)} (${clean(it.kind, 24)})`);
+    lines.push('', 'Tap "not received" if the money did not arrive; the payment goes back to unpaid with a 48 h grace.');
+    pages.push({
+      text: lines.join('\n'),
+      buttons: shown.map((it) => [{ text: `Not received: ${formatEgp(it.amountMinor)} ${clean(it.ownerLabel, 20)}`, data: encodeTap(it.product, it.id) }]),
+    });
+  }
+  return pages;
+}
+
+/** The first page only (single-message callers). Use formatDigestPages to reach every payment. */
+export function formatDigest(items: DigestItem[], now: number): DigestPage {
+  return formatDigestPages(items, now)[0] ?? { text: '', buttons: [] };
 }
 
 export function formatWaiting(item: DigestItem & { reasons: string[] }): { text: string; buttons: [] } {
@@ -62,14 +75,20 @@ function safeEqual(a: string, b: string): boolean {
   return d === 0;
 }
 
-/** HMAC-SHA256 hex over `${ts}.${rawBody}` (ts = epoch ms) */
-export async function signBridge(secret: string, body: string, ts: number): Promise<string> {
+export type BridgeDirection = 'notify' | 'revert';
+const isDirection = (d: unknown): d is BridgeDirection => d === 'notify' || d === 'revert';
+
+/** HMAC-SHA256 hex over `${direction}.${ts}.${rawBody}` (ts = epoch ms). The direction label (`notify` product->brain, `revert` brain->product)
+ *  keeps one secret from being reused to sign the other direction: a captured notify signature never verifies as a revert. */
+export async function signBridge(secret: string, body: string, ts: number, direction: BridgeDirection): Promise<string> {
   if (typeof secret !== 'string' || secret.length < MIN_BRIDGE_SECRET_LENGTH) throw new Error('bridge secret too short');
-  return hmac(secret, `${ts}.${body}`);
+  if (!isDirection(direction)) throw new Error('bridge direction must be notify or revert');
+  return hmac(secret, `${direction}.${ts}.${body}`);
 }
-export async function verifyBridge(secret: string, body: string, ts: number, sig: string, now: number): Promise<boolean> {
+export async function verifyBridge(secret: string, body: string, ts: number, sig: string, now: number, direction: BridgeDirection): Promise<boolean> {
   if (typeof secret !== 'string' || secret.length < MIN_BRIDGE_SECRET_LENGTH) return false;
+  if (!isDirection(direction)) return false;
   if (!Number.isFinite(ts) || !Number.isFinite(now) || Math.abs(now - ts) > BRIDGE_WINDOW_MS) return false;
   if (typeof sig !== 'string' || !/^[0-9a-f]{64}$/.test(sig)) return false;
-  return safeEqual(await hmac(secret, `${ts}.${body}`), sig);
+  return safeEqual(await hmac(secret, `${direction}.${ts}.${body}`), sig);
 }
