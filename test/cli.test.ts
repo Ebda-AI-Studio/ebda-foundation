@@ -25,7 +25,7 @@ describe('ebda-foundation sync/check', () => {
   const lock = sync({ target, dir: 'vendor/foundation', parity: 'test/foundation-parity.test.ts', root: src });
 
   it('sync writes the lock and check passes', () => {
-    expect(lock.tag).toBe('v0.2.0');
+    expect(lock.tag).toBe(`v${JSON.parse(readFileSync(join(ROOT, 'packages/foundation/package.json'), 'utf8')).version}`);
     expect(lock.commit).toMatch(/^[0-9a-f]{40}$/);
     expect(Object.keys(lock.files)).toContain('vendor/foundation/phone.ts');
     expect(Object.keys(lock.files).some((f) => f.endsWith('.test.ts') && f.includes('vendor/foundation/'))).toBe(false);
