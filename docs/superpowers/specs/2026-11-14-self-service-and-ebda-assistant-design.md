@@ -124,6 +124,13 @@ Ahmad: "every existing feature or a new one must have a help article to be share
 - **Backfill (part of the build plan):** 71 live Store capabilities and 23 live Chat capabilities have no article today, and 5 Chat guides are wrong or stale (04, 05, 06, 07/11, 09) — all written or fixed before the guard is switched to blocking.
 - Help freshness (§6.9) applies: an article older than its capability's current version is flagged.
 
+### 6.8c The Merchant MCP goes through the Smart Layer too (Ahmad, 2026-11-14)
+The Merchant MCP lets a merchant's OWN AI client (their Claude, ChatGPT, etc.) act on their store. The model is the merchant's, not Ebda's, so the model-input rails (masking before our model, our prompt) don't apply — but the **action half of the Smart Layer applies in full**: every MCP tool is a capability-registry entry and runs through the same execution rails as the Ebda assistant — the same policy gate (free / preview / confirm / forbidden, big-change triggers), Zod + existence/ownership checks, the merchant's own permissions per call, the same per-store rate limits and the same masked audit with `actor = user X via MCP client Y`. Super-admin powers are never exposed.
+- **Confirm over MCP = pending approval:** an outside AI can never satisfy the confirm step. A `confirm`-class request (money, deletion, customer messaging, >20 items, checkout-visible, price change, irreversible) creates a pending approval the merchant approves in the Ebda dashboard (or Ebda Chat); nothing executes until then, and the approval expires like any other (§6.9).
+- **Scopes:** MCP access tokens carry explicit scopes (read-only by default; write scopes opt-in per area), revocable by the merchant.
+- **Results leaving Ebda:** tool results return the merchant's own data to the merchant's chosen AI; customer PII is returned only to write-scoped, owner-issued tokens and is minimised to what the tool needs.
+- The Smart Layer bypass guard treats MCP handlers like any other entry point: an MCP tool that executes outside the shared execution rails fails CI.
+
 ### 6.9 The Smart Layer pipeline and hardening (worldwide research, 2026-11-14)
 Source: `business/ebda/audits/2026-11-14-smart-layer-worldwide-research.md` (Salesforce Trust Layer, NeMo rails, Shopify Sidekick, Intercom Fin, Meta Business AI, Amazon seller agents, Gorgias, Cloudflare AI Gateway/Agents SDK, MCP; failures: Air Canada, Chevrolet, Cursor, EchoLeak). Gap numbers refer to that report.
 
