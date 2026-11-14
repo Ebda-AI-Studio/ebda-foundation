@@ -42,6 +42,11 @@ describe('checkCoverage', () => {
   });
 });
 
+it('an entry listing several mcp tools ("a; b") covers each', () => {
+  const e = entry({ api: [], mcpTool: 'admin_list; admin_get' });
+  expect(ids(facts({ mcpTools: ['admin_list', 'admin_get'] }), [e])).toEqual([]);
+});
+
 describe('pageMatches', () => {
   it('folds [id] and :id', () => expect(pageMatches('/stores/:id/x', '/stores/[storeId]/x')).toBe(true));
   it('exact otherwise', () => expect(pageMatches('/a', '/a/b')).toBe(false));

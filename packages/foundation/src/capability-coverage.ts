@@ -40,7 +40,8 @@ export function checkCoverage(facts: CodeFacts, entries: Capability[]): Violatio
     for (const a of e.api) if (!present.has(normalizeApi(a))) add('route-dangling', `${e.id} ${a}`, `${e.id} is live but ${a} is not in code`);
   }
   if (facts.mcpTools) {
-    const tools = new Set(entries.map((e) => e.mcpTool).filter((t): t is string => !!t));
+    // a catalogue row may list several tools ("a; b")
+    const tools = new Set(entries.flatMap((e) => (e.mcpTool ? e.mcpTool.split(/\s*[;,]\s*/) : [])));
     for (const t of facts.mcpTools) if (!tools.has(t)) add('tool-uncovered', t, `no capability has mcpTool ${t}`);
   }
   if (facts.planGates) {
