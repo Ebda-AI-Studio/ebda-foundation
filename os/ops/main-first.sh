@@ -18,7 +18,7 @@
 # Every GitHub read is gathered BEFORE any mutation; an API failure (5xx/504/bad JSON) skips that repo for this tick.
 # Idempotent: state is $MAIN_FIRST_STATE (cancelled-run ledger + commented heads). --dry-run mutates nothing.
 # Log: ~/Library/Logs/ebda-main-first.log. Exit 0 always except usage errors (2).
-# Seams: gh from PATH, MAIN_FIRST_{REPOS,MIN,LABEL,ALLOW_BRANCHES,ALLOW_LABEL,RERUN_CAP,WORKFLOW,STATE,LOG,NOW}.
+# Seams: gh from PATH, MAIN_FIRST_{REPOS (default: $OS_ORG + os_local_list main_first_repos),MIN,LABEL,ALLOW_BRANCHES,ALLOW_LABEL,RERUN_CAP,WORKFLOW,STATE,LOG,NOW}.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/os-state.sh
@@ -34,7 +34,16 @@ case "${1:-}" in
   *) echo "main-first: unknown arg $1 (only --dry-run)" >&2; exit 2 ;;
 esac
 
-REPOS="${MAIN_FIRST_REPOS:-Ebda-AI-Studio/ebda-store Ebda-AI-Studio/ebda-whatsapp Ebda-AI-Studio/ebda-foundation}"
+# shellcheck source=lib/os-config.sh
+. "$HERE/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+command -v os_config_load >/dev/null 2>&1 && os_config_load
+if [ -z "${MAIN_FIRST_REPOS:-}" ]; then
+  MAIN_FIRST_REPOS=""
+  # repo names (key main_first_repos in ~/.ebda-os.local.json, defaults below) under the primary org $OS_ORG
+  while IFS= read -r _r; do [ -n "$_r" ] && MAIN_FIRST_REPOS="${MAIN_FIRST_REPOS:+$MAIN_FIRST_REPOS }${OS_ORG:?main-first: OS_ORG unset}/$_r"; done \
+    < <(os_local_list main_first_repos ebda-store ebda-whatsapp ebda-foundation 2>/dev/null)
+fi
+REPOS="$MAIN_FIRST_REPOS"
 MIN="${MAIN_FIRST_MIN:-10}"
 LABEL="${MAIN_FIRST_LABEL:-ebda-mac}"
 ALLOW_BRANCHES="${MAIN_FIRST_ALLOW_BRANCHES:-}"
