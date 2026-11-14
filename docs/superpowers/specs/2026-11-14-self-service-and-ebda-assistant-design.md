@@ -19,6 +19,7 @@ Today that is not true: 22 places need staff or have no merchant screen (4 block
 3. The assistant writes WhatsApp message templates that Meta approves, submits them on the merchant's own WhatsApp Business account, tracks the verdict and fixes rejections.
 4. The page-builder AI knows the store and every editor capability and handles complex requests (project 3).
 5. The rule is enforced in ebda-foundation (a standard plus a guard), so every future Ebda product inherits it.
+6. Every feature, live or planned, now or future, is known to the assistant through a capability registry enforced in CI (section 6.8).
 
 **Non-goals**
 - The shopper-facing WhatsApp agent (Ebda Chat's customer bot) — separate work, already in PRs.
@@ -95,6 +96,13 @@ Merchant: "عايز رسالة أبلغ بيها العميل إن الأورد�
 5. Tracks the review status (webhook or sync); on rejection explains the reason in plain Egyptian Arabic and proposes a fixed version.
 
 This needs the project-1 template screen (the assistant and the screen share the same API), so project 1 ships first.
+
+### 6.8 The capability registry — every feature, now and future, is in the assistant (Ahmad, 2026-11-14)
+Ahmad: "there is things are not built yet so they must be counted as well so this be a part of the foundation where any new feature is included in the ai".
+- Each product keeps a **capability registry** (source-controlled, machine-readable) that is the contract between the product and the assistant. One entry per merchant capability: id, area, titles (Egyptian Arabic + English), page/screen, API actions, plan gate, roles, assistant policy (`free` / `preview` / `confirm` / `forbidden`), undo, help article, example merchant questions (Arabic, Franco, English), edge cases, and a **status: `live` | `in-pr` | `planned`**.
+- **Planned features count:** not-built items (from the program register and open plans) are entries with status `planned`, so the assistant can say what is coming and when it ships, and the plan tracks them. When a feature ships, its entry flips to `live` in the same PR.
+- **Enforced in ebda-foundation:** a CI guard fails any PR that adds a merchant page, route or action without a registry entry, or a `live` entry without a help article and example questions. So no future feature can ship without the assistant knowing it. The registry also feeds the help index, the golden eval set (every `preview`/`confirm` entry gets a must-confirm test) and the self-service guard.
+- The first registry is generated from the full Store and Chat capability catalogues (2026-11-14 audits: `business/ebda/audits/2026-11-14-store-capability-catalogue.*` and `...-chat-capability-catalogue.*`, in Ahmad's local business folder).
 
 ## 7. Project 1 — self-service standard + the 4 blockers
 
