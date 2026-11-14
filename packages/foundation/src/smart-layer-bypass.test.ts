@@ -42,6 +42,43 @@ describe('checkModelBypass', () => {
     ["import Anthropic from '@anthropic-ai/sdk';"],
     ["import OpenAI from 'openai';"],
   ])('flags %s', (src) => expect(run('src/a.ts', src)).toHaveLength(1));
+  it.each([
+    ['const { AI } = env;'],
+    ['const { AI, KV } = c.env;'],
+    ['const ai = env["AI"];'],
+    ["const ai = env['AI']"],
+    ["fetch('https://gateway.ai.cloudflare.com/v1/acct/gw/openai')"],
+    ["fetch('https://openrouter.ai/api/v1/chat/completions')"],
+    ["fetch('https://api.groq.com/openai/v1/chat')"],
+    ["fetch('https://api.mistral.ai/v1/chat')"],
+    ["fetch('https://api.cohere.com/v2/chat')"],
+    ["fetch('https://api.together.xyz/v1/chat')"],
+    ["fetch('https://us-central1-aiplatform.googleapis.com/v1/x')"],
+    ["fetch('https://bedrock-runtime.us-east-1.amazonaws.com/model/x')"],
+    ["import { openai } from '@ai-sdk/openai';"],
+    ["import { createWorkersAI } from 'workers-ai-provider';"],
+    ["import Groq from 'groq-sdk';"],
+    ["import Together from 'together-ai';"],
+    ["import { Mistral } from '@mistralai/mistralai';"],
+    ["import { CohereClient } from 'cohere-ai';"],
+    ["import { generateText } from 'ai';"],
+    ['const OpenAI = require("openai");'],
+    ["const m = await import('openai');"],
+    ["const { GoogleGenAI } = require('@google/genai')"],
+    ['const a = await import("@anthropic-ai/sdk")'],
+  ])('flags %s', (src) => expect(run('src/a.ts', src)).toHaveLength(1));
+  it('wrangler.toml [ai] binding is flagged; a commented one and a plain env var are not', () => {
+    expect(run('wrangler.toml', 'name = "x"\n[ai]\nbinding = "AI"')).toHaveLength(1);
+    expect(run('wrangler.toml', '# [ai]\nname = "x"')).toEqual([]);
+    expect(run('src/a.ts', 'const AIRPORT = 1; const x = env.MAIL;')).toEqual([]);
+  });
+  it('a prod file under src/lib/test/ or fixtures/ is scanned; only real test files by name are exempt', () => {
+    expect(run('src/lib/test/a.ts', 'env.AI.run(x)')).toHaveLength(1);
+    expect(run('src/fixtures/a.ts', 'env.AI.run(x)')).toHaveLength(1);
+    expect(run('src/e2e/a.ts', 'env.AI.run(x)')).toHaveLength(1);
+    expect(run('src/a.spec.tsx', 'env.AI.run(x)')).toEqual([]);
+    expect(run('src/__tests__/a.ts', 'env.AI.run(x)')).toEqual([]);
+  });
   it('the guard source does not flag itself (it is vendored into products)', () => {
     const src = readFileSync(new URL('./smart-layer-bypass.ts', import.meta.url), 'utf8');
     expect(run('src/foundation/smart-layer-bypass.ts', src)).toEqual([]);
