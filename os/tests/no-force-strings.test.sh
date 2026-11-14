@@ -3,7 +3,7 @@
 # Exempt: docs/history/, the plan that lists the strings by necessity, git-ignored scratch (.superpowers/), this test.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$ROOT"
+cd "$ROOT" || exit 1
 RE='ForceAI-KW|force-ai-foundation|Force-AI/internal-projects|forceai\.|com\.forceai|ff6e01|#ff6e01|Kuwait|KWD|MyFatoorah|aladiyat|rayanah|om-hassan|da-gusto|fca-kuwait|salam-hydraulic'
 if git rev-parse --git-dir >/dev/null 2>&1; then
   files=$( { git ls-files; git ls-files --others --exclude-standard; } | sort -u )

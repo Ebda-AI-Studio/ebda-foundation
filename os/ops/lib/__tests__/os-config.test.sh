@@ -13,7 +13,7 @@ CMD='echo "$OS_REPO_SLUG|$OS_LAUNCHD_PREFIX|$OS_GIT_CHAIN_KEY"'
 out="$(run)"; [ "$out" = "Ebda-AI-Studio/ebda-foundation|com.ebda.os|ebda.chainHusky" ] && pass "defaults come from os/config/os.env" || fail "defaults: $out"
 
 printf 'OS_LAUNCHD_PREFIX=com.example.local\n' > "$TMP/local.env"
-out="$(run EBDA_OS_LOCAL_ENV="$TMP/local.env")"; case "$out" in *"|com.example.local|"*) pass "~/.ebda-os.local.env overrides os.env" ;; *) fail "override: $out" ;; esac
+out="$(run EBDA_OS_LOCAL_ENV="$TMP/local.env")"; case "$out" in *"|com.example.local|"*) pass "the per-machine .ebda-os.local.env overrides os.env" ;; *) fail "override: $out" ;; esac
 
 CMD='echo "$OS_ORGS"'
 out="$(run)"; [ "$out" = "Ebda-AI-Studio Whisky-11 voidengineer-911" ] && pass "OS_ORGS exported with all three owners" || fail "orgs: $out"

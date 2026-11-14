@@ -35,7 +35,7 @@ hasnt(){ if [ ! -e "$2" ]; then echo "PASS: $1"; _pass=$((_pass+1)); else echo "
 # Extract the function under test rather than sourcing the script, which runs main().
 FN=$(mktemp); trap 'rm -f "$FN"' EXIT
 sed -n '/^refresh_scoped_from_projects() {/,/^}/p' "$SCRIPT" > "$FN"
-ok "function is extractable from the pipeline script" "$([ -s "$FN" ]; echo $?)"
+ok "function is extractable from the pipeline script" "$(if [ -s "$FN" ]; then echo 0; else echo 1; fi)"
 
 build_sandbox() {
   SB=$(mktemp -d)
@@ -68,7 +68,7 @@ hasnt "no global file bleeds into a scope"            "$G/_scoped/repoA/GLOBAL-S
 before=$(find "$G/_scoped" -type f | sort | wc -l)
 run_fn
 after=$(find "$G/_scoped" -type f | sort | wc -l)
-ok "second run is a no-op" "$([ "$before" = "$after" ]; echo $?)"
+ok "second run is a no-op" "$(if [ "$before" = "$after" ]; then echo 0; else echo 1; fi)"
 rm -rf "$SB"
 
 # ── 5. NEGATIVE CONTROL — the self-guard must be watchable failing ───────────
