@@ -138,7 +138,7 @@ for w in data:
     # Blanket-flagging produced 4 alerts on 2026-08-16, and every one was noise:
     #   store 'Runner health check'  — schedule deliberately commented out, only
     #                                workflow_dispatch left (documented in-file)
-    #   umbra 'umbra-ci verify'    — workflow FILE DELETED; only the lingering
+    #   an old repo's 'verify' workflow — workflow FILE DELETED; only the lingering
     #                                Actions record remains, still state=active
     #   ci-runner-verify           — on: push, but the repo has had no push since
     #   example-media gitleaks        — repo idle since its last run

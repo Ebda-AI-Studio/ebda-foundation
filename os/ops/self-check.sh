@@ -84,8 +84,8 @@ is_expected_ondemand() {
     notify.sh|blast-radius.sh|propagate.sh|install.sh|safe-to-admin-merge.sh|self-check.sh) return 0 ;;
     # dreaming-cycle phase scripts — called by dream.sh, not directly by launchd
     dream-research.sh|dream-scan.sh|dream-fix.sh|dream-act.sh) return 0 ;;
-    # runner-hook tooling — setup runs ON THE RUNNER HOST (Umbra $OS_VM); health-detector is on-demand (alongside ci-runner-guard)
-    setup-runner-hooks.sh|runner-hook-health.sh) return 0 ;;
+    # runner-hook tooling — the health-detector is on-demand (alongside ci-runner-guard)
+    runner-hook-health.sh) return 0 ;;
     *) return 1 ;;
   esac
 }

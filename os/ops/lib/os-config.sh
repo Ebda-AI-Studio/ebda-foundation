@@ -10,7 +10,6 @@
 #      so a script copied somewhere os.env is not reachable still gets the same identity instead of an empty one.
 # It exports every key and the derived values:
 #   OS_ORG      the primary org (first word of OS_ORGS)
-#   OS_VM       the primary CI guest (first word of OS_UMBRA_VMS)
 #   OS_BILLED_ORGS  OS_ORGS minus the personal account (billing / GHAS checks apply to orgs only)
 # This file and os/config/os.env are the only places the identity literals may appear (os/tests/no-literal-config.test.sh).
 
@@ -37,14 +36,12 @@ os_config_load() {
   : "${OS_GIT_CHAIN_KEY:=ebda.chainHusky}"
   : "${OS_STATE_DIR:=$HOME/.whisky-os-state}"
   : "${OS_SERVICES_ENV:=$HOME/.whisky-services.env}"
-  : "${OS_UMBRA_VMS:=fwb-ci6}"
   : "${OS_SENTRY_ORG:=org-lingering-river-25973882}"
   : "${OS_PERSONAL_OWNER:=voidengineer-911}"
   : "${OS_NONFORCE_BUSINESS_DIRS:=Ebda-AI-Studio Whisky-11 Personal}"
   OS_ORG="${OS_ORGS%% *}"
   OS_BILLED_ORGS=""   # the orgs only (OS_ORGS minus the personal account): what billing and GHAS checks iterate
   for _o in $OS_ORGS; do [ "$_o" = "$OS_PERSONAL_OWNER" ] || OS_BILLED_ORGS="${OS_BILLED_ORGS:+$OS_BILLED_ORGS }$_o"; done
-  OS_VM="${OS_UMBRA_VMS%% *}"
   [ "$_allexport" = 1 ] || set +a
   return 0
 }

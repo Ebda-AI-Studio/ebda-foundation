@@ -51,7 +51,7 @@ The numbered lenses below each become one file `standard/<id>.md`. `mobile` is N
 | 39 | `navigation-integrity` | Native-stack dismiss vetoed only via `usePreventRemove`, never a raw `beforeRemove`+`preventDefault` (ignored by iOS swipe-dismiss → ghost route, dead navigation); explicit close on every blocked screen | a marketplace launch device audit 2026-10-07 (memory `feedback-native-stack-beforeremove-swipe-dismiss`) |
 | 40 | `state-transition-integrity` | Approve/review/revoke/publish/restore/grant/suspend are conditional on the current state (`updateMany where status = expected`), a repeat is a no-op/409 with one audit row, resubmission blocked while settled, undo derives its target, UI shows per-entity status | a marketplace launch sense audit 2026-10-07 (PRs #205, #209) |
 | 41 | `real-world-sense` | Location pairing, gate order (guest → signed-in → verified → owner), money + lifecycle (no 0-for-unknown, no live-when-ended, Range/206 video), identity reuse — "nothing is logical until it makes sense" | a marketplace launch sense audit 2026-10-07 (memory `feedback-sense-audit-real-world-logic`) |
-| 42 | `disk-discipline` | Worktree deps ONLY via `wt-deps.sh` APFS clones for every tool that creates a worktree (global post-checkout dispatcher + Claude hooks), 30 GB hard floor, hygiene auto-prunes the Umbra CI VM before the host fills | 3 disk-full incidents 2026-10 (memory `feedback-umbra-sparse-disk-host-full-corrupts-guest`) |
+| 42 | `disk-discipline` | Worktree deps ONLY via `wt-deps.sh` APFS clones for every tool that creates a worktree (global post-checkout dispatcher + Claude hooks), 30 GB hard floor, hourly hygiene removes merged worktrees and alerts before the host fills | 3 disk-full incidents 2026-10 (memory `feedback-umbra-sparse-disk-host-full-corrupts-guest`) |
 | 43 | `bearer-in-localstorage` | Access token stored in localStorage. Pack: security, frontend; probe S | Ebda audit 2026-10-26 SEC-4 |
 | 44 | `bulk-export-permission` | Bulk export route without a dedicated permission. Pack: security, privacy; probe S+J | Ebda audit 2026-10-26 SEC-14 |
 | 45 | `capability-url-expiry` | Capability URL token with no expiry. Pack: security, privacy; probe S+J | Ebda audit 2026-10-26 SEC-15 |
@@ -200,7 +200,6 @@ The numbered lenses below each become one file `standard/<id>.md`. `mobile` is N
 | 187 | `price-literal-duplicated` | The same price literal is hard-coded on many surfaces. Pack: docs, business; probe S | Ebda master catalogue 2026-10-26 sec.7 L40 |
 | 188 | `launch-checklist-missing` | No dated launch-day checklist with owners. Pack: business; probe J | Ebda master catalogue 2026-10-26 sec.7 L72 |
 | 189 | `wa-quality-not-gating` | Sender quality / account events do not gate sending. Pack: meta-whatsapp; probe S | Ebda master catalogue 2026-10-26 sec.7 L73 |
-| 190 | `umbra-guest-integrity` | Hard-killed CI guest => disk marked dirty, offline e2fsck (block device, two clean passes) before it may start; job semaphore fails closed with a light lane; prune idle guard treats any slot-*/light-* as busy | CI guest emergency_ro 2026-10-26 (memory `feedback-umbra-unclean-stop-fsck-before-runners`) |
 | 191 | `job-per-store-isolation` | A sweep over stores aborts on one store's error or visits them in a fixed order. Pack: reliability; probe S | Ebda issue #619, P1s 2026-11-11 |
 
 ## Source lens packs
@@ -245,7 +244,7 @@ Beyond the 29 per-concern lenses above, twelve docs describe HOW the standard is
 - `coding-hygiene.md` — Karpathy universal LLM-coding-pitfall guardrails (think-before-coding, simplicity, surgical changes, goal-driven); the always-on hygiene layer in the operator CLAUDE.md.
 - `merge-gate.md` — never merge on "no checks": `ops/merge-gate.sh` (head pinned, >=1 check, explicit required list derived from the repo's workflows, 3 consecutive polls); plus PR-range secret scans, same-job-baseline perf gates, seeded-resource probes. Born from a destructive migration merged with zero CI (2026-10-25).
 - `pr-quality.md` — no AI slop: fix-needs-a-failing-test, no dead/duplicated code, no `any`/`console.log`/bare TODO, PR bodies with Verified / Not verified / Cost-if-wrong; mechanical guards with baselines that only shrink (`ci/pr-quality/`) + the review-finding learning loop
-- `host-capacity.md` — one heavy test suite at a time host-wide (`ops/host-lock.sh`, re-entrant), lock layering, agent fan-out cap, never prune/fstrim a busy Umbra guest, forensics before rebuild (2026-10-25: guest ext4 corrupted 3x in 2 days).
+- `host-capacity.md` — one heavy test suite at a time host-wide (`ops/host-lock.sh`, re-entrant), lock layering, agent fan-out cap, host overload and disk alarms for the shared Mac.
 - `worktree-process-hygiene.md` — empty start commit in every new worktree, kill only PIDs you started, subagent handoff role files + `block-handoff-clobber.sh`, Remote Control `!` does not run.
 - `test-isolation.md` — tests running mutating git use a sanitised env (`ops/test-git-env.sh`, `ops/check-test-git-env.sh`); a hook-exported `GIT_DIR` turned a test `git init` into a mutation of the real repo; runtime-built secret fixtures.
 - `session-handoff.md` — lossless session continuity: a **per-session** handoff (`<repo>/.handoff/<session-id>.md`, else `~/.claude/handoff/<session-id>.md`) with Goal/State/Done/In-progress/Left, surfaced on SessionStart + flushed before compaction, with a `⚑HANDOFF` statusline badge at 40% context remaining so clearing the chat stays cheap. Per-session since 2026-08-26: one shared path let two parallel sessions silently destroy each other's state. (`ops/handoff.sh` + `ops/lib/handoff-paths.sh` + hooks.)
@@ -290,7 +289,6 @@ Cross-reference so `dream-standard-drift.sh` (which matches the memory-file slug
 | `feedback-never-run-gate-is-the-deadest-gate` | `gate-integrity.md` + `common-test-files.md` (crit 6) — **new 2026-09-04** |
 | `feedback-monitor-alert-measures-the-monitor` | `observability.md` + `common-test-files.md` (shape-aware gate 4) — **new 2026-09-04** |
 | `feedback-test-truncate-wiped-prod-db` | `common-test-files.md` (crit 1-3; it is that doc's `sources:` line) — **new 2026-09-04** |
-| `feedback-umbra-unclean-stop-fsck-before-runners` | `umbra-guest-integrity.md` — **new 2026-10-26** |
 
 > The drift detector's exact-slug match is why concepts already covered (e.g. blast-radius) still flagged as "gaps" — this mapping is the canonical fix; add a row here whenever a new cross-cutting lesson lands so the detector stays accurate.
 

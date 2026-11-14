@@ -33,14 +33,13 @@
 command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-[ -n "${OS_SHIM_DIR:-}" ] && PATH="$OS_SHIM_DIR:$PATH"   # test seam: fake du/df/rm/umbra shims
+[ -n "${OS_SHIM_DIR:-}" ] && PATH="$OS_SHIM_DIR:$PATH"   # test seam: fake du/df/rm shims
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # S0 (2026-10-26): --help and unknown flags are handled BEFORE anything acts; one sweep at a time.
 . "$HERE/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
 args_help "${BASH_SOURCE[0]}" "$@"
 . "$HERE/lib/single-instance.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/single-instance.sh" || exit 2
 . "$HERE/lib/os-state.sh" 2>/dev/null || true
-. "$HERE/lib/safe-prune.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/safe-prune.sh" 2>/dev/null || { echo "workspace-hygiene: lib/safe-prune.sh missing; refusing to prune without the idle guard" >&2; exit 2; }
 . "$HERE/lib/wt-safety.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-safety.sh" 2>/dev/null || { echo "workspace-hygiene: lib/wt-safety.sh missing; refusing to reap without the safety checks" >&2; exit 2; }
 
 # TCC canary (2026-07-12): abort when the launchd context cannot see ~/Desktop
@@ -207,77 +206,15 @@ if [ "${#dirty[@]}" -gt 0 ]; then for d in ${dirty[@]+"${dirty[@]}"}; do echo " 
 echo "stashes: ${stashes[*]:-none}"
 echo "_worktrees: ${wt_size:-0} · _backups: ${bk_size:-0}"
 
-# --- Umbra CI VM trim (2026-10-25) ---
-# The guest's disk.img is a sparse file that balloons under CI load (54 GB -> 36 GB after one `umbra prune`),
-# and a full HOST disk corrupts the guest (feedback-umbra-sparse-disk-host-full-corrupts-guest). So the hourly
-# sweep prunes every RUNNING machine when host free < UMBRA_PRUNE_FREE_GB (40) OR its disk.img grew more than
-# UMBRA_PRUNE_GROWTH_GB (10) since the last prune (state: one tsv line per VM = vm<TAB>epoch<TAB>allocated_kb after prune).
-# Never while `umbra rebuild` provisions the VM (lib/umbra-provisioning.sh, ~/.umbra/provisioning/<vm>) and never in
-# --repo mode. First sighting of a VM only records a baseline (unless host free is already low).
-# Test seams: UMBRA_BIN, UMBRA_ROOT, UMBRA_PRUNE_STATE, HYGIENE_FREE_GB (forces the free-GB reading).
-prune_notes=()
-umbra_trim() {
-  [ -z "$REPO_FILTER" ] || return 0
-  local ub="${UMBRA_BIN:-umbra}" root="${UMBRA_ROOT:-$HOME/.umbra}"
-  command -v "$ub" >/dev/null 2>&1 || return 0
-  . "$HERE/lib/umbra-provisioning.sh" 2>/dev/null || true
-  command -v umbra_provisioning >/dev/null 2>&1 || umbra_provisioning() { return 1; }
-  local state="${UMBRA_PRUNE_STATE:-$HOME/.cache/wt-deps/umbra-prune.tsv}" log="$HOME/Library/Logs/ebda-os-umbra-prune.log"
-  local min_free="${UMBRA_PRUNE_FREE_GB:-40}" max_grow=$(( ${UMBRA_PRUNE_GROWTH_GB:-10} * 1024 * 1024 ))
-  mkdir -p "$(dirname "$state")" "$(dirname "$log")" 2>/dev/null; touch "$state"
-  local fk fg; fk=$(_df_avail_kb); [ -n "$fk" ] || [ -n "${HYGIENE_FREE_GB:-}" ] || return 0   # unreadable df = UNKNOWN: no prune decision from it
-  fg="${HYGIENE_FREE_GB:-$(( fk / 1024 / 1024 ))}"; case "$fg" in ''|*[!0-9]*) return 0 ;; esac
-  local vm last_ts last_kb cur_kb why after
-  while read -r vm; do
-    [ -n "$vm" ] || continue
-    if why="$(umbra_provisioning "$vm")"; then
-      prune_notes+=("$vm: skipped ($why)"); echo "$(date -u +%FT%TZ) $vm skip: $why" >> "$log"; continue
-    fi
-    cur_kb=$(du -k "$root/machines/$vm/disk.img" 2>/dev/null | awk '{print $1}'); cur_kb="${cur_kb:-0}"
-    last_ts=""; last_kb=""
-    IFS=$'\t' read -r _ last_ts last_kb < <(awk -F'\t' -v v="$vm" '$1==v{print}' "$state" | tail -1) || true
-    why=""
-    if [ "$fg" -lt "$min_free" ]; then why="host free ${fg} GB < ${min_free}"
-    elif [ -n "${last_kb:-}" ] && [ $(( cur_kb - last_kb )) -gt "$max_grow" ]; then
-      why="disk.img grew $(( (cur_kb - last_kb) / 1024 / 1024 )) GB since last prune"
-    fi
-    if [ -z "$why" ]; then
-      [ -n "${last_kb:-}" ] || printf '%s\t%s\t%s\n' "$vm" "$(date +%s)" "$cur_kb" >> "$state"   # baseline only
-      continue
-    fi
-    if [ "$DRY" = "1" ]; then prune_notes+=("$vm: (dry) would prune - $why"); continue; fi
-    echo "$(date -u +%FT%TZ) $vm prune start: $why (img ${cur_kb} KB)" >> "$log"
-    # idle-only, no fstrim unless the host disk is the reason (lib/safe-prune.sh); a busy guest defers to the next hourly run
-    # both triggers (host free low, disk.img grew) exist to hand space back to the host, so fstrim is the point; it is
-    # allowed because safe_umbra_prune only runs it on an idle guest
-    pmode=reclaim
-    UMBRA_BIN="$ub" SAFE_PRUNE_FREE_GB="$fg" safe_umbra_prune "$vm" "$pmode" >> "$log" 2>&1; prc=$?
-    if [ "$prc" = 3 ]; then
-      prune_notes+=("$vm: prune DEFERRED, a CI job is running ($why)")
-      echo "$(date -u +%FT%TZ) $vm prune deferred (busy)" >> "$log"
-    elif [ "$prc" = 0 ]; then
-      after=$(du -k "$root/machines/$vm/disk.img" 2>/dev/null | awk '{print $1}'); after="${after:-$cur_kb}"
-      { awk -F'\t' -v v="$vm" '$1!=v' "$state" 2>/dev/null; printf '%s\t%s\t%s\n' "$vm" "$(date +%s)" "$after"; } > "$state.tmp" && mv "$state.tmp" "$state"
-      prune_notes+=("$vm: pruned ($why): disk.img $(( cur_kb / 1024 / 1024 )) -> $(( after / 1024 / 1024 )) GB")
-      echo "$(date -u +%FT%TZ) $vm prune done: ${cur_kb} -> ${after} KB" >> "$log"
-    else
-      prune_notes+=("$vm: prune FAILED or timed out ($why) - see ~/Library/Logs/ebda-os-umbra-prune.log")
-      echo "$(date -u +%FT%TZ) $vm prune FAILED" >> "$log"
-    fi
-  done < <("$ub" list 2>/dev/null | awk 'NR>1 && $2=="running"{print $1}')
-}
-umbra_trim
-if [ "${#prune_notes[@]}" -gt 0 ]; then echo "umbra trim:"; for n in ${prune_notes[@]+"${prune_notes[@]}"}; do echo "  - $n"; done; fi
-
 # --- disk alert: host free < WT_MIN_FREE_GB (30) -> Telegram via notify.sh (the OS's one channel), 6h cooldown ---
-free_kb=$(_df_avail_kb); free_gb="${HYGIENE_FREE_GB_AFTER:-$([ -n "$free_kb" ] && echo $(( free_kb / 1024 / 1024 )) || echo '?')}"   # re-read AFTER the VM prune
+free_kb=$(_df_avail_kb); free_gb="${HYGIENE_FREE_GB_AFTER:-$([ -n "$free_kb" ] && echo $(( free_kb / 1024 / 1024 )) || echo '?')}"
 echo "host free: ${free_gb} GB"
 [ "$free_gb" = "?" ] && echo "host free: UNKNOWN (df unreadable) - no disk decision taken from it"
 if [ -z "$REPO_FILTER" ] && [ "$free_gb" != "?" ] && [ "$free_gb" -lt "${WT_MIN_FREE_GB:-30}" ]; then
   stamp="$HOME/.cache/wt-deps/.disk-alert"; mkdir -p "$(dirname "$stamp")"
   last=$(stat -c %Y "$stamp" 2>/dev/null || stat -f %m "$stamp" 2>/dev/null || echo 0)
   if [ $(( $(date +%s) - last )) -gt 21600 ] && [ -x "$HERE/notify.sh" ]; then
-    "$HERE/notify.sh" "💾 host disk LOW" "Mac has only ${free_gb} GB free (< ${WT_MIN_FREE_GB:-30}). A full disk corrupts the Umbra CI VM. New worktrees are blocked. Still low AFTER umbra prune (${prune_notes[*]:-no VM pruned}). _worktrees=${wt_size:-?}. Run workspace-hygiene.sh / remove merged trees." >/dev/null 2>&1 && touch "$stamp"
+    "$HERE/notify.sh" "💾 host disk LOW" "Mac has only ${free_gb} GB free (< ${WT_MIN_FREE_GB:-30}). A full disk fails CI runner jobs and degrades the Mac. New worktrees are blocked. _worktrees=${wt_size:-?}. Run workspace-hygiene.sh / remove merged trees." >/dev/null 2>&1 && touch "$stamp"
   fi
 fi
 

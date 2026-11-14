@@ -7,7 +7,7 @@
 # lived on exactly one Mac.
 #
 # Measured 2026-09-14, before refresh_scoped_from_projects existed: 50 of 387
-# scoped files were absent from the vault — umbra 11 local / 1 mirrored,
+# scoped files were absent from the vault — repo-a 11 local / 1 mirrored,
 # quote-studio 3 / 0, mypovonai-learn 11 / 0, ebda-store 218 / 208.
 #
 # Two properties are load-bearing and both are asserted below:

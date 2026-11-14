@@ -1,15 +1,15 @@
-# host-capacity - one heavy suite at a time, and never touch a busy CI guest
+# host-capacity - one heavy suite at a time on the shared Mac
 
 tags: [BOTH]
-sources: `host-capacity-one-heavy-suite-and-guarded-umbra`, `feedback-manual-lock-rule-deadlocks-when-hook-takes-same-lock`, `feedback-umbra-sparse-disk-host-full-corrupts-guest`, `feedback-agent-test-containers-starve-ci-host`
+sources: `host-capacity-one-heavy-suite-and-guarded-umbra` (history), `feedback-manual-lock-rule-deadlocks-when-hook-takes-same-lock`, `feedback-agent-test-containers-starve-ci-host`
 
-**Incident (2026-10-24/25).** The Umbra CI guest froze and its ext4 corrupted three times in two days. Measured:
-~105 concurrent vitest processes from several agents' pre-push suites on a 16 GB Mac, the guest at 5 GiB with 3 job slots
-and the default disk cache mode, swap 3 of 4 GB, load 30+. Host overload looks like flaky CI and ends in a guest that
-needs `umbra rebuild`. Disk full (`disk-discipline.md`) is the other way to kill the guest; this is the CPU/RAM/I-O way.
+**Incident (2026-10-24/25).** Measured: ~105 concurrent vitest processes from several agents' pre-push suites on a 16 GB
+Mac, swap 3 of 4 GB, load 30+. Host overload looks like flaky CI. At the time it also froze and corrupted the Umbra CI VM
+(three rebuilds in two days); Umbra is retired (2026-11-14, Ruling UMBRA-RETIRE-1) and CI now runs on native macOS runners
+that share this host, so the same overload now shows up as slow or timed-out runner jobs. Disk full (`disk-discipline.md`)
+is the other way to starve the runners; this is the CPU/RAM/I-O way.
 
-**The rule:** *the host runs ONE full test suite at a time; anything that touches the CI guest is gentle by default.*
-A rule only in CLAUDE.md is a preference, so each point has code.
+**The rule:** *the host runs ONE full test suite at a time.* A rule only in CLAUDE.md is a preference, so each point has code.
 
 **Tradeoff:** pushes queue (a pre-push can wait minutes behind another suite) instead of racing. Queueing is slower
 per push and far faster than a rebuild.
@@ -42,34 +42,17 @@ At most **2 heavy tracks** at once (LEAN mode); code-only tracks may run in para
 worktree's first push does not justify a fresh full-suite run per agent - run touched tests per task, full suite at PR end.
 One shared capped test DB; stop test containers when done (`container list` empty).
 
-## 3. Alarms - what pages before the guest dies
-`ops/guest-wedge-watch.sh` (#252) probes the guest, watches in-flight CI jobs, and alerts on host pressure: swap in use at
-or above `GW_SWAP_MAX_PCT` (85) and low host disk (`disk-discipline.md`); only the narrow wedge verdict restarts a guest.
-**Not yet alarmed (follow-up):** sustained 1-min load above 2x core count, and the top-RSS process list in the alert. Measure
-before blaming (`umbra shell <vm>` -> `/proc/net/dev`, `df`, `/proc/pressure`; `umbra stats` for guest cpu/mem/swap).
-
-## 4. Never prune or fstrim a busy guest
-`umbra prune` runs `fstrim`, which **stalls guest I/O for ~80 s** -> CI test timeouts and, on a stressed guest, the wedge.
-- Automatic cleanup only on an **idle** guest: `umbra prune <vm> --if-idle --no-fstrim` (umbra #63); `workspace-hygiene.sh` safe-prune (#255) never trims a guest with a running job and never fstrims for routine cleanup.
-- A full fstrim is a deliberate, scheduled action on an idle guest, not a reflex when disk is low.
-- The VM disk is attached **Uncached + Full sync** (a crash cannot lose acknowledged writes); job slots are throttled to 2 for the 5 GiB guest.
-
-## 5. Forensics BEFORE rebuild
-`umbra rebuild` recreates the machine and destroys the evidence. Since umbra #62 `umbra stop`/`rebuild` capture a best-effort
-post-mortem first into `~/.umbra/forensics/<vm>-<utc>-<reason>/` (live guest dump within a 25 s budget, plus the host-side
-mirror of the guest journal `~/.umbra/guest-logs/<vm>.log`, which exists even when the guest cannot answer ssh). Rule: **read
-that directory before declaring a cause, and never delete it**; add host-side facts by hand (`sysctl vm.swapusage`, `uptime`,
-top processes by RSS, `stat` of `disk.img`) because the capture is guest-centred. A fresh guest beats debugging a dead one
-(`feedback-umbra-fresh-guest-beats-debugging-a-dead-one`) - after the cause is on disk.
+## 3. Alarms
+`ops/ci-runner-guard.sh` reads the host data volume every 30 min (note at 88% used, finding at 94%) and the fleet's
+online/busy state from the GitHub API (`disk-discipline.md`, `cicd.md`). `workspace-hygiene.sh` alerts below 30 GB free.
+**Not alarmed (follow-up):** sustained 1-min load above 2x core count, swap pressure. Measure before blaming
+(`vm_stat`, `sysctl vm.swapusage`, `uptime`, top processes by RSS).
 
 ## Grading
 | # | Criterion | Check | Severity |
 |---|---|---|---|
 | 1 | Every repo's heavy pre-push step runs through `host-lock.sh` (or an equivalent single host lock) | grep the hook; two simultaneous pushes serialize | High |
 | 2 | No wrapper+hook double lock | wrapped `git push` in a repo whose hook locks = gap | High |
-| 3 | Routine prune is idle-only and fstrim-free | `workspace-hygiene.sh` / `umbra prune --if-idle --no-fstrim` | High |
-| 4 | Swap and disk alarms exist (load: follow-up) | `ops/tests/guest-wedge-watch.test.sh` fires on a synthetic swap reading | Medium |
-| 5 | A rebuild is preceded by a forensics capture | `~/.umbra/forensics/` has an entry per stop/rebuild (automatic since umbra #62) | Medium |
+| 3 | Host-disk alarm exists (load and swap: follow-up) | `ops/tests/ci-runner-guard.test.sh` ("critical host disk is a finding") | Medium |
 
-Enforced by `ops/host-lock.sh` (tests: `ops/tests/host-lock.test.sh`), `ops/guest-wedge-watch.sh`, `ops/workspace-hygiene.sh`.
-Umbra-side follow-ups are filed as umbra issues: bare `umbra prune` still fstrims a busy guest (make idle-only the default), and the job throttle counts slots but ignores host swap/load.
+Enforced by `ops/host-lock.sh` (tests: `ops/tests/host-lock.test.sh`), `ops/ci-runner-guard.sh`, `ops/workspace-hygiene.sh`.

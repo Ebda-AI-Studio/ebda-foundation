@@ -1,7 +1,6 @@
 # The launchd jobs that run on the Mac (Amendment A): every KEEP-MAC row of the disposition table in os/MANIFEST.md.
 # Format: label-suffix <TAB> template path relative to os/ [<TAB> optin=VAR: installed only when VAR=1, ruling INSTALL-1]. Read by os/install.sh; the label is $OS_LAUNCHD_PREFIX.<label-suffix>.
 ci-runner-guard	ops/launchd/com.ebda.os.ci-runner-guard.plist
-guest-wedge-watch	ops/launchd/com.ebda.os.guest-wedge-watch.plist
 hung-job-guard	ops/launchd/com.ebda.os.hung-job-guard.plist
 mac-maintenance	ops/launchd/com.ebda.os.mac-maintenance.plist
 workspace-hygiene	ops/launchd/com.ebda.os.workspace-hygiene.plist

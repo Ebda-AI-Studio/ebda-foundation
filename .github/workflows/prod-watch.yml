@@ -4,7 +4,7 @@ name: Prod watch
 
 # The outside-in production watch for the Ebda suite (os/ops/ebda-prod-watch.mjs). It runs on GitHub-hosted runners ON PURPOSE: off
 # Cloudflare (so a Cloudflare-wide outage, which also takes down status.ebda.app and the brain Worker, still alerts) and off the
-# Egyptian ISP that blocks Cloudflare's 188.114.96/97.x range from the Mac. It must never follow EBDA_RUNS_ON onto the Umbra runner.
+# Egyptian ISP that blocks Cloudflare's 188.114.96/97.x range from the Mac. It must never follow EBDA_RUNS_ON onto the self-hosted Mac runners.
 #
 # Every 10 min: probe every public host, read the last Logpush window from R2 (ebda-logs), alert P1s to Telegram (deduped, <= 6/day,
 # an all-hosts-down outage always gets through), queue the rest for ONE daily digest (first run after 05:00 UTC).
@@ -36,7 +36,7 @@ concurrency:
 jobs:
   watch:
     name: Probe + logs + alert
-    # hosted-only: outside-in watch; Umbra sits on the Mac behind the ISP block and goes dark with it
+    # hosted-only: outside-in watch; the Mac runners sit behind the ISP block and go dark with it
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

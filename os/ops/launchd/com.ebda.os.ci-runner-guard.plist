@@ -8,8 +8,6 @@
 		<string>__HOME__</string>
 		<key>PATH</key>
 		<string>__PATH__</string>
-		<key>RUNNER_UMBRA_MACHINE</key>
-		<string>umbra-ci6</string>
 	</dict>
 	<key>Label</key>
 	<string>com.ebda.os.ci-runner-guard</string>

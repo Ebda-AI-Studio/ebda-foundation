@@ -3,10 +3,10 @@
 # allow-list on Linux.
 #
 # WHY: dream-fix.sh, dream-act.sh, self-heal.sh and remediate.sh execute
-# agent-authored shell on the umbra Linux guests with the full privileges of the
+# agent-authored shell on Linux hosts with the full privileges of the
 # account that launched them. Everything between that shell and the filesystem is
 # prompt discipline. Landlock is an independent syscall family — it needs no root,
-# no user namespaces and no bwrap — so it is the one rung available on those guests.
+# no user namespaces and no bwrap — so it is the one rung available on those hosts.
 #
 # Backed by vendor/landlock-run (BSD-3-Clause, from deepseek-harness; see
 # vendor/landlock-run/VENDOR-PROVENANCE.md). Verified in a Linux container on

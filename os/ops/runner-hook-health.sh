@@ -98,7 +98,7 @@ echo "== runner-hook-health =="
 if [ "${#disk_hits[@]}" -gt 0 ]; then
   echo "DETECTED runner OUT-OF-DISK failures:"
   for h in ${disk_hits[@]+"${disk_hits[@]}"}; do echo "  • $h"; done
-  DISK_FIX="ON THE RUNNER HOST (umbra shell $OS_VM --): prune the runner _work dir + docker (docker system prune -af; rm -rf ~/actions-runner/_work/*/*) and check 'df -h'. Weekly maintenance cadence was not enough — consider a job-started df gate in the runner hook."
+  DISK_FIX="ON THE MAC RUNNER HOST: prune the runner _work dirs (rm -rf ~/actions-runner*/_work/*/*) and check 'df -h'. Weekly maintenance cadence was not enough — consider a job-started df gate in the runner hook."
   echo "FIX: $DISK_FIX"
   if [ "$NOTIFY" = "1" ] && [ -x "$HERE/notify.sh" ]; then
     "$HERE/notify.sh" "Self-hosted runner is OUT OF DISK — CI failing" \
@@ -108,7 +108,7 @@ fi
 if [ "${#browser_hits[@]}" -gt 0 ]; then
   echo "DETECTED runner BROWSER/TOOLCHAIN-cache corruption failures:"
   for h in ${browser_hits[@]+"${browser_hits[@]}"}; do echo "  • $h"; done
-  BROWSER_FIX="ON THE RUNNER HOST (umbra shell $OS_VM --): the runner is re-using a corrupt cached browser download that no code change can clear. Wipe it: rm -rf ~/.cache/puppeteer/chrome* ~/.cache/ms-playwright 2>/dev/null; then the next install re-fetches cleanly. Durable fix: skip the download in CI (puppeteer .puppeteerrc.cjs skipDownload / PUPPETEER_SKIP_DOWNLOAD) when the browser isn't needed."
+  BROWSER_FIX="ON THE MAC RUNNER HOST: the runner is re-using a corrupt cached browser download that no code change can clear. Wipe it: rm -rf ~/.cache/puppeteer/chrome* ~/.cache/ms-playwright 2>/dev/null; then the next install re-fetches cleanly. Durable fix: skip the download in CI (puppeteer .puppeteerrc.cjs skipDownload / PUPPETEER_SKIP_DOWNLOAD) when the browser isn't needed."
   echo "FIX: $BROWSER_FIX"
   if [ "$NOTIFY" = "1" ] && [ -x "$HERE/notify.sh" ]; then
     "$HERE/notify.sh" "Self-hosted runner BROWSER CACHE corrupt — CI failing" \
@@ -134,7 +134,7 @@ fi
 
 echo "DETECTED post-job-hook job failures (real steps passed, only cleanup failed):"
 for h in ${hits[@]+"${hits[@]}"}; do echo "  • $h"; done
-FIX="ON THE RUNNER HOST (umbra shell $OS_VM --): bash ebda-foundation/ops/setup-runner-hooks.sh — wraps the hook so it always exits 0 (cleanup stays best-effort). No runner restart needed."
+FIX="ON THE MAC RUNNER HOST: make the runner post-job hook (ACTIONS_RUNNER_HOOK_JOB_COMPLETED in the runner .env) exit 0 so cleanup stays best-effort, then restart that runner launchd service (actions.runner.<org>.<name>)."
 echo
 echo "FIX: $FIX"
 

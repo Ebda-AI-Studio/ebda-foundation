@@ -16,7 +16,7 @@ mk() { # fresh fixture tree
 
 | Job | Disposition | Detail | Reason |
 |---|---|---|---|
-| alpha | KEEP-MAC | alpha | needs umbra |
+| alpha | KEEP-MAC | alpha | needs docker |
 | beta | PORT-BRAIN | beta-w | http poll |
 | gamma | DROP | - | obsolete |
 M
