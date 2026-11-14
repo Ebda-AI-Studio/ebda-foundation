@@ -8,26 +8,11 @@
 import { canExecute } from '../controls';
 import { maskText } from '../audit';
 import { sha256Hex } from '../release';
-import type { ApprovalRecord, DecisionRow, PreviewCard, PreviewRecord, SmartLayerAdapter, TurnCtx } from '../types';
+import type { DecisionRow, PreviewCard, SmartLayerAdapter, TurnCtx } from '../types';
+import { issueApproval, type ApprovalDeps } from './issue';
 import { applyOpenPreview, cardOf, type ApplyOutcome } from './journal';
 
-export const APPROVAL_TTL_MS = 15 * 60 * 1000;
-export type ApprovalToken = { approvalId: string; previewId: string; token: string };
-export type ApprovalDeps = { onApprovalToken?: (t: ApprovalToken) => void };
-
-const b64url = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-export async function issueApproval(a: SmartLayerAdapter, ctx: TurnCtx, preview: PreviewRecord): Promise<{ approvalId: string; token: string }> {
-  const raw = new Uint8Array(32);
-  crypto.getRandomValues(raw);
-  const token = b64url(raw);
-  const rec: ApprovalRecord = {
-    id: crypto.randomUUID(), storeId: ctx.storeId, userId: ctx.userId, previewId: preview.id,
-    tokenHash: await sha256Hex(token), payloadHash: preview.payloadHash, expiresAt: ctx.now + APPROVAL_TTL_MS, status: 'pending', createdAt: ctx.now,
-  };
-  await a.storage.putApproval(rec);
-  return { approvalId: rec.id, token };
-}
+export { issueApproval, APPROVAL_TTL_MS, type ApprovalToken, type ApprovalDeps } from './issue';
 
 export type ConfirmResult =
   | { status: 'applied'; appliedId: string }
@@ -70,6 +55,14 @@ export async function confirmApproval(a: SmartLayerAdapter, ctx: TurnCtx, approv
     return { status: 'stale', card: cardOf(fresh, tool, issued.approvalId) };
   }
   if (out.status === 'forbidden') await decide(a, ctx, approvalId, 'rejected:permission', 'apply refused by the product authorization');
+  if (out.status === 'failed') {
+    // The token was claimed but nothing changed (the preview reopened): hand the merchant a fresh approval instead of a dead card.
+    const reopened = await a.storage.getPreview(ctx.storeId, pv.id);
+    if (reopened && reopened.status === 'open') {
+      const issued = await issueApproval(a, ctx, reopened);
+      deps.onApprovalToken?.({ approvalId: issued.approvalId, previewId: reopened.id, token: issued.token });
+    }
+  }
   if (out.status === 'not_found') return { status: 'used' };
   return { status: out.status };
 }

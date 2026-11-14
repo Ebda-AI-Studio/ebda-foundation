@@ -113,7 +113,7 @@ export interface AuditRow {
 }
 export interface PreviewRecord {
   id: string; storeId: string; userId: string; turnId: string; tool: string; args: unknown; draft: PreviewDraft;
-  policy: 'preview' | 'confirm'; reasons: string[]; payloadHash: string; createdAt: number; releaseId: string;
+  policy: 'preview' | 'confirm'; reasons: string[]; undo: UndoClass; payloadHash: string; createdAt: number; releaseId: string;
   status: 'open' | 'applying' | 'applied' | 'superseded' | 'expired';
 }
 export interface AppliedRecord { id: string; storeId: string; previewId: string; userId: string; tool: string; inverse: InverseOp | null; undo: UndoClass; etagAfter: string; appliedAt: number; undoneAt?: number }
@@ -130,16 +130,24 @@ export interface SmartLayerStorage {
   transitionPreview(storeId: string, id: string, from: PreviewRecord['status'], to: PreviewRecord['status']): Promise<boolean>;
   putApplied(r: AppliedRecord): Promise<void>;
   getApplied(storeId: string, id: string): Promise<AppliedRecord | null>;
+  /** Atomic compare-and-set: resolves true only for the single caller that moved the record from not-undone to undone. */
   markUndone(storeId: string, id: string, now: number): Promise<boolean>;
+  /** Atomic inverse of markUndone (rolls the claim back when the inverse failed): true only if it was undone. */
+  unmarkUndone(storeId: string, id: string): Promise<boolean>;
   putApproval(r: ApprovalRecord): Promise<void>;
   getApproval(storeId: string, id: string): Promise<ApprovalRecord | null>;
   /** CAS pending -> rejected | expired. */
   closeApproval(storeId: string, id: string, to: 'rejected' | 'expired'): Promise<boolean>;
   claimApproval(storeId: string, id: string, tokenHash: string, payloadHash: string, now: number): Promise<'claimed' | 'used' | 'expired' | 'mismatch' | 'missing'>;
   recordDecision(r: DecisionRow): Promise<void>;
+  loadDecisions(storeId: string, approvalId: string): Promise<DecisionRow[]>;
+  /** Audit rows of a store with `at >= sinceMs`, newest last, at most `limit` (weekly unanswered report, review, tests). */
+  loadAudits(storeId: string, sinceMs: number, limit: number): Promise<AuditRow[]>;
   bump(key: string, windowMs: number, now: number): Promise<number>;
+  /** Erasure and retention cover EVERY record type: turns, audits, previews (drafts hold before/after rows), applied, approvals, decisions. */
   eraseStore(storeId: string): Promise<void>;
   eraseUser(storeId: string, userId: string): Promise<void>;
+  /** Deletes everything older than `cutoff` (by its own timestamp) and returns how many records went. */
   purgeBefore(cutoff: number): Promise<number>;
 }
 

@@ -6,6 +6,7 @@
  */
 import { indexTokens } from '../../text';
 import { francoToArabic } from '../rails/franco';
+import { strongerPolicy } from '../exec/policy';
 import type { Mode, RegistryView, ToolSpec } from '../types';
 
 export interface SelectOpts {
@@ -31,6 +32,7 @@ export function selectTools(q: string, tools: ToolSpec[], reg: RegistryView, o: 
   const eligible = tools.filter((t) => {
     const cap = reg.caps.get(t.capabilityId);
     if (!cap || cap.status !== 'live' || cap.policy === 'forbidden') return false;
+    if (strongerPolicy(t.policy, cap.policy) !== t.policy) return false; // the tool declares less than the registry demands: drift fails closed, never open
     if (o.killed?.has(t.name)) return false;
     if (o.mode === 'answer-only' && t.policy !== 'free') return false;
     if (o.untrustedInContext && t.policy !== 'free') return false;
