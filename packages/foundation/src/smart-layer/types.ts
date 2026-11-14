@@ -114,7 +114,7 @@ export interface AuditRow {
 export interface PreviewRecord {
   id: string; storeId: string; userId: string; turnId: string; tool: string; args: unknown; draft: PreviewDraft;
   policy: 'preview' | 'confirm'; reasons: string[]; payloadHash: string; createdAt: number; releaseId: string;
-  status: 'open' | 'applied' | 'superseded' | 'expired';
+  status: 'open' | 'applying' | 'applied' | 'superseded' | 'expired';
 }
 export interface AppliedRecord { id: string; storeId: string; previewId: string; userId: string; tool: string; inverse: InverseOp | null; undo: UndoClass; etagAfter: string; appliedAt: number; undoneAt?: number }
 export interface ApprovalRecord { id: string; storeId: string; userId: string; previewId: string; tokenHash: string; payloadHash: string; expiresAt: number; status: 'pending' | 'used' | 'rejected' | 'expired'; createdAt: number }
@@ -126,11 +126,15 @@ export interface SmartLayerStorage {
   appendAudit(r: AuditRow): Promise<void>;
   putPreview(r: PreviewRecord): Promise<void>;
   getPreview(storeId: string, id: string): Promise<PreviewRecord | null>;
-  setPreviewStatus(storeId: string, id: string, status: PreviewRecord['status']): Promise<void>;
+  /** Atomic compare-and-set (SQL: UPDATE .. WHERE status = from). Resolves true only for the caller that made the change. */
+  transitionPreview(storeId: string, id: string, from: PreviewRecord['status'], to: PreviewRecord['status']): Promise<boolean>;
   putApplied(r: AppliedRecord): Promise<void>;
   getApplied(storeId: string, id: string): Promise<AppliedRecord | null>;
   markUndone(storeId: string, id: string, now: number): Promise<boolean>;
   putApproval(r: ApprovalRecord): Promise<void>;
+  getApproval(storeId: string, id: string): Promise<ApprovalRecord | null>;
+  /** CAS pending -> rejected | expired. */
+  closeApproval(storeId: string, id: string, to: 'rejected' | 'expired'): Promise<boolean>;
   claimApproval(storeId: string, id: string, tokenHash: string, payloadHash: string, now: number): Promise<'claimed' | 'used' | 'expired' | 'mismatch' | 'missing'>;
   recordDecision(r: DecisionRow): Promise<void>;
   bump(key: string, windowMs: number, now: number): Promise<number>;
@@ -153,6 +157,8 @@ export interface SmartLayerAdapter {
   };
   checkRefs(ctx: TurnCtx, refs: RefCheck[]): Promise<{ missing: RefCheck[] }>;
   handoff(ctx: TurnCtx, p: HandoffPacket): Promise<void>;
+  /** Capability id of the secure screen where the merchant enters a secret of this kind (a deep link, never typed in chat). */
+  secureScreen?(kind: 'meta_token' | 'cf_token' | 'api_key' | 'password' | 'jwt' | 'card' | 'private_key'): string | null;
   ai: AiBinding;
   models: ModelRouting;
   storage: SmartLayerStorage;

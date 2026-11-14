@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+// @ts-expect-error plain .mjs without types
 import { vendoredSet } from '../../../../lib/foundation.mjs';
 import { entry, cfg } from '../../../../test/helpers/capability-fixture';
 import { checkModelBypass } from '../smart-layer-bypass';
