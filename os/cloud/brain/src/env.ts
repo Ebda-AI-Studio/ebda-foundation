@@ -136,6 +136,11 @@ export interface Env {
    *  ANTHROPIC_API_KEY; no brain code path, watcher or the Mac ever sees it. */
   HANDS_ANTHROPIC_API_KEY?: string;
   INGEST_TOKEN?: string;
+  /** InstaPay bridge (src/instapay-bridge.ts): per-product HMAC secrets (>= 16 chars) and the https revert endpoints the "not received" tap calls */
+  INSTAPAY_BRIDGE_SECRET_STORE?: string;
+  INSTAPAY_BRIDGE_SECRET_CHAT?: string;
+  INSTAPAY_REVERT_URL_STORE?: string;
+  INSTAPAY_REVERT_URL_CHAT?: string;
   /** passed into the hands container at start, never baked into the image */
   CLAUDE_CODE_OAUTH_TOKEN?: string;
   HANDS_GH_TOKEN?: string;
