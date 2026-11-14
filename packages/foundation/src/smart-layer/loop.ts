@@ -28,7 +28,7 @@ import { scopeCheck, type Classify, type ScopeVerdict } from './rails/scope';
 import { detectSecrets } from './rails/secrets';
 import { renderReply } from './rails/ui-truth';
 import { buildSystemPrompt } from './release';
-import type { Locale, PreviewCard, Segment, SmartLayerAdapter, ToolSpec, TurnCtx, TurnResult, TurnStatus } from './types';
+import type { HandoffPacket, Locale, PreviewCard, Segment, SmartLayerAdapter, ToolSpec, TurnCtx, TurnResult, TurnStatus } from './types';
 import { foldArabic } from '../text';
 
 type L = { ar: string; en: string };
@@ -148,7 +148,7 @@ export async function runTurn(a: SmartLayerAdapter, ctx: TurnCtx, input: TurnInp
   // 4b handoff when the merchant asks for a person or is plainly frustrated
   stage('handoff');
   const history = await a.storage.loadTurns(ctx.storeId, ctx.conversationId, HISTORY_TURNS);
-  const handoff = async (reason: Parameters<typeof handoffReason> extends never ? never : 'low_confidence' | 'repeated_failure' | 'frustration' | 'forbidden' | 'asked_human') => {
+  const handoff = async (reason: HandoffPacket['reason']) => {
     rails.handoff = reason;
     const transcript = [...history.map((t) => `${t.role}: ${t.maskedText}`), `merchant: ${maskText(masked)}`].join('\n').slice(-4000);
     try {
