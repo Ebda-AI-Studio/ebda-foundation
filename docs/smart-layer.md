@@ -55,6 +55,10 @@ Ids are configuration (`models.ts`, ruling SL-MODEL-0: provisional bake-off lead
 - `checkRefs` runs under the merchant's tenant context and must not throw for "not found" (return it in `missing`).
 - The HTTP confirm route must pass the merchant's own session `ctx` (role re-read per request) and show the token only to the browser that rendered the card.
 - Never persist or log the value given to `onApprovalToken`.
+- Run `runSmartLayerStorageContract(() => yourStorage(), { describe, it, expect })` (from `@ebda/foundation/smart-layer`) against the REAL storage path: it proves single-winner compare-and-set under concurrent calls (`claimApproval`, `closeApproval`, `transitionPreview`, `markUndone`), the order of `claimApproval` checks, the expiry boundary, store isolation, and that `eraseStore` / `eraseUser` / `purgeBefore` reach turns, audits, previews, applied records, approvals and decisions. The contract has been shown to fail a read-await-write implementation.
+- Run `checkAdapterContract(adapter)` in the adapter's tests and at boot (fail loud): it reports any tool that declares a weaker policy or undo class than its registry entry, a tool on a capability that is not live, a forbidden capability that has a tool, and write tools without `preview` + `apply`. The effective policy is always the stricter of the two, so drift can only add a gate.
+- List the merchant's own hosts in `merchantDomains` (their store subdomain, verified custom domains). Links to `*.ebda.app` are NOT trusted as a group: only `ebda.app`, `help.ebda.app` and `whatsapp.ebda.app` (`EBDA_HOSTS`).
+- Undo: `undoApplied` claims the undo atomically, runs the inverse through the same registry and policy gate as any action, and returns `needs_confirm` plus a card when a compensating inverse (a different tool) is confirm-class; pass `onApprovalToken` like for `runTurn`.
 
 ## Rollout (spec 6.10)
 
