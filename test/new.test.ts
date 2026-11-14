@@ -34,6 +34,6 @@ describe('new', () => {
     expect(wrangler).toContain('"name": "ebda-crm"');
     expect(readFileSync(join(out, 'src/index.ts'), 'utf8')).not.toContain('{{');
     expect(execFileSync('node', [join(ROOT, 'bin/ebda-foundation.mjs'), 'check', '--target', out], { encoding: 'utf8' })).toContain('in sync');
-    expect(execFileSync('git', ['log', '--format=%s'], { cwd: out, encoding: 'utf8' })).toMatch(/^chore: init ebda-crm from ebda-foundation v0\.1\.0/);
+    expect(execFileSync('git', ['log', '--format=%s'], { cwd: out, encoding: 'utf8' })).toMatch(/^chore: init ebda-crm from ebda-foundation v0\.2\.0/);
   });
 });
