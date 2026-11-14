@@ -52,6 +52,44 @@ describe('fail closed on malformed runtime input', () => {
   });
 });
 
+describe('unknown can only add a reason (review I1)', () => {
+  const ok = () => merge(vec.base, { isFirstPayment: false });
+  it('isFirstPayment undefined or null applies the first-payment cap', () => {
+    for (const v of [undefined, null, 0, '', 'false', 'no'] as any[]) {
+      const d = decideInstapay({ ...merge(vec.base, { extract: { amountMinor: 600000 }, expected: { amountMinor: 600000 }, firstPaymentCapMinor: 50000 }), isFirstPayment: v });
+      expect(d.reasons, String(v)).toEqual(['FIRST_PAYMENT_OVER_CAP']);
+    }
+    expect(decideInstapay(ok()).verdict).toBe('auto_confirm');
+  });
+  it('replacing ANY single input of an auto-confirming input by undefined or null never leaves it auto-confirming', () => {
+    const paths: string[][] = [['extract'], ['extract', 'amountMinor'], ['extract', 'recipientHandle'], ['extract', 'transferredAt'], ['extract', 'reference'], ['expected'], ['expected', 'amountMinor'], ['expected', 'payeeHandle'], ['now'], ['mode'], ['storeEnabled'], ['isFirstPayment'], ['firstPaymentCapMinor'], ['duplicate'], ['flags'], ['flags', 'looksEdited'], ['flags', 'suspiciousText'], ['flags', 'confidence']];
+    // A: not a first payment, amount above the cap (the cap input is irrelevant here); B: a first payment exactly at the cap (isFirstPayment relevant)
+    const A = merge(vec.base, { isFirstPayment: false, firstPaymentCapMinor: 1 });
+    const B = merge(vec.base, { isFirstPayment: true });
+    expect(decideInstapay(A).verdict).toBe('auto_confirm');
+    expect(decideInstapay(B).verdict).toBe('auto_confirm');
+    const irrelevant = (name: string, p: string) => (name === 'A' && p === 'firstPaymentCapMinor');
+    for (const [name, base] of [['A', A], ['B', B]] as const)
+      for (const path of paths) {
+        if (irrelevant(name, path.join('.'))) continue;
+        for (const v of [undefined, null]) {
+          const i: any = structuredClone(base);
+          let o = i;
+          for (const k of path.slice(0, -1)) o = o[k];
+          o[path[path.length - 1]!] = v;
+          expect(() => decideInstapay(i), path.join('.')).not.toThrow();
+          // B with isFirstPayment unknown is a first payment at the cap, which legitimately passes; the over-cap case is pinned in the test above
+          if (name === 'B' && path.join('.') === 'isFirstPayment') continue;
+          expect(decideInstapay(i).verdict, ).toBe('needs_human');
+        }
+      }
+    // dualControlThresholdMinor: null legitimately means "no threshold"; undefined must not
+    const i: any = structuredClone(A);
+    i.dualControlThresholdMinor = undefined;
+    expect(decideInstapay(i).verdict).toBe('needs_human');
+  });
+});
+
 describe('normalizeHandle', () => {
   it.each([
     ['EBDA@instapay', 'ebda@instapay'],
@@ -99,7 +137,7 @@ function oracle(i: DecisionInput): boolean {
     i.now - e.transferredAt <= 48 * 3600_000 &&
     e.transferredAt - i.now <= 10 * 60_000 &&
     i.duplicate === 'none' &&
-    (!i.isFirstPayment || e.amountMinor <= i.firstPaymentCapMinor) &&
+    (i.isFirstPayment === false || e.amountMinor <= i.firstPaymentCapMinor) &&
     (i.dualControlThresholdMinor === null || e.amountMinor < i.dualControlThresholdMinor) &&
     i.flags.looksEdited === false && i.flags.suspiciousText === false && i.flags.confidence >= 0.8
   );
@@ -118,7 +156,7 @@ describe('property: random inputs over boundary-heavy domains', () => {
       now: NOW,
       mode: pick(['live', 'live', 'live', 'off', 'shadow']),
       storeEnabled: pick([true, true, true, false]),
-      isFirstPayment: rnd() < 0.5,
+      isFirstPayment: pick([true, false, false, undefined, null]) as any,
       firstPaymentCapMinor: pick([0, 99, 120000, 1440000]),
       dualControlThresholdMinor: pick([null, null, 100, 120000, 120001, 5_000_000]),
       duplicate: pick(['none', 'none', 'none', 'reference', 'image', 'both']),

@@ -1,7 +1,8 @@
 // InstaPay auto-confirm decision (money path, spec 7.4). ONE pure function: it never reads a clock, a database or the network, and it
 // never short-circuits, so the digest and the admin screen show EVERY reason a payment waits. Auto-confirm iff there are zero reasons.
-// Every comparison fails CLOSED: a value that is not a safe integer / finite number / known enum can only add a reason, never remove one.
-import type { ReceiptExtract } from './instapay-extract';
+// Every comparison fails CLOSED: a value that is not a safe integer / finite number / known enum (undefined and null included, e.g. isFirstPayment)
+// can only add a reason, never remove one.
+import { asciiLower, type ReceiptExtract } from './instapay-extract';
 
 export type ReasonCode =
   | 'KILL_GLOBAL'
@@ -47,10 +48,13 @@ export type Decision = { verdict: 'auto_confirm' | 'needs_human'; reasons: Reaso
 
 const HANDLE_RE = /^[a-z0-9._-]+(?:@[a-z0-9._-]+)?$/;
 
-/** trim, lower-case, drop ONE leading "@"; null for empty, masked (* or bullet or ellipsis), spaced, over-long or odd characters */
+/** printable ASCII only (checked BEFORE lower-casing, so U+212A KELVIN SIGN, fullwidth letters, zero-width characters and Cyrillic look-alikes are
+ *  rejected, never folded into a match), trim, ASCII lower-case, drop ONE leading "@"; null for empty, masked (* or bullet or ellipsis), spaced or over-long */
 export function normalizeHandle(raw: string): string | null {
   if (typeof raw !== 'string') return null;
-  let s = raw.trim().toLowerCase();
+  const t = raw.trim();
+  if (!/^[\x21-\x7e]+$/.test(t)) return null;
+  let s = asciiLower(t);
   if (s.startsWith('@')) s = s.slice(1);
   if (s.length === 0 || s.length > 64 || !HANDLE_RE.test(s)) return null;
   return s;
@@ -88,7 +92,7 @@ export function decideInstapay(i: DecisionInput): Decision {
     r.add('DUPLICATE_IMAGE');
   }
 
-  if (i.isFirstPayment && !(expectedOk && i.expected.amountMinor <= i.firstPaymentCapMinor)) r.add('FIRST_PAYMENT_OVER_CAP');
+  if (i.isFirstPayment !== false && !(expectedOk && i.expected.amountMinor <= i.firstPaymentCapMinor)) r.add('FIRST_PAYMENT_OVER_CAP');
   if (i.dualControlThresholdMinor !== null && !(expectedOk && i.expected.amountMinor < i.dualControlThresholdMinor)) r.add('ABOVE_DUAL_CONTROL_THRESHOLD');
 
   if (i.flags?.looksEdited !== false) r.add('LOOKS_EDITED');

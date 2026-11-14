@@ -352,6 +352,70 @@
       ]
     },
     {
+      "name": "isFirstPayment null applies the cap (unknown can only add a reason)",
+      "patch": {
+        "isFirstPayment": null,
+        "extract": {
+          "amountMinor": 600000
+        },
+        "expected": {
+          "amountMinor": 600000
+        },
+        "firstPaymentCapMinor": 50000
+      },
+      "verdict": "needs_human",
+      "reasons": [
+        "FIRST_PAYMENT_OVER_CAP"
+      ]
+    },
+    {
+      "name": "isFirstPayment null at the cap still passes",
+      "patch": {
+        "isFirstPayment": null
+      },
+      "verdict": "auto_confirm",
+      "reasons": []
+    },
+    {
+      "name": "kelvin sign in the handle does not match a latin k payee",
+      "patch": {
+        "extract": {
+          "recipientHandle": "Kebda@instapay"
+        },
+        "expected": {
+          "payeeHandle": "kebda@instapay"
+        }
+      },
+      "verdict": "needs_human",
+      "reasons": [
+        "WRONG_HANDLE"
+      ]
+    },
+    {
+      "name": "fullwidth letters in the handle do not match",
+      "patch": {
+        "extract": {
+          "recipientHandle": "ｅbda@instapay"
+        }
+      },
+      "verdict": "needs_human",
+      "reasons": [
+        "WRONG_HANDLE"
+      ]
+    },
+    {
+      "name": "zero-width space in the handle does not match",
+      "patch": {
+        "extract": {
+          "recipientHandle": "ebda​@instapay"
+        }
+      },
+      "verdict": "needs_human",
+      "reasons": [
+        "WRONG_HANDLE"
+      ]
+    },
+    {
       "name": "looks edited",
       "patch": {
         "flags": {
