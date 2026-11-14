@@ -1,4 +1,4 @@
-import { capabilitySchema, type Capability, type GuardConfig, type Violation } from './capability';
+import { capabilitySchema, normalizeApi, type Capability, type GuardConfig, type Violation } from './capability';
 
 const splitApi = (a: string): { method: string; path: string } => {
   const m = /^(\S+)\s+(.*)$/.exec(a.trim());
@@ -32,11 +32,25 @@ export function checkRegistry(files: { name: string; json: unknown }[], cfg: Gua
     if (e.status === 'planned' && !e.plan) add('lifecycle', e.id, 'planned needs plan');
 
     const apis = e.api.map(splitApi);
-    // readOnlyPost excuses POST only, with its written reason; PUT/PATCH/DELETE are always writes.
-    const writes = apis.some((a) => a.method !== 'GET' && !(a.method === 'POST' && e.readOnlyPost));
+    // readOnlyPost excuses only the POST routes it names (compared normalised); PUT/PATCH/DELETE and every unnamed POST are writes.
+    const excused = new Set((e.readOnlyPost?.routes ?? []).map(normalizeApi));
+    const apiNorm = new Set(e.api.map(normalizeApi));
+    for (const r of e.readOnlyPost?.routes ?? []) {
+      const n = normalizeApi(r);
+      if (!n.startsWith('POST ') || !apiNorm.has(n)) add('readonlypost-unknown-route', `${e.id} ${r}`, `readOnlyPost names ${r}, which is not a POST route in api`);
+    }
+    const writes = e.api.some((a, i) => apis[i]!.method !== 'GET' && !(apis[i]!.method === 'POST' && excused.has(normalizeApi(a))));
     if (e.policy === 'free' && writes) add('policy-free-writes', e.id, 'policy free but an api method writes (declare readOnlyPost with a reason if it only reads)');
 
-    const needsConfirm = apis.some((a) => a.method === 'DELETE' || mustConfirm.some((m) => (!m.method || m.method === a.method) && m.re.test(a.path)));
+    // match the pattern against the raw and the normalised spelling, so a trailing slash, case, double slashes or a param-name variant cannot dodge it
+    const needsConfirm = e.api.some((a, i) => {
+      const n = splitApi(normalizeApi(a));
+      return apis[i]!.method === 'DELETE' || mustConfirm.some((m) => (!m.method || m.method === apis[i]!.method) && (m.re.test(apis[i]!.path) || m.re.test(n.path)));
+    });
+    for (const s of e.screens) {
+      // a wildcard may only end a path with depth >= 1 ("/x/*"): "/*" or a mid-path star would claim pages it does not name
+      if (s.includes('*') && !/^\/[^*]+\/\*$/.test(s)) add('screen-wildcard', `${e.id} ${s}`, `${s}: a wildcard screen must be /<path>/* with a concrete base`);
+    }
     if (needsConfirm && e.policy !== 'confirm' && e.policy !== 'forbidden') add('policy-must-confirm', e.id, 'money, customer messaging and deletes need confirm or forbidden');
 
     if (e.undo.class === 'irreversible' && (e.policy === 'free' || e.policy === 'preview')) add('policy-irreversible', e.id, 'irreversible actions are always confirm or forbidden');

@@ -31,9 +31,19 @@ describe('capabilitySchema', () => {
   it('rejects an unknown policy', () => expect(capabilitySchema.safeParse({ ...minimal, policy: 'maybe' }).success).toBe(false));
   it('rejects a bad id', () => expect(capabilitySchema.safeParse({ ...minimal, id: 'Bad Id' }).success).toBe(false));
   it('rejects a non-ISO versionDate', () => expect(capabilitySchema.safeParse({ ...minimal, versionDate: '14/11/2026' }).success).toBe(false));
-  it('accepts a readOnlyPost flag with a reason', () => {
-    expect(capabilitySchema.safeParse({ ...minimal, readOnlyPost: { reason: 'only pulls Meta state' } }).success).toBe(true);
-    expect(capabilitySchema.safeParse({ ...minimal, readOnlyPost: {} }).success).toBe(false);
+  it('accepts readOnlyPost naming routes and a reason; rejects it without routes or reason', () => {
+    expect(capabilitySchema.safeParse({ ...minimal, readOnlyPost: { routes: ['POST /templates/sync'], reason: 'only pulls Meta state' } }).success).toBe(true);
+    expect(capabilitySchema.safeParse({ ...minimal, readOnlyPost: { reason: 'r' } }).success).toBe(false);
+    expect(capabilitySchema.safeParse({ ...minimal, readOnlyPost: { routes: [], reason: 'r' } }).success).toBe(false);
+    expect(capabilitySchema.safeParse({ ...minimal, readOnlyPost: { routes: ['POST /x'] } }).success).toBe(false);
+  });
+  it('rejects an impossible date (2026-99-99, 2026-02-30) but accepts a leap day', () => {
+    expect(capabilitySchema.safeParse({ ...minimal, versionDate: '2026-99-99' }).success).toBe(false);
+    expect(capabilitySchema.safeParse({ ...minimal, versionDate: '2026-02-30' }).success).toBe(false);
+    expect(capabilitySchema.safeParse({ ...minimal, versionDate: '2028-02-29' }).success).toBe(true);
+  });
+  it('rejects empty roles (an entry nobody can use would bypass the help and operator rules)', () => {
+    expect(capabilitySchema.safeParse({ ...minimal, roles: [] }).success).toBe(false);
   });
 });
 

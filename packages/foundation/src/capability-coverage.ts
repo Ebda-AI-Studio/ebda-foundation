@@ -18,6 +18,7 @@ export function pageMatches(pattern: string, page: string): boolean {
   const pg = fold(page);
   if (pat.endsWith('/*')) {
     const base = pat.slice(0, -2);
+    if (base === '') return false; // "/*" would cover every page; checkRegistry rejects it, this is the second lock
     return pg === base || pg.startsWith(`${base}/`);
   }
   return pat === pg;

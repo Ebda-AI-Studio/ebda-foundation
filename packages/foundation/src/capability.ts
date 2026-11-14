@@ -16,17 +16,20 @@ export const capabilitySchema = z.object({
   plan: z.string().optional(),
   area: z.string().min(1),
   version: z.number().int().min(1),
-  versionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  versionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((d) => {
+      const t = Date.parse(`${d}T00:00:00Z`);
+      return !Number.isNaN(t) && new Date(t).toISOString().startsWith(d);
+    }, 'not a real calendar date'),
   titleAr: z.string(),
   titleEn: z.string(),
   screens: z.array(z.string()),
   screenGap: z.string().optional(),
   api: z.array(z.string()),
-  /** A non-GET api that only reads (e.g. a POST that pulls remote state into local state): declared per entry with a reason, never a blanket method exemption. */
-  readOnlyPost: z.object({ reason: z.string().min(1) }).optional(),
+  /** POST routes of this entry that only read (e.g. a sync that pulls remote state into local state). Names each excused route and a reason; every other write in the entry still counts. */
+  readOnlyPost: z.object({ routes: z.array(z.string().min(1)).min(1), reason: z.string().min(1) }).optional(),
   mcpTool: z.string().nullable(),
   planGate: z.string().nullable(),
-  roles: z.array(z.enum(ROLES)),
+  roles: z.array(z.enum(ROLES)).min(1),
   policy: z.enum(POLICIES),
   undo: z.object({ class: z.enum(UNDO_CLASSES), note: z.string().optional() }),
   operatorReason: z.object({ code: z.enum(OPERATOR_REASONS).nullable(), text: z.string(), validUnderRule: z.boolean() }).optional(),
@@ -67,7 +70,7 @@ export function normalizeApi(s: string): string {
   }
   path = path.replace(/\/{2,}/g, '/');
   if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
-  path = path.split('/').map((seg) => (seg.startsWith(':') ? ':_' : seg)).join('/');
+  path = path.split('/').map((seg) => (seg.startsWith(':') || /^\[.+\]$/.test(seg) || /^\{.+\}$/.test(seg) ? ':_' : seg)).join('/');
   return `${method} ${path}`.trim();
 }
 

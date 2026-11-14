@@ -47,6 +47,17 @@ it('an entry listing several mcp tools ("a; b") covers each', () => {
   expect(ids(facts({ mcpTools: ['admin_list', 'admin_get'] }), [e])).toEqual([]);
 });
 
+describe('wildcard screens cannot silence page coverage', () => {
+  it('a bare /* entry does not cover pages', () => {
+    const e = entry({ api: [], screens: ['/*'] });
+    expect(ids(facts({ pages: ['/a', '/b/c'] }), [e])).toEqual(['page-uncovered|/a', 'page-uncovered|/b/c']);
+  });
+  it('pageMatches rejects a wildcard whose base is the root', () => {
+    expect(pageMatches('/*', '/anything')).toBe(false);
+    expect(pageMatches('/', '/anything')).toBe(false);
+  });
+});
+
 describe('pageMatches', () => {
   it('folds [id] and :id', () => expect(pageMatches('/stores/:id/x', '/stores/[storeId]/x')).toBe(true));
   it('exact otherwise', () => expect(pageMatches('/a', '/a/b')).toBe(false));
