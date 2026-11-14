@@ -37,16 +37,19 @@ function check(e: Pick<DedupeEntry, 'referenceKey' | 'imageSha256'>): void {
 }
 const peekOf = (ref: boolean, img: boolean): PeekResult => (ref && img ? 'both' : ref ? 'reference' : img ? 'image' : 'none');
 
-type Row = { kind: 'ref' | 'img'; key: string; payment_id: string; state: 'held' | 'burned' };
+type Row = { kind: 'ref' | 'img'; key: string; product: string; owner_id: string; payment_id: string; state: 'held' | 'burned' };
+/** ownership is the whole tuple (product, owner, payment): a payment id alone is not an identity across products */
+const sameOwner = (r: { product: string; owner_id: string; payment_id: string }, e: DedupeEntry) => r.product === e.product && r.owner_id === e.ownerId && r.payment_id === e.paymentId;
+
 /** pure verdict from the two rows as they stand after our inserts; `inserted` = how many of OUR inserts landed this call */
 function verdict(e: DedupeEntry, ref: Row | undefined, img: Row | undefined, inserted: number): ClaimResult {
-  const mine = (r: Row | undefined) => !!r && r.payment_id === e.paymentId && r.state === 'held';
+  const mine = (r: Row | undefined) => !!r && sameOwner(r, e) && r.state === 'held';
   if (mine(ref) && mine(img)) return inserted > 0 ? 'claimed' : 'ours';
   return !mine(ref) ? 'duplicate_reference' : 'duplicate_image';
 }
 
 export class MemoryDuplicateIndex implements DuplicateIndex {
-  private rows = new Map<string, Row & { product: string; owner_id: string }>();
+  private rows = new Map<string, Row>();
   private k = (kind: string, key: string) => `${kind}:${key}`;
   async claim(e: DedupeEntry): Promise<ClaimResult> {
     check(e);
@@ -72,7 +75,7 @@ export class MemoryDuplicateIndex implements DuplicateIndex {
     check(e);
     for (const [kind, key] of [['ref', e.referenceKey], ['img', e.imageSha256]] as const) {
       const r = this.rows.get(this.k(kind, key));
-      if (r && r.payment_id === e.paymentId && r.state === 'held') this.rows.delete(this.k(kind, key));
+      if (r && sameOwner(r, e) && r.state === 'held') this.rows.delete(this.k(kind, key));
     }
   }
   async burn(e: DedupeEntry): Promise<void> {
@@ -80,7 +83,7 @@ export class MemoryDuplicateIndex implements DuplicateIndex {
     for (const [kind, key] of [['ref', e.referenceKey], ['img', e.imageSha256]] as const) {
       const r = this.rows.get(this.k(kind, key));
       if (!r) this.rows.set(this.k(kind, key), { kind, key, payment_id: e.paymentId, state: 'burned', product: e.product, owner_id: e.ownerId });
-      else if (r.payment_id === e.paymentId) r.state = 'burned';
+      else if (sameOwner(r, e)) r.state = 'burned';
     }
   }
 }
@@ -106,7 +109,7 @@ export class D1DuplicateIndex implements DuplicateIndex {
   }
   private async read(referenceKey: string, imageSha256: string): Promise<{ ref?: Row; img?: Row }> {
     const { results } = await this.db
-      .prepare("SELECT kind, key, payment_id, state FROM instapay_dedupe WHERE (kind = 'ref' AND key = ?) OR (kind = 'img' AND key = ?)")
+      .prepare("SELECT kind, key, product, owner_id, payment_id, state FROM instapay_dedupe WHERE (kind = 'ref' AND key = ?) OR (kind = 'img' AND key = ?)")
       .bind(referenceKey, imageSha256)
       .all<Row>();
     const rows = results ?? [];
@@ -123,8 +126,8 @@ export class D1DuplicateIndex implements DuplicateIndex {
     if (v === 'duplicate_reference' || v === 'duplicate_image') {
       // compensate: remove only what THIS call inserted (still held and ours) so a hit on either key leaves neither half-claimed
       const undo: D1StatementLike[] = [];
-      if (landed[0]) undo.push(this.db.prepare("DELETE FROM instapay_dedupe WHERE kind = 'ref' AND key = ? AND payment_id = ? AND state = 'held'").bind(e.referenceKey, e.paymentId));
-      if (landed[1]) undo.push(this.db.prepare("DELETE FROM instapay_dedupe WHERE kind = 'img' AND key = ? AND payment_id = ? AND state = 'held'").bind(e.imageSha256, e.paymentId));
+      if (landed[0]) undo.push(this.db.prepare("DELETE FROM instapay_dedupe WHERE kind = 'ref' AND key = ? AND product = ? AND owner_id = ? AND payment_id = ? AND state = 'held'").bind(e.referenceKey, e.product, e.ownerId, e.paymentId));
+      if (landed[1]) undo.push(this.db.prepare("DELETE FROM instapay_dedupe WHERE kind = 'img' AND key = ? AND product = ? AND owner_id = ? AND payment_id = ? AND state = 'held'").bind(e.imageSha256, e.product, e.ownerId, e.paymentId));
       if (undo.length) await this.db.batch(undo);
     }
     return v;
@@ -137,8 +140,8 @@ export class D1DuplicateIndex implements DuplicateIndex {
   async release(e: DedupeEntry): Promise<void> {
     check(e);
     await this.db.batch([
-      this.db.prepare("DELETE FROM instapay_dedupe WHERE kind = 'ref' AND key = ? AND payment_id = ? AND state = 'held'").bind(e.referenceKey, e.paymentId),
-      this.db.prepare("DELETE FROM instapay_dedupe WHERE kind = 'img' AND key = ? AND payment_id = ? AND state = 'held'").bind(e.imageSha256, e.paymentId),
+      this.db.prepare("DELETE FROM instapay_dedupe WHERE kind = 'ref' AND key = ? AND product = ? AND owner_id = ? AND payment_id = ? AND state = 'held'").bind(e.referenceKey, e.product, e.ownerId, e.paymentId),
+      this.db.prepare("DELETE FROM instapay_dedupe WHERE kind = 'img' AND key = ? AND product = ? AND owner_id = ? AND payment_id = ? AND state = 'held'").bind(e.imageSha256, e.product, e.ownerId, e.paymentId),
     ]);
   }
   async burn(e: DedupeEntry): Promise<void> {
@@ -146,7 +149,7 @@ export class D1DuplicateIndex implements DuplicateIndex {
     await this.db.batch([
       this.insert('ref', e.referenceKey, e, 'burned'),
       this.insert('img', e.imageSha256, e, 'burned'),
-      this.db.prepare("UPDATE instapay_dedupe SET state = 'burned' WHERE payment_id = ? AND ((kind = 'ref' AND key = ?) OR (kind = 'img' AND key = ?))").bind(e.paymentId, e.referenceKey, e.imageSha256),
+      this.db.prepare("UPDATE instapay_dedupe SET state = 'burned' WHERE product = ? AND owner_id = ? AND payment_id = ? AND ((kind = 'ref' AND key = ?) OR (kind = 'img' AND key = ?))").bind(e.product, e.ownerId, e.paymentId, e.referenceKey, e.imageSha256),
     ]);
   }
 }
@@ -201,6 +204,24 @@ export function duplicateIndexContract(make: () => Promise<DuplicateIndex>, t: {
     const d = await make();
     await d.burn(E({ paymentId: 'old' }));
     expect(await d.claim(E())).toBe('duplicate_reference');
+  });
+  it('ownership is (product, owner, payment): the same payment id from another product or owner is a duplicate, never "ours" (review M3)', async () => {
+    const d = await make();
+    expect(await d.claim(E({ product: 'chat', ownerId: 'o1', paymentId: 'X' }))).toBe('claimed');
+    expect(await d.claim(E({ product: 'store', ownerId: 'o1', paymentId: 'X' }))).toBe('duplicate_reference');
+    expect(await d.claim(E({ product: 'chat', ownerId: 'other', paymentId: 'X' }))).toBe('duplicate_reference');
+    expect(await d.claim(E({ product: 'chat', ownerId: 'o1', paymentId: 'X' }))).toBe('ours');
+  });
+  it('release and burn by a same-id payment of another product or owner change nothing', async () => {
+    const d = await make();
+    await d.claim(E({ product: 'chat', ownerId: 'o1', paymentId: 'X' }));
+    await d.release(E({ product: 'store', ownerId: 'o1', paymentId: 'X' }));
+    await d.release(E({ product: 'chat', ownerId: 'other', paymentId: 'X' }));
+    expect(await d.peek(E().referenceKey, E().imageSha256)).toBe('both');
+    await d.burn(E({ product: 'store', ownerId: 'o1', paymentId: 'X' }));
+    expect(await d.claim(E({ product: 'chat', ownerId: 'o1', paymentId: 'X' }))).toBe('ours'); // still held (not burned) for its real owner
+    await d.release(E({ product: 'chat', ownerId: 'o1', paymentId: 'X' }));
+    expect(await d.peek(E().referenceKey, E().imageSha256)).toBe('none');
   });
   it('20 concurrent claims of one reference: exactly one wins', async () => {
     const d = await make();
