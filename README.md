@@ -23,6 +23,7 @@ Why one repo: Ruling FDN-OS-1 (`docs/rulings/FDN-OS-1.md`). The OS port is in pr
 | `buyer` | `buyerKey`, `buyerKeyProbe` (HMAC-SHA256 of the E.164, lowercase hex) | `await buyerKey(secret, '+201001234567')` |
 | `text` | `foldArabic`, `indexTokens`, `phoneDigits` | `foldArabic('أحذية')` |
 | `slugs` | `RESERVED_SLUGS`, `isReservedSlug`, `isDemoShowroomSlug`, `slugFormatError` | `isReservedSlug('wa')` |
+| `capability` + `capability-registry`, `capability-coverage`, `self-service-routes`, `smart-layer-bypass`, `help-article`, `ratchet` | `capabilitySchema`, `normalizeApi`, `checkRegistry`, `checkCoverage`, `checkSelfServiceRoutes`, `checkModelBypass`, `checkHelp`, `applyBaseline` (lens 192 guards; `docs/standard/capability-registry.md`) | `checkRegistry(files, cfg)` |
 
 `vectors/*.json` are the shared test vectors (phone, buyer-key, buyer-key-probe, arabic, slugs). Not shared yet (planned, see the program plan): search hooks, studio pages, legal clauses, contracts, identity, observe, erasure, guard, ops scripts.
 
