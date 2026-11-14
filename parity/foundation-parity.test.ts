@@ -83,4 +83,10 @@ describe('shared vectors against the vendored code', () => {
     for (const s of v.demoShowroom.yes) expect(isDemoShowroomSlug(s), s).toBe(true);
     for (const s of v.demoShowroom.no) expect(isDemoShowroomSlug(s), s).toBe(false);
   });
+  it('smart-layer secrets: every case', async () => {
+    const { detectSecrets } = await load('smart-layer/rails/secrets');
+    const v = vector('smart-layer-secrets.json') as { cases: Array<{ in: string; out: string; found: string[] }> };
+    expect(v.cases.length).toBeGreaterThanOrEqual(15);
+    for (const c of v.cases) expect(detectSecrets(c.in), JSON.stringify(c.in)).toEqual({ text: c.out, found: c.found });
+  });
 });
