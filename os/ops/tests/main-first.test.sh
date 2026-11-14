@@ -28,6 +28,8 @@ case "$path" in
   */actions/runs/*/jobs*) id="${path#*/actions/runs/}"; f="jobs_${id%%/*}.json" ;;
   */compare/*) s="${path#*/compare/}"; f="cmp_${s%%...*}.json" ;;
   */issues/*/labels) id="${path#*/issues/}"; f="labels_${id%%/*}.json" ;;
+  */actions/runs/[0-9]*) id="${path#*/actions/runs/}"; f="run_${id}.json" ;;
+  */pulls\?head=*) b="${path#*head=*:}"; b="${b%%&*}"; f="openpr_${b//\//_}.json" ;;
   */pulls/*/reviews*) id="${path#*/pulls/}"; f="reviews_${id%%/*}.json" ;;
   */pulls/*) id="${path#*/pulls/}"; f="pull_${id%%\?*}.json" ;;
 esac
@@ -43,11 +45,11 @@ reset() { rm -rf "${FK:?}"/* "$T/state" "$T/log"; }
 jq_() { python3 -c "import json,sys; json.dump($1, open('$FK/$2','w'))"; }
 # main <id:sha:status:conclusion>... newest first
 main() { local a="" s i sh st c; for s in "$@"; do IFS=: read -r i sh st c <<<"$s"; c="${c:+\"$c\"}"; c="${c:-null}"; a="$a{\"id\":$i,\"name\":\"CI\",\"head_sha\":\"$sh\",\"status\":\"$st\",\"conclusion\":$c,\"created_at\":\"2026-11-14T11:$((10+i%50)):00Z\"},"; done
-  echo "{\"runs\":[${a%,}]}" > "$FK/main.json"; }
+  echo "{\"workflow_runs\":[${a%,}]}" > "$FK/main.json"; }
 jobs() { echo "{\"jobs\":[{\"status\":\"queued\",\"created_at\":\"$2\",\"labels\":[\"self-hosted\",\"ebda-mac\"]}]}" > "$FK/jobs_$1.json"; }
 prq() { local a="" s i br sha n; for s in "$@"; do IFS=: read -r i br sha n <<<"$s"; a="$a{\"id\":$i,\"status\":\"queued\",\"head_branch\":\"$br\",\"head_sha\":\"$sha\",\"pull_requests\":[{\"number\":$n}]},"; done
-  echo "{\"runs\":[${a%,}]}" > "$FK/prq.json"; }
-run() { FAKE_DIR="$FK" PATH="$BIN:$PATH" HOME="$T/home" MAIN_FIRST_REPOS="o/r" MAIN_FIRST_STATE="$T/state" MAIN_FIRST_LOG="$T/log" MAIN_FIRST_NOW="$NOW" MAIN_FIRST_ALLOW_BRANCHES="${ALLOW:-}" bash "$OPS/main-first.sh" "$@" >"$T/out" 2>&1; }
+  echo "{\"workflow_runs\":[${a%,}]}" > "$FK/prq.json"; }
+run() { FAKE_DIR="$FK" PATH="$BIN:$PATH" HOME="$T/home" MAIN_FIRST_REPOS="o/r" MAIN_FIRST_STATE="$T/state" MAIN_FIRST_LOG="$T/log" MAIN_FIRST_NOW="$NOW" MAIN_FIRST_VERIFY_WAIT=0 MAIN_FIRST_ALLOW_BRANCHES="${ALLOW:-}" bash "$OPS/main-first.sh" "$@" >"$T/out" 2>&1; }
 posts() { cat "$FK/posts.log" 2>/dev/null; }
 has() { posts | grep -q -F "$1"; }
 
@@ -59,7 +61,7 @@ run   # second tick: queued PR run is still listed (fake) -> comment must not re
 [ "$(posts | grep -c issues/101/comments)" = 1 ] && pass "comment once per head" || fail "comment repeated"
 
 # 2. in_progress PR run untouched (not in the queued listing; also a non-heavy queued run)
-reset; main 90:aaa:queued:; jobs 90 "$OLD"; echo '{"runs":[]}' > "$FK/prq.json"
+reset; main 90:aaa:queued:; jobs 90 "$OLD"; echo '{"workflow_runs":[]}' > "$FK/prq.json"
 run; [ -z "$(posts)" ] && pass "in_progress PR run untouched (not listed as queued)" || fail "in_progress touched"
 reset; main 90:aaa:queued:; jobs 90 "$OLD"; prq 12:feat-y:p2:102
 echo '{"jobs":[{"status":"queued","created_at":"'"$NEW"'","labels":["ubuntu-latest"]}]}' > "$FK/jobs_12.json"
@@ -67,7 +69,7 @@ run; [ -z "$(posts)" ] && pass "queued PR run without the heavy label untouched"
 
 # 3. superseded main cancelled, newest kept; non-ancestor kept
 reset; main 93:ccc:queued: 92:bbb:in_progress: 91:zzz:queued:; jobs 93 "$OLD"
-echo '{"status":"ahead"}' > "$FK/cmp_bbb.json"; echo '{"status":"diverged"}' > "$FK/cmp_zzz.json"; echo '{"runs":[]}' > "$FK/prq.json"
+echo '{"status":"ahead"}' > "$FK/cmp_bbb.json"; echo '{"status":"diverged"}' > "$FK/cmp_zzz.json"; echo '{"workflow_runs":[]}' > "$FK/prq.json"
 run
 has "actions/runs/92/cancel" && ! has "actions/runs/93/cancel" && ! has "actions/runs/91/cancel" && pass "ancestor main run cancelled, newest + diverged kept" || fail "superseded ($(posts | tr '\n' ' '))"
 
@@ -105,6 +107,46 @@ run
 run   # next tick: 14,12 gone from ledger; 15 dropped (head moved); 11 (unapproved) re-run once
 [ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && [ ! -s "$T/state/o__r.cancelled.tsv" ] && pass "each cancelled run re-requested exactly once; moved head dropped" || fail "rerun once ($(posts | tr '\n' ' '))"
 run; [ "$(posts | wc -l | tr -d ' ')" = 3 ] && pass "idempotent: empty ledger -> nothing more" || fail "not idempotent"
+
+# 10. cancel leaves the run queued -> force-cancel; cancel that works -> no force-cancel
+reset; main 90:aaa:queued:; jobs 90 "$OLD"; prq 11:feat-x:p1:101 12:feat-y:p2:102; jobs 11 "$NEW"; jobs 12 "$NEW"
+echo '{"status":"queued"}' > "$FK/run_11.json"; echo '{"status":"completed"}' > "$FK/run_12.json"
+run
+has "actions/runs/11/force-cancel" && ! has "actions/runs/12/force-cancel" && grep -q "still queued after cancel" "$T/log" && pass "queued after cancel -> force-cancel; completed -> none" || fail "force-cancel ($(posts | tr '\n' ' '))"
+
+# 11. orphan run >24h with no open PR skipped; same age with an open PR is cancelled
+reset; main 90:aaa:queued:; jobs 90 "$OLD"; jobs 11 "$NEW"; jobs 12 "$NEW"
+echo '{"workflow_runs":[{"id":11,"status":"queued","head_branch":"gone","head_sha":"p1","pull_requests":[],"created_at":"2026-11-12T00:00:00Z"},{"id":12,"status":"queued","head_branch":"live","head_sha":"p2","pull_requests":[{"number":102}],"created_at":"2026-11-12T00:00:00Z"}]}' > "$FK/prq.json"
+echo '[]' > "$FK/openpr_gone.json"; echo '[{"number":102}]' > "$FK/openpr_live.json"; echo '{"status":"completed"}' > "$FK/run_12.json"
+run
+has "actions/runs/12/cancel" && ! has "actions/runs/11/cancel" && grep -q "orphan run 11" "$T/log" && pass ">24h orphan skipped + logged; >24h with open PR still cancelled" || fail "orphan ($(posts | tr '\n' ' '))"
+
+# 12. REAL captured GitHub responses (tests/fixtures/real-*.json, trimmed from `gh api` on ebda-store 2026-11-14):
+# the parsers must read `workflow_runs` (a fixture with the old `runs` key finds no main run and acts on nothing).
+FX="$(cd "$(dirname "$0")" && pwd)/fixtures"
+reset; cp "$FX/real-main-runs.json" "$FK/main.json"; cp "$FX/real-pr-queued-runs.json" "$FK/prq.json"
+python3 - "$FK" "$FX" <<'PY'
+import json,sys
+fk,fx=sys.argv[1:]
+m=json.load(open(fx+"/real-main-runs.json"))["workflow_runs"]
+ci=[r for r in m if r["name"]=="CI"][0]
+q=json.load(open(fx+"/real-pr-queued-runs.json"))["workflow_runs"]
+for rid,src in ((ci["id"],"real-jobs-main"),(q[0]["id"],"real-jobs-pr"),(q[1]["id"],"real-jobs-pr")):
+    open(f"{fk}/jobs_{rid}.json","w").write(open(f"{fx}/{src}.json").read())
+PY
+echo "[]" > "$FK/openpr_chore_mac-light-runners.json"   # real >24h run whose branch has no open PR
+CIID="$(python3 -c "import json;print([r for r in json.load(open('$FX/real-main-runs.json'))['workflow_runs'] if r['name']=='CI'][0]['id'])")"
+PRID="$(python3 -c "import json;print(json.load(open('$FX/real-pr-queued-runs.json'))['workflow_runs'][0]['id'])")"
+NOW=1794670000 run   # 2026-11-14T15:46:40Z, main jobs queued since 14:01 (~105 min)
+has "actions/runs/$PRID/cancel" && ! has "actions/runs/$CIID/cancel" && pass "REAL fixtures: starved main found via workflow_runs, queued heavy PR run cancelled" || fail "real fixtures ($(posts | tr '\n' ' '))"
+reset; python3 -c "
+import json;d=json.load(open('$FX/real-main-runs.json'));json.dump({'total_count':d['total_count'],'runs':d['workflow_runs']},open('$FK/main.json','w'))"
+run; grep -q "skip tick" "$T/log" && [ -z "$(posts)" ] && pass "a response keyed runs (the shape GitHub never returns) is rejected, no action" || fail "old key"
+
+# 13. a repo whose main workflow is named lowercase `ci` (ebda-whatsapp) is matched too
+reset; main 90:aaa:queued:; sed -i.bak 's/"name":"CI"/"name":"ci"/' "$FK/main.json"; rm -f "$FK/main.json.bak"
+jobs 90 "$OLD"; prq 11:feat-x:p1:101; jobs 11 "$NEW"
+run; has "actions/runs/11/cancel" && pass "lowercase 'ci' workflow name matched" || fail "lowercase ci ($(posts | tr '\n' ' '))"
 
 # 9. main completed red -> nothing re-run
 reset; main 95:ddd:completed:failure; mkdir -p "$T/state"; printf '11\t101\tp1\t%s\n' "$NOW" > "$T/state/o__r.cancelled.tsv"
