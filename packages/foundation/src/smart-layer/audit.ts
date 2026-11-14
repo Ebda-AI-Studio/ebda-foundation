@@ -6,7 +6,9 @@ import { detectSecrets } from './rails/secrets';
 import { maskForModel } from './rails/mask';
 import type { AuditRow, TurnStatus } from './types';
 
-const clean = (s: string): string => maskForModel(detectSecrets(s).text);
+/** Hard cap on any stored text field: slice BEFORE the regex work so an oversized input cannot amplify storage or CPU. */
+export const MAX_STORED_CHARS = 4000;
+const clean = (s: string): string => maskForModel(detectSecrets(s.slice(0, MAX_STORED_CHARS)).text).slice(0, MAX_STORED_CHARS);
 
 export interface AuditInput {
   storeId: string; userId: string; turnId: string; at: number; releaseId: string;

@@ -10,7 +10,7 @@ import type { BindingSource } from '../types';
 export type ClaimReason = 'amount' | 'percent' | 'duration' | 'plan_name' | 'policy_term';
 
 const NUM = /(?<![A-Za-z\d.,])\d+(?:[.,]\d+)*(?![A-Za-z]|\d)/g;
-const CURRENCY = '(?:جنيه|جنية|ج\\.?\\s?م|egp|le\\b|l\\.e|usd|\\$|دولار|kwd|دينار|ريال|sar|aed|درهم)';
+const CURRENCY = '(?:جنيه|جنية|ج\\.?\\s?م|ج(?![\\p{L}])|egp|pounds?|£|le\\b|l\\.e|usd|\\$|دولار|kwd|دينار|ريال|sar|aed|درهم)';
 const AMOUNT = new RegExp(`(?<![A-Za-z\\d.,])(\\d+(?:[.,]\\d+)*)\\s*${CURRENCY}|${CURRENCY}\\s*(\\d+(?:[.,]\\d+)*)`, 'giu');
 const PERCENT = /(?<![A-Za-z\d.,])(\d+(?:[.,]\d+)*)\s*(?:%|٪|percent|في\s*ال?ميه|بال?ميه)/giu;
 const DURATION = /(?<![A-Za-z\d.,])(\d+(?:[.,]\d+)*)\s*(?:يوم|ايام|اسبوع|اسابيع|شهر|شهور|اشهر|ساعه|ساعات|سنه|سنين|days?|weeks?|months?|hours?|years?)/giu;
@@ -39,10 +39,17 @@ function sentences(reply: string): string[] {
 }
 const isArabic = (s: string): boolean => /[؀-ۿ]/.test(s);
 
-export function checkBindingClaims(reply: string, sources: BindingSource[], toolFacts: string[]): { text: string; removed: Array<{ sentence: string; reason: ClaimReason }> } {
-  const supported = new Set<string>();
-  for (const s of sources) for (const v of s.values) for (const n of numbersOf(v)) supported.add(n);
-  for (const f of toolFacts) for (const n of numbersOf(f)) supported.add(n);
+/**
+ * `toolFacts` are this turn's store-data AND typed-source tool results (they support ordinary figures such as a product price).
+ * `typedFacts` are the typed-source results only: a billing or legal claim (fee, commission, refund, terms...) is supported by sources and
+ * typed facts, never by a store-data number that merely happens to match (`ordersToday: 149` must not launder "commission is 149 EGP").
+ */
+export function checkBindingClaims(reply: string, sources: BindingSource[], toolFacts: string[], typedFacts: string[] = []): { text: string; removed: Array<{ sentence: string; reason: ClaimReason }> } {
+  const strict = new Set<string>(); // sources + typed-source facts: what may back a billing / legal claim
+  for (const s of sources) for (const v of s.values) for (const n of numbersOf(v)) strict.add(n);
+  for (const f of typedFacts) for (const n of numbersOf(f)) strict.add(n);
+  const loose = new Set<string>(strict); // plus store data: what may back an ordinary figure
+  for (const f of toolFacts) for (const n of numbersOf(f)) loose.add(n);
   const planNames = sources.filter((s) => s.kind === 'plan').flatMap(names);
   const hasLegal = sources.some((s) => s.kind === 'legal' || s.kind === 'billing');
   const removed: Array<{ sentence: string; reason: ClaimReason }> = [];
@@ -51,6 +58,8 @@ export function checkBindingClaims(reply: string, sources: BindingSource[], tool
     const sentence = raw.trim();
     if (!sentence) return raw;
     const f = foldArabic(sentence);
+    const billing = LEGAL.test(f) || BILLING.test(f);
+    const supported = billing ? strict : loose;
     const unsupported = (re: RegExp): boolean => [...f.matchAll(re)].some((m) => !supported.has(canon((m[1] ?? m[2])!)));
     let reason: ClaimReason | null = null;
     const numeric = unsupported(AMOUNT) || unsupported(PERCENT) || unsupported(DURATION);
