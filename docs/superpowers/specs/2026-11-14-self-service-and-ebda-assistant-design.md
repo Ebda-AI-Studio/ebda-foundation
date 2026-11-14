@@ -11,6 +11,8 @@ Ebda AI Studio is an AI-native, self-service company. In Ahmad's words: "ابد�
 
 Today that is not true: 22 places need staff or have no merchant screen (4 block onboarding), the page-builder AI can only restyle what is already on the page, and there is no "how do I…" help inside the products.
 
+**Scope of the rules (Ahmad, 2026-11-14):** the AI-native, AI-first and self-service rules, the capability registry, the help-article rule and the Smart Layer apply to EVERY existing feature, every new feature, every upcoming Ebda product (CRM, ERP, Ads, Invites, Quote Studio) and anything else Ebda ships to customers. They are binding now as the foundation standard `os/standard/ai-native-self-service.md` (lens 192), not only when projects 1-4 are built.
+
 ## 2. Goals, non-goals, anti-goals
 
 **Goals**
@@ -208,3 +210,59 @@ Today's Meta template path (from the audit): the owner-only API exists in Ebda C
 ## 12. Open items (Ahmad)
 
 - None blocking. Project 2's launch quality threshold is set after the first real eval run.
+
+## Appendix A — the complete self-service checklist (2026-11-14)
+
+Ahmad: "make sure, because ... you have audited store and chat and you do already know what does need to be self service". One deduplicated list merged from the self-service audit (22 rows), the Store capability catalogue (185 capabilities) and the Chat capability catalogue (172). Sources in `business/ebda/audits/2026-11-14-*`. Every item is a task in the build plan; the plan may not drop one without a written ruling.
+
+**Project 1 — blockers (onboarding stalls without staff)**
+| # | Product | Capability | Today | Source |
+|---|---|---|---|---|
+| A1 | Chat | Create + submit a template on the merchant's own WhatsApp account; see Meta status + rejection reason; resubmit | API only, no screen | audit #1 · `templates.create-submit` |
+| A2 | Chat | Templates list with status | API only | `templates.list` |
+| A3 | Chat | Starter template set + Meta sync on number connect | no caller | audit #2 · `templates.install-defaults` |
+| A4 | Chat | Edit / delete a submitted template | missing | audit #17 |
+| A5 | Store | InstaPay subscription payment activates via AI auto-confirm (§7.4) | super admin confirms | audit #3 · `platform.manual-payment` · `onboarding.payment-methods-and-go-live` |
+| A6 | Chat | InstaPay top-up / package via AI auto-confirm | operator confirms | audit #4 · `operator.instapay-review` |
+
+**Project 4 — the rest (each a merchant screen and/or a Smart Layer action)**
+| # | Product | Capability | Today | Source |
+|---|---|---|---|---|
+| A7 | Store | Activate a payment/shipping provider (sandbox-first auto check + P1 alert on first connection, decision PROVIDERS-3) | super admin | audit #5 · `platform.provider-activation` |
+| A8 | Store | Buy / enable an add-on outside the plan | super admin grants | audit #6 · `platform.feature-overrides` |
+| A9 | Store + Chat | Raise AI quota / buy AI credits | super admin / missing | audit #7 · `agent.credits-topup` |
+| A10 | Store | VAT / tax registration verification | super admin | audit #8 |
+| A11 | Store | Delete own store / close account / full data export (with guards: money in flight, billing parent) | super admin | audit #9 · `platform.store-delete` |
+| A12 | Chat | Erase / export a contact (data-subject request) | no screen; operator route | audit #10 · `contacts.erase` · `operator.contact-export-erase` |
+| A13 | Store | See the reason for an AUP suspension and appeal | missing | audit #11 |
+| A14 | Store + Chat | In-product help and support channel (the Smart Layer + handoff) | missing | audit #12 |
+| A15 | Store | Delete a custom page | super admin | audit #13 |
+| A16 | Store | Claim a protected brand slug; request a higher daily store-creation cap | super admin | audit #14 |
+| A17 | Store | "Scan now" for reorder / low-stock / deadstock (rate-limited) | super admin | audit #15 · `platform.scans-rollups` |
+| A18 | Chat | Marketing templates for shared-number stores | missing | audit #16 |
+| A19 | Store | Clear message when 3D models are switched off | missing | audit #18 |
+| A20 | Docs | Super-admin playbook still describes plan change + onboarding as staff work | stale | audit #19 |
+| A21 | Chat | Set who pays Meta for an own number (platform line stays operator) | operator | `operator.funding` |
+| A22 | Chat | Yearly-plan refund quote shown to the merchant to confirm (card refund execution stays human) | operator | `operator.yearly-refund` |
+| A23 | Store | MFA recovery | super admin script | Store catalogue (invalid super-admin) |
+| A24 | Store | Store activity / audit log screen | no screen | `team.audit-log` |
+| A25 | Chat | Quick replies | API only | `inbox.quick-replies` |
+| A26 | Chat | Internal notes on a conversation | API only | `inbox.notes` |
+| A27 | Chat | Conversation tags | API only | `inbox.conversation-tags` |
+| A28 | Chat | Sending throughput and tier usage | API only | `inbox.send-throttle` |
+| A29 | Chat | Edit a contact's tags | API only | `contacts.tags-edit` |
+| A30 | Chat | Saved segments: create / edit / delete | API only | `segments.manage` |
+| A31 | Chat | Ordering bot on/off | API only | `bot.ordering-toggle` |
+| A32 | Chat | Order confirmation messages on/off | API only | `bot.order-confirmations-toggle` |
+| A33 | Chat | Store-login one-time codes over WhatsApp on/off | API only | `otp.toggle` |
+| A34 | Chat | Link an existing Meta catalogue | API only | `catalogue.link-existing` |
+| A35 | Chat | Connect the agent to own systems (webhook / Odoo) | API only | `agent.connectors` |
+| A36 | Chat | Integration tokens for calling the API from own server | API only | `access.integrator-tokens` |
+
+(`marketing.product-feeds` is covered by ebda-store PR 756, which adds the admin "Product feeds" page.)
+
+**Stays super-admin (valid reasons, annotated at the route):** impersonation for support, hard-deleting test stores, repair scripts (`scripts/admin-*.mjs`), executing a card refund, FX and pricing, platform kill switches, operator subscription assignment, the shared platform WhatsApp line (audit #20-22; Chat catalogue: 17 operator capabilities with valid reasons).
+
+**Help-article backfill (§6.8b):** 71 Store + 23 Chat live capabilities without an article; 5 stale Chat guides (04, 05, 06, 07/11, 09).
+
+**Not-built features (planned registry entries):** 20 Store + 19 Chat, listed in the two catalogues with status `planned`.

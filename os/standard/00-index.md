@@ -201,6 +201,7 @@ The numbered lenses below each become one file `standard/<id>.md`. `mobile` is N
 | 188 | `launch-checklist-missing` | No dated launch-day checklist with owners. Pack: business; probe J | Ebda master catalogue 2026-10-26 sec.7 L72 |
 | 189 | `wa-quality-not-gating` | Sender quality / account events do not gate sending. Pack: meta-whatsapp; probe S | Ebda master catalogue 2026-10-26 sec.7 L73 |
 | 191 | `job-per-store-isolation` | A sweep over stores aborts on one store's error or visits them in a fixed order. Pack: reliability; probe S | Ebda issue #619, P1s 2026-11-11 |
+| 192 | `ai-native-self-service` | The Ebda charter: every existing/new feature and every upcoming product is self-service, known to the Ebda AI Smart Layer (capability registry incl. planned), has a published help article, and routes all AI through the Smart Layer under the action boundary | Ahmad 2026-11-14 (self-service + AI-native + help-article + Smart Layer decisions) |
 
 ## Source lens packs
 
