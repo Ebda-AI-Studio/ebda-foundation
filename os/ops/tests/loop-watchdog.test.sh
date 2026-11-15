@@ -62,15 +62,23 @@ healthy; iso_ago 55 > "$T/merged"; echo '[]' > "$T/ready"; run; rc=$?
 # G15: only drain-ELIGIBLE PRs count. 64 approved PRs of which 2 can merge says 2; 64 approved and none mergeable is NOT a stall.
 healthy; iso_ago 55 > "$T/merged"
 inel=(); for i in $(seq 100 117); do inel+=("$(mkpr $i MERGEABLE 0 ai-review-passed FAILURE)"); done          # red checks
-pend=(); for i in $(seq 120 137); do pend+=("$(mkpr $i MERGEABLE 0 ai-review-passed PENDING)"); done        # pending checks: "not failed" = still waiting work, counted
+pend=(); for i in $(seq 120 137); do pend+=("$(mkpr $i MERGEABLE 0 ai-review-passed PENDING)"); done        # pending checks: still working, not a stall (G15 ruling), NOT counted
 for i in $(seq 140 150); do inel+=("$(mkpr $i CONFLICTING 0 ai-review-passed SUCCESS)"); done                # conflicts
 for i in $(seq 160 165); do inel+=("$(mkpr $i MERGEABLE 0 ai-review-passed,hold SUCCESS)"); done             # hold label
 for i in $(seq 170 175); do inel+=("$(mkpr $i MERGEABLE 1 ai-review-passed SUCCESS)"); done                  # drafts
 for i in $(seq 180 184); do inel+=("$(mkpr $i MERGEABLE 0 risky-path SUCCESS)"); done                        # risky, not reviewed
 prs 2 "${inel[@]}" "${pend[@]}" > "$T/ready"; run; rc=$?
-{ [ "$rc" = 0 ] && grep -q 'with 20 drain-eligible' "$T/out" && ! grep -q 'approved PRs' "$T/out"; } && pass "stall counts only drain-eligible PRs (20 of 84 approved-labelled: red/conflict/hold/draft/unreviewed-risky excluded)" || { fail "eligible count rc=$rc"; cat "$T/out"; }
-printf '[%s]' "$(IFS=,; echo "${inel[*]}")" > "$T/ready"; run; rc=$?
+{ [ "$rc" = 0 ] && grep -q 'with 2 drain-eligible' "$T/out" && ! grep -q 'approved PRs' "$T/out"; } && pass "stall counts only drain-eligible PRs (2 of 84 approved-labelled: red/conflict/hold/draft/unreviewed-risky excluded)" || { fail "eligible count rc=$rc"; cat "$T/out"; }
+printf '[%s]' "$(IFS=,; echo "${inel[*]}" "${pend[*]}" | tr ' ' ',')" > "$T/ready"; run; rc=$?
 [ "$rc" = 1 ] && pass "many approved PRs but none drain-eligible is not a stall (must not fire)" || { fail "ineligible-only rc=$rc"; cat "$T/out"; }
+# money gate (per label): risky needs money-review-passed; risky-path needs ai-review-passed
+healthy; iso_ago 55 > "$T/merged"
+echo "[$(mkpr 1 MERGEABLE 0 risky,ai-review-passed SUCCESS)]" > "$T/ready"; run; rc=$?
+[ "$rc" = 1 ] && pass "risky + ai-review-passed WITHOUT money-review-passed: not eligible" || { fail "money gate open rc=$rc"; cat "$T/out"; }
+echo "[$(mkpr 1 MERGEABLE 0 risky,ai-review-passed,money-review-passed SUCCESS)]" > "$T/ready"; run; rc=$?
+{ [ "$rc" = 0 ] && grep -q 'with 1 drain-eligible' "$T/out"; } && pass "risky + both reviews: eligible" || { fail "risky+both rc=$rc"; cat "$T/out"; }
+echo "[$(mkpr 1 MERGEABLE 0 risky-path,ai-review-passed SUCCESS)]" > "$T/ready"; run; rc=$?
+{ [ "$rc" = 0 ] && grep -q 'with 1 drain-eligible' "$T/out"; } && pass "risky-path + ai-review-passed: eligible" || { fail "risky-path rc=$rc"; cat "$T/out"; }
 healthy; iso_ago 20 > "$T/merged"; run; rc=$?
 [ "$rc" = 1 ] && pass "a merge 20 min ago is not a stall" || fail "recent merge rc=$rc"
 

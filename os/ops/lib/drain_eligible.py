@@ -8,9 +8,10 @@ risky-path PRs without ai-review-passed). Two copies of the rule drifted; now th
 classify(pr, strict) -> "ok" | "no"   a PR that is not a draft, not labelled `hold`, with checks that have not failed.
     strict=True  (drain): mergeable == MERGEABLE, at least one check, every check COMPLETED and not failing (zero checks = CI has not
                  started, never green).
-    strict=False (stall alert): no failed check and not CONFLICTING; pending/unknown checks still count as waiting work.
+    strict=False: no failed check and not CONFLICTING (pending counts). The stall alert uses strict=True: pending = still working, not a stall.
 eligible(pr, hold_risky, strict, require_passed) -> bool
     classify == ok, and a `risky-path` PR needs `ai-review-passed` when hold_risky (the review gate; money PRs ride this label too),
+    `risky` needs `money-review-passed` (per label, any repo),
     and with require_passed (stall alert: "approved") every PR needs `ai-review-passed`.
 
 CLI: python3 drain_eligible.py --mode drain|stall [--hold-risky]   (gh pr list --json number,mergeable,statusCheckRollup,isDraft,labels,headRefOid on stdin)
@@ -62,6 +63,9 @@ def eligible(pr, hold_risky=True, strict=True, require_passed=False):
         return False
     if hold_risky and "risky-path" in names and "ai-review-passed" not in names:
         return False
+    # money gate, per LABEL not per repo: a PR carrying `risky` needs the Opus money reviewer's `money-review-passed`
+    if hold_risky and "risky" in names and "money-review-passed" not in names:
+        return False
     return True
 
 
@@ -73,9 +77,12 @@ def main(argv):
         for p in prs:
             if classify(p, True) == "ok":
                 n = _labels(p)
-                print(p["number"], p["headRefOid"], int("risky-path" in n), int("ai-review-passed" in n))
+                # drain.sh holds (risky=1, passed=0) PRs: `risky` is held until money-review-passed, `risky-path` until ai-review-passed
+                money = "risky" in n
+                print(p["number"], p["headRefOid"], int("risky-path" in n or money),
+                      int(("money-review-passed" in n) if money else ("ai-review-passed" in n)) if money else int("ai-review-passed" in n))
     elif mode == "stall":
-        print(sum(1 for p in prs if eligible(p, hold_risky=True, strict=False, require_passed=True)))
+        print(sum(1 for p in prs if eligible(p, hold_risky=True, strict=True, require_passed=True)))
     else:
         sys.exit(2)
 
