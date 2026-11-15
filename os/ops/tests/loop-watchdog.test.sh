@@ -75,6 +75,8 @@ printf '[%s]' "$(IFS=,; echo "${inel[*]}" "${pend[*]}" | tr ' ' ',')" > "$T/read
 healthy; iso_ago 55 > "$T/merged"
 echo "[$(mkpr 1 MERGEABLE 0 risky,ai-review-passed SUCCESS)]" > "$T/ready"; run; rc=$?
 [ "$rc" = 1 ] && pass "risky + ai-review-passed WITHOUT money-review-passed: not eligible" || { fail "money gate open rc=$rc"; cat "$T/out"; }
+echo "[$(mkpr 1 MERGEABLE 0 risky,risky-path,money-review-passed SUCCESS)]" > "$T/ready"; run; rc=$?
+[ "$rc" = 1 ] && pass "risky + risky-path + money-review-passed but NO ai-review-passed: not eligible (gates AND)" || { fail "gate collapse rc=$rc"; cat "$T/out"; }
 echo "[$(mkpr 1 MERGEABLE 0 risky,ai-review-passed,money-review-passed SUCCESS)]" > "$T/ready"; run; rc=$?
 { [ "$rc" = 0 ] && grep -q 'with 1 drain-eligible' "$T/out"; } && pass "risky + both reviews: eligible" || { fail "risky+both rc=$rc"; cat "$T/out"; }
 echo "[$(mkpr 1 MERGEABLE 0 risky-path,ai-review-passed SUCCESS)]" > "$T/ready"; run; rc=$?

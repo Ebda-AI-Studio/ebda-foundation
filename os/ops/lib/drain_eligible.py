@@ -55,16 +55,22 @@ def classify(pr, strict=True):
     return "ok"
 
 
+def needs_review(names):
+    return "risky-path" in names or "risky" in names
+
+
+def review_ok(names):
+    """Required reviews AND together: risky-path needs ai-review-passed, risky needs money-review-passed, both labels need both."""
+    return ("risky-path" not in names or "ai-review-passed" in names) and ("risky" not in names or "money-review-passed" in names)
+
+
 def eligible(pr, hold_risky=True, strict=True, require_passed=False):
     if classify(pr, strict) != "ok":
         return False
     names = _labels(pr)
     if require_passed and "ai-review-passed" not in names:
         return False
-    if hold_risky and "risky-path" in names and "ai-review-passed" not in names:
-        return False
-    # money gate, per LABEL not per repo: a PR carrying `risky` needs the Opus money reviewer's `money-review-passed`
-    if hold_risky and "risky" in names and "money-review-passed" not in names:
+    if hold_risky and not review_ok(names):
         return False
     return True
 
@@ -77,10 +83,8 @@ def main(argv):
         for p in prs:
             if classify(p, True) == "ok":
                 n = _labels(p)
-                # drain.sh holds (risky=1, passed=0) PRs: `risky` is held until money-review-passed, `risky-path` until ai-review-passed
-                money = "risky" in n
-                print(p["number"], p["headRefOid"], int("risky-path" in n or money),
-                      int(("money-review-passed" in n) if money else ("ai-review-passed" in n)) if money else int("ai-review-passed" in n))
+                # drain.sh holds (risky=1, passed=0) PRs; the verdict is review_ok(), the same function eligible() uses
+                print(p["number"], p["headRefOid"], int(needs_review(n)), int(review_ok(n)))
     elif mode == "stall":
         print(sum(1 for p in prs if eligible(p, hold_risky=True, strict=True, require_passed=True)))
     else:
