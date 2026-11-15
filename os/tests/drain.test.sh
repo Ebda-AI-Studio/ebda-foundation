@@ -62,6 +62,11 @@ reset; on; prs "$(pr 1 a1 green risky-path)"
 run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "risky PR without ai-review-passed is held" || no "risky PR gated unreviewed"
 prs "$(pr 1 a1 green risky-path,ai-review-passed)"
 run --hold-risky >/dev/null; [ "$(calls)" = 1 ] && ok "risky PR with ai-review-passed is gated" || no "reviewed risky PR not gated"
+# money gate (per label): `risky` needs money-review-passed, ai-review-passed alone is not enough
+reset; on; prs "$(pr 1 a1 green risky,ai-review-passed)"
+run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "risky + ai-review-passed WITHOUT money-review-passed is held (not merged)" || no "money gate open: risky merged without money-review-passed"
+prs "$(pr 1 a1 green risky,ai-review-passed,money-review-passed)"
+run --hold-risky >/dev/null; [ "$(calls)" = 1 ] && ok "risky + both reviews is gated/merged" || no "risky with money-review-passed not gated"
 reset; on; prs "$(pr 1 a1 green risky-path)"
 run >/dev/null; [ "$(calls)" = 1 ] && ok "without --hold-risky the label does not hold" || no "held without --hold-risky"
 
