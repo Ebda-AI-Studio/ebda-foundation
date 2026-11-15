@@ -10,7 +10,7 @@ no() { echo "FAIL: $1"; _fail=$((_fail+1)); }
 [ -f "$OPS/lib/job-failure.sh" ] || { no "lib/job-failure.sh missing"; echo "job-failure: 0 passed, 1 failed"; exit 1; }
 . "$OPS/lib/job-failure.sh"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-export JF_FAILURE_STATE="$T/state" HOME="$T/home"; mkdir -p "$HOME"
+export OS_REPO_SLUG="x/y" JF_FAILURE_STATE="$T/state" HOME="$T/home"; mkdir -p "$HOME"
 cat > "$T/gh" <<'F'
 #!/usr/bin/env bash
 echo "$*" >> "${GH_LOG:?}"

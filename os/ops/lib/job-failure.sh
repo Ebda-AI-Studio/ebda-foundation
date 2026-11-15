@@ -43,7 +43,8 @@ job_failure_report() {
   [ -e "$stamp" ] && { echo "DEDUPED"; return 0; }
   gh_bin="${JF_FAILURE_GH:-gh}"
   { command -v "$gh_bin" >/dev/null 2>&1 || [ -x "$gh_bin" ]; } || { echo "SKIPPED no-gh"; return 0; }
-  slug="${OS_REPO_SLUG:-Ebda-AI-Studio/ebda-foundation}"
+  [ -n "${OS_REPO_SLUG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
+  slug="${OS_REPO_SLUG:-}"; [ -n "$slug" ] || { echo "SKIPPED no-repo-slug"; return 0; }
   tail="$(jf_log_tail "$plist" 40)"; [ -n "$tail" ] || tail="(no log output found)"
   body="Scheduled job \`$label\` exited non-zero (last exit code **$rc**) on $day (UTC).
 
