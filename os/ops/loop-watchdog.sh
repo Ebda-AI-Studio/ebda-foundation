@@ -9,7 +9,7 @@
 #   - drain dead                                   (no <OS_LAUNCHD_PREFIX>.drain-* launchd job loaded AND no ops/drain*.sh process)
 #   - alert listener dead                          (no alert-wait.sh process)
 #   - a ROOT checkout under $OS_PROJECTS_DIR with core.bare=true (silently breaks merge-gate: 2026-10-25, 2026-11-11)
-#   - no merge for --stall-min (40) min while approved PRs wait (label ai-review-passed, not hold, not draft)
+#   - no merge for --stall-min (40) min while drain-ELIGIBLE PRs wait (lib/drain_eligible.py: ai-review-passed, not hold, not draft, checks not failed, mergeable)
 #
 #   loop-watchdog.sh [--interval SEC] [--stall-min MIN] [--once] [--ack-file FILE]
 #     --once       check once: exit 0 + report when something new is wrong, 1 when healthy or already acked
@@ -71,10 +71,11 @@ check() { # prints one reason per line
     c="$(gh run list -R "$r" --branch main --workflow CI --limit 1 --json conclusion,status,headSha --jq '.[0]|"\(.status)/\(.conclusion)/\(.headSha[0:7])"' 2>/dev/null)"
     case "$c" in completed/failure*|completed/cancelled*|completed/timed_out*) echo "main CI red: $r $c" ;; esac
     last="$(gh pr list -R "$r" --state merged --limit 1 --json mergedAt --jq '.[0].mergedAt' 2>/dev/null)"
-    ready="$(gh pr list -R "$r" --limit 80 --json labels,isDraft --jq '[.[]|select(.isDraft|not)|select([.labels[].name]|any(.=="ai-review-passed"))|select([.labels[].name]|any(.=="hold")|not)]|length' 2>/dev/null)"
+    # drain-ELIGIBLE only (lib/drain_eligible.py, the drain's own rule): approved, not draft/hold, checks not failed, risky-path reviewed
+    ready="$(gh pr list -R "$r" --limit 80 --json number,mergeable,statusCheckRollup,isDraft,labels 2>/dev/null | python3 -I "$HERE/lib/drain_eligible.py" --mode stall 2>/dev/null)"
     if [ -n "$last" ] && [ "${ready:-0}" -gt 0 ] 2>/dev/null; then
       age="$(python3 -I -c 'import sys,time,calendar; print(int(time.time()-calendar.timegm(time.strptime(sys.argv[1],"%Y-%m-%dT%H:%M:%SZ"))))' "$last" 2>/dev/null || echo 0)"
-      [ "$age" -gt $((STALL_MIN * 60)) ] && echo "no merge for $((age / 60)) min: $r with $ready approved PRs"
+      [ "$age" -gt $((STALL_MIN * 60)) ] && echo "no merge for $((age / 60)) min: $r with $ready drain-eligible PRs"
     fi
   done < <(repos)
   bare_roots
