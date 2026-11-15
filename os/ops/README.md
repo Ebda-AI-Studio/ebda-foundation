@@ -39,6 +39,7 @@ host disk fails CI runner jobs and degrades the Mac. Now:
   `npm run generate -w packages/database`) still run per worktree and only write the files they touch.
 - Disk guard: `new-task-worktree.sh` refuses under 30 GB free (`WT_MIN_FREE_GB`, override once with `WT_FORCE=1`),
   printing top space users + the cleanup command.
+- `main-first.sh` fairness (G16): a starved repo's main CI also gets runners by round-robin cancel of other repos' queued PR runs (see the script header); knobs `MAIN_FIRST_FAIR_CAP`, `MAIN_FIRST_FAIR_TOTAL`.
 - `workspace-hygiene.sh` drops node_modules from worktrees whose PR is MERGED even when kept for uncommitted files
   (never one a process stands in), and posts a Telegram alert via `notify.sh` when host free < 30 GB (6 h cooldown,
   stamp `~/.cache/wt-deps/.disk-alert`).

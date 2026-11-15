@@ -33,7 +33,16 @@
 #   Cancelled runs go to the ledger. Re-run order while a batch is fresh: batch PRs first (oldest approval first),
 #   non-batch entries are HELD (re-running them would only be re-cancelled next tick) until the batch file goes
 #   stale or no longer lists the batch; with no fresh batch the order is the plain oldest-approval order.
-# Seams: gh from PATH, MAIN_FIRST_{BATCH_FILE,BATCH_MAX,BATCH_MAX_AGE_MIN}, MAIN_FIRST_{REPOS (default: $OS_ORG + os_local_list main_first_repos),MIN,LABEL,ALLOW_BRANCHES,ALLOW_LABEL,RERUN_CAP,WORKFLOW,STATE,LOG,NOW}.
+# CROSS-REPO FAIRNESS (G16, 2026-11-15): the heavy runners are an ORG pool shared by ebda-store, ebda-whatsapp and ebda-foundation, but
+# the rules above only cancel the STARVED repo's own PR runs, so one repo's PR backlog could hold the pool while another repo's main CI
+# starved (its own queue had nothing left to cancel). Main-before-PR stays rule one; after a starved repo's own PR runs are cancelled,
+# the OTHER repos' queued PR runs (heavy label, EVERY job still queued, not main / allowlisted / fixes-main) are cancelled too, but
+#   - round-robin by repo: one run per repo per round (newest-queued first, so the longest-waiting keep their place), at most
+#     $MAIN_FIRST_FAIR_CAP (default 3) per repo and $MAIN_FIRST_FAIR_TOTAL (default 6) overall per starved repo per tick, so no single
+#     repo pays for another's starvation alone;
+#   - the repo processing order rotates every tick ($STATE/rr-cursor), so with a shared budget no repo is always first or last;
+#   - each cancelled run goes into ITS OWN repo's ledger and is re-requested by that repo's tick once that repo's main CI is green.
+# Seams: gh from PATH, MAIN_FIRST_{FAIR_CAP,FAIR_TOTAL}, MAIN_FIRST_{BATCH_FILE,BATCH_MAX,BATCH_MAX_AGE_MIN}, MAIN_FIRST_{REPOS (default: $OS_ORG + os_local_list main_first_repos),MIN,LABEL,ALLOW_BRANCHES,ALLOW_LABEL,RERUN_CAP,WORKFLOW,STATE,LOG,NOW}.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/os-state.sh
@@ -71,7 +80,8 @@ NOW="${MAIN_FIRST_NOW:-$(date +%s)}"
 BATCH_MAX="${MAIN_FIRST_BATCH_MAX:-3}"
 BATCH_AGE="${MAIN_FIRST_BATCH_MAX_AGE_MIN:-15}"
 GH_TIMEOUT="${GH_TIMEOUT:-45}"
-for v in MIN CAP BATCH_MAX BATCH_AGE; do case "${!v}" in ''|*[!0-9]*) echo "main-first: $v must be a whole number" >&2; exit 2 ;; esac; done
+FAIR_CAP="${MAIN_FIRST_FAIR_CAP:-3}"; FAIR_TOTAL="${MAIN_FIRST_FAIR_TOTAL:-6}"
+for v in MIN CAP BATCH_MAX BATCH_AGE FAIR_CAP FAIR_TOTAL; do case "${!v}" in ''|*[!0-9]*) echo "main-first: $v must be a whole number" >&2; exit 2 ;; esac; done
 mkdir -p "$STATE" "$(dirname "$LOG")" 2>/dev/null || true
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG"; }
@@ -82,7 +92,8 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then rmdir "$LOCK" 2>/dev/null; mkdir "$LOCK" 2>/dev/null || exit 0
   else log "skip: another main-first run holds the lock"; exit 0; fi
 fi
-trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+FAIR_DIR="$(mktemp -d 2>/dev/null || echo "$STATE/fair.$$")"; mkdir -p "$FAIR_DIR"
+trap 'rmdir "$LOCK" 2>/dev/null; rm -rf "$FAIR_DIR"' EXIT
 
 # gh GET -> stdout; non-zero on any failure (5xx/504/timeout) or non-JSON body
 api() {
@@ -182,6 +193,74 @@ sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin))
   done
 }
 
+# ---- cross-repo fairness (G16) ----
+# fair_gather <starved repo>: for every OTHER repo, list its cancellable queued PR runs into $FAIR_DIR/<slug>.cand (newest first).
+# Reads only; a failing repo is skipped (logged), never a reason to skip the starved repo's own actions.
+FAIR_REPOS=""
+fair_gather() {
+  local starved="$1" o oslug prruns cand rid br sha prn created jobs labels
+  FAIR_REPOS=""
+  for o in $REPOS; do
+    [ "$o" = "$starved" ] && continue
+    oslug="${o//\//__}"; : > "$FAIR_DIR/$oslug.cand"
+    prruns="$(api "repos/$o/actions/runs?status=queued&event=pull_request&per_page=100")" || { log "$o: API failure reading queued PR runs (fairness for $starved), repo skipped"; continue; }
+    cand="$(printf '%s' "$prruns" | python3 -c '
+import sys,json
+d=json.load(sys.stdin)
+for x in sorted(d["workflow_runs"], key=lambda x: x.get("created_at",""), reverse=True):
+    if x.get("status")!="queued" or x.get("event","pull_request")!="pull_request": continue
+    prs=x.get("pull_requests") or []
+    print(x["id"], x.get("head_branch",""), x.get("head_sha",""), prs[0]["number"] if prs else 0, x.get("created_at",""))' 2>/dev/null)" || { log "$o: bad PR runs JSON (fairness), repo skipped"; continue; }
+    while read -r rid br sha prn created; do
+      [ -n "$rid" ] || continue
+      [ "$br" = main ] && continue
+      case ",$ALLOW_BRANCHES," in *",$br,"*) continue ;; esac
+      jobs="$(api "repos/$o/actions/runs/$rid/jobs?per_page=100")" || { log "$o: API failure reading jobs of $rid (fairness), run kept"; continue; }
+      printf '%s' "$jobs" | LABEL="$LABEL" python3 -c '
+import sys,json,os
+d=json.load(sys.stdin); js=d.get("jobs",[])
+sys.exit(0 if js and all(j.get("status")=="queued" for j in js) and any(os.environ["LABEL"] in (j.get("labels") or []) for j in js) else 1)' 2>/dev/null || continue
+      if [ "$prn" != 0 ]; then
+        labels="$(api "repos/$o/issues/$prn/labels")" || { log "$o: API failure reading labels of #$prn (fairness), run kept"; continue; }
+        if printf '%s' "$labels" | AL="$ALLOW_LABEL" python3 -c '
+import sys,json,os
+sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin)) else 1)' 2>/dev/null; then continue; fi
+      fi
+      printf '%s %s %s %s\n' "$rid" "$sha" "$prn" "$br" >> "$FAIR_DIR/$oslug.cand"
+    done <<<"$cand"
+    FAIR_REPOS="$FAIR_REPOS $o"
+  done
+}
+# fair_apply <starved repo> <starved main run id>: round-robin cancel across the repos fair_gather listed.
+fair_apply() {
+  local starved="$1" nid="$2" taken=0 progress=1 o oslug n rid sha prn br line ledger commented
+  while [ "$progress" = 1 ] && [ "$taken" -lt "$FAIR_TOTAL" ]; do
+    progress=0
+    for o in $FAIR_REPOS; do
+      [ "$taken" -lt "$FAIR_TOTAL" ] || break
+      oslug="${o//\//__}"
+      n="$(cat "$FAIR_DIR/$oslug.taken" 2>/dev/null || echo 0)"
+      [ "$n" -lt "$FAIR_CAP" ] || continue
+      line="$(sed -n '1p' "$FAIR_DIR/$oslug.cand" 2>/dev/null)"
+      [ -n "$line" ] || continue
+      sed -i.bak '1d' "$FAIR_DIR/$oslug.cand" 2>/dev/null; rm -f "$FAIR_DIR/$oslug.cand.bak"
+      read -r rid sha prn br <<<"$line"
+      progress=1
+      ledger="$STATE/$oslug.cancelled.tsv"; commented="$STATE/$oslug.commented"; touch "$ledger" "$commented"
+      if cancel_run "$o" "$rid" "fairness: cancel queued PR run $rid ($o PR #$prn, head $sha) so $starved main CI $nid gets a runner"; then
+        echo $((n + 1)) > "$FAIR_DIR/$oslug.taken"; taken=$((taken + 1))
+        [ "$DRY" = 1 ] || { cut -f1 "$ledger" | grep -qx "$rid" || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$NOW" >> "$ledger"; }
+        if [ "$prn" != 0 ] && ! grep -qx "$prn:$sha" "$commented"; then
+          if act "comment on $o#$prn (head $sha)" -X POST "repos/$o/issues/$prn/comments" -f "body=CI re-run deferred: main CI of $starved is waiting for a heavy runner and this repo shares the runner pool. The OS re-requests this run once this repo's main is green."; then
+            [ "$DRY" = 1 ] || echo "$prn:$sha" >> "$commented"
+          fi
+        fi
+      fi
+    done
+  done
+  log "$starved: fairness cancelled $taken queued PR run(s) of other repos"
+}
+
 process_repo() {
 
   local repo="$1" slug; slug="${repo//\//__}"
@@ -276,6 +355,8 @@ sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin))
     to_cancel_pr+=("$rid:$sha:$prn:$br")
   done <<<"$cand"
 
+  fair_gather "$repo"
+
   # ---- mutate ----
   local e rest
   for e in "${to_cancel_main[@]+"${to_cancel_main[@]}"}"; do
@@ -292,6 +373,7 @@ sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin))
       fi
     fi
   done
+  fair_apply "$repo" "$nid"
   log "$repo: done (cancelled ${#to_cancel_main[@]} superseded main, ${#to_cancel_pr[@]} queued PR runs)"
 }
 
@@ -353,6 +435,14 @@ print(t[0] if t else "")' 2>/dev/null)" || ap=""
 }
 
 log "tick start (dry=$DRY repos: $REPOS)"
+# round-robin start: rotate the repo order every tick so no repo is always processed first (G16)
+RR_FILE="$STATE/rr-cursor"; RR_N=0; for r in $REPOS; do RR_N=$((RR_N + 1)); done
+RR_C="$(cat "$RR_FILE" 2>/dev/null || echo 0)"; case "$RR_C" in ''|*[!0-9]*) RR_C=0 ;; esac
+RR_K=0; [ "$RR_N" -gt 0 ] && RR_K=$((RR_C % RR_N))
+ORDER=""; i=0; for r in $REPOS; do [ "$i" -ge "$RR_K" ] && ORDER="$ORDER $r"; i=$((i + 1)); done
+i=0; for r in $REPOS; do [ "$i" -lt "$RR_K" ] && ORDER="$ORDER $r"; i=$((i + 1)); done
+[ "$DRY" = 1 ] || echo $((RR_C + 1)) > "$RR_FILE"
+REPOS_CONFIGURED="$REPOS"; REPOS="${ORDER# }"
 for r in $REPOS; do process_repo "$r"; done
 if [ "$DRY" = 0 ] && command -v write_status >/dev/null 2>&1; then write_status main-first true "main-first tick ok" '{}'; fi
 exit 0
