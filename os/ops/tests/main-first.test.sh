@@ -152,4 +152,46 @@ run; has "actions/runs/11/cancel" && pass "lowercase 'ci' workflow name matched"
 reset; main 95:ddd:completed:failure; mkdir -p "$T/state"; printf '11\t101\tp1\t%s\n' "$NOW" > "$T/state/o__r.cancelled.tsv"
 run; [ -z "$(posts)" ] && [ -s "$T/state/o__r.cancelled.tsv" ] && pass "main red -> ledger kept, no re-run" || fail "red main"
 
+# 14. BATCH-FIRST: main green + fresh drain batch file -> queued non-batch PR runs cancelled (batch, partially started, push kept)
+bfile() { mkdir -p "$T/state"; printf '%s\n' "${@:2}" > "$T/state/drain-batch-o__r"; python3 -c "import os;os.utime('$T/state/drain-batch-o__r',($NOW-$1,$NOW-$1))"; }
+pullf() { echo "{\"state\":\"open\",\"head\":{\"sha\":\"$2\",\"ref\":\"$3\"}}" > "$FK/pull_$1.json"; }
+batch_world() {
+  reset; main 95:ddd:completed:success
+  pullf 101 p1 feat-batch
+  echo '{"workflow_runs":[
+   {"id":21,"status":"queued","event":"pull_request","head_branch":"feat-batch","head_sha":"p1","pull_requests":[{"number":101}]},
+   {"id":22,"status":"queued","event":"pull_request","head_branch":"feat-other","head_sha":"p2","pull_requests":[{"number":102}]},
+   {"id":23,"status":"queued","event":"pull_request","head_branch":"feat-part","head_sha":"p3","pull_requests":[{"number":103}]},
+   {"id":24,"status":"queued","event":"push","head_branch":"feat-push","head_sha":"p4","pull_requests":[]}]}' > "$FK/prq.json"
+  jobs 21 "$NEW"; jobs 22 "$NEW"; jobs 24 "$NEW"
+  echo '{"jobs":[{"status":"in_progress","labels":["ebda-mac"]},{"status":"queued","labels":["ebda-mac"]}]}' > "$FK/jobs_23.json"
+}
+batch_world; bfile 60 101
+run
+has "actions/runs/22/cancel" && ! has "actions/runs/21/cancel" && ! has "actions/runs/23/cancel" && ! has "actions/runs/24/cancel" && grep -q "PR #102.*not in drain batch" "$T/log" && pass "batch fresh: non-batch queued run cancelled; batch, partially started and push runs kept" || fail "batch cancel ($(posts | tr '\n' ' '))"
+
+batch_world; bfile $((20*60)) 101
+run; [ -z "$(posts)" ] && grep -q "stale" "$T/log" && pass "stale batch file -> nothing cancelled (fail open)" || fail "stale batch ($(posts | tr '\n' ' '))"
+batch_world
+run; [ -z "$(posts)" ] && pass "missing batch file -> nothing cancelled" || fail "missing batch"
+batch_world; bfile 60 101; run --dry-run
+[ -z "$(posts)" ] && grep -q "DRYRUN would batch-first: cancel queued PR run 22" "$T/log" && pass "batch cancel honours dry-run" || fail "batch dry-run"
+# main red -> batch never cancels
+reset; main 95:ddd:completed:failure; bfile 60 101; run; [ -z "$(posts)" ] && pass "main not green -> no batch cancel" || fail "batch on red main"
+
+# 15. re-run order: batch PRs first (even unapproved), non-batch held while batch fresh; stale -> old order
+rr_world() {
+  reset; main 95:ddd:completed:success; mkdir -p "$T/state"
+  printf '12\t102\tp2\t%s\n14\t104\tp4\t%s\n11\t101\tp1\t%s\n' "$NOW" "$NOW" "$NOW" > "$T/state/o__r.cancelled.tsv"
+  for n in 1 2 4; do pullf "10$n" "p$n" "b$n"; done
+  echo '[]' > "$FK/reviews_101.json"
+  echo '[{"user":{"login":"a"},"state":"APPROVED","submitted_at":"2026-11-14T10:00:00Z"}]' > "$FK/reviews_102.json"
+  echo '[{"user":{"login":"a"},"state":"APPROVED","submitted_at":"2026-11-14T09:00:00Z"}]' > "$FK/reviews_104.json"
+  echo '{"workflow_runs":[]}' > "$FK/prq.json"
+}
+rr_world; bfile 60 101 102; run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && grep -q "PR #104 run 14 held" "$T/log" && pass "rerun: batch PRs first (approved before unapproved), non-batch held" || fail "batch rerun order ($(posts | tr '\n' ' '))"
+rr_world; bfile $((20*60)) 101 102; run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun " ] && pass "stale batch -> old oldest-approval rerun order" || fail "stale rerun order ($(posts | tr '\n' ' '))"
+
 echo "$_pass passed, $_fail failed"; [ "$_fail" = 0 ]

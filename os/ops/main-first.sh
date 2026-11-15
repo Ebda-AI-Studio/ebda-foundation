@@ -18,7 +18,22 @@
 # Every GitHub read is gathered BEFORE any mutation; an API failure (5xx/504/bad JSON) skips that repo for this tick.
 # Idempotent: state is $MAIN_FIRST_STATE (cancelled-run ledger + commented heads). --dry-run mutates nothing.
 # Log: ~/Library/Logs/ebda-main-first.log. Exit 0 always except usage errors (2).
-# Seams: gh from PATH, MAIN_FIRST_{REPOS (default: $OS_ORG + os_local_list main_first_repos),MIN,LABEL,ALLOW_BRANCHES,ALLOW_LABEL,RERUN_CAP,WORKFLOW,STATE,LOG,NOW}.
+#
+# BATCH-FIRST (2026-11-15): ebda-store PR CI is ~15 heavy jobs per PR on 2 heavy runners and GitHub serves FIFO, so
+# the PRs the merge drain gates next wait behind PRs that will not merge soon. The drain (script lives OUTSIDE this
+# repo) writes the batch file; main-first only READS it.
+#   Contract: file `$STATE/drain-batch-<owner>__<repo>` (default STATE ~/.whisky-os-state/main-first, e.g.
+#   ~/.whisky-os-state/main-first/Ebda-AI-Studio__ebda-store; override: MAIN_FIRST_BATCH_FILE), plain text, one PR
+#   number per line, the PRs the drain will gate next (first $MAIN_FIRST_BATCH_MAX=3 lines used; non-numeric ignored).
+#   The writer rewrites it (touch) every drain tick; mtime older than $MAIN_FIRST_BATCH_MAX_AGE_MIN (default 15) or a
+#   missing/empty file = feature OFF (today's behaviour; logged once per transition).
+#   When main's newest CI run is green and the file is fresh: QUEUED pull_request runs whose head branch is not a
+#   batch PR's head (and not main / allowlisted / fixes-main) are cancelled, but only if EVERY job of the run is
+#   still queued (a run with any in_progress/completed job is left alone). push/schedule runs are never touched.
+#   Cancelled runs go to the ledger. Re-run order while a batch is fresh: batch PRs first (oldest approval first),
+#   non-batch entries are HELD (re-running them would only be re-cancelled next tick) until the batch file goes
+#   stale or no longer lists the batch; with no fresh batch the order is the plain oldest-approval order.
+# Seams: gh from PATH, MAIN_FIRST_{BATCH_FILE,BATCH_MAX,BATCH_MAX_AGE_MIN}, MAIN_FIRST_{REPOS (default: $OS_ORG + os_local_list main_first_repos),MIN,LABEL,ALLOW_BRANCHES,ALLOW_LABEL,RERUN_CAP,WORKFLOW,STATE,LOG,NOW}.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/os-state.sh
@@ -29,7 +44,7 @@ export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
 DRY=0
 case "${1:-}" in
   --dry-run) DRY=1 ;;
-  -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+  -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
   '') ;;
   *) echo "main-first: unknown arg $1 (only --dry-run)" >&2; exit 2 ;;
 esac
@@ -53,8 +68,10 @@ WORKFLOW="${MAIN_FIRST_WORKFLOW:-CI}"
 STATE="${MAIN_FIRST_STATE:-$HOME/.whisky-os-state/main-first}"
 LOG="${MAIN_FIRST_LOG:-$HOME/Library/Logs/ebda-main-first.log}"
 NOW="${MAIN_FIRST_NOW:-$(date +%s)}"
+BATCH_MAX="${MAIN_FIRST_BATCH_MAX:-3}"
+BATCH_AGE="${MAIN_FIRST_BATCH_MAX_AGE_MIN:-15}"
 GH_TIMEOUT="${GH_TIMEOUT:-45}"
-for v in MIN CAP; do case "${!v}" in ''|*[!0-9]*) echo "main-first: $v must be a whole number" >&2; exit 2 ;; esac; done
+for v in MIN CAP BATCH_MAX BATCH_AGE; do case "${!v}" in ''|*[!0-9]*) echo "main-first: $v must be a whole number" >&2; exit 2 ;; esac; done
 mkdir -p "$STATE" "$(dirname "$LOG")" 2>/dev/null || true
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG"; }
@@ -99,10 +116,78 @@ cancel_run() { # <repo> <run id> <description>
 # jq-ish helper: py '<expr over d>' reads JSON on stdin
 py() { python3 -c 'import sys,json; d=json.load(sys.stdin); '"$1" 2>/dev/null; }
 
+# batch-first: sets BATCH_PRS (space separated, max BATCH_MAX) when the drain's batch file is fresh, else ""
+load_batch() { # <repo slug>
+  local slug="$1" f="${MAIN_FIRST_BATCH_FILE:-$STATE/drain-batch-$1}" mark="$STATE/$1.batch-off" mt age
+  BATCH_PRS=""
+  if [ ! -s "$f" ]; then
+    [ -e "$mark" ] || { log "$slug: no drain batch file ($f); batch-first off"; : > "$mark"; }
+    return 0
+  fi
+  mt="$(python3 -c 'import os,sys; print(int(os.path.getmtime(sys.argv[1])))' "$f" 2>/dev/null)" || mt=0
+  age=$((NOW - mt))
+  if [ "$age" -gt $((BATCH_AGE * 60)) ]; then
+    [ -e "$mark" ] || { log "$slug: drain batch file stale (${age}s > ${BATCH_AGE}m); batch-first off"; : > "$mark"; }
+    return 0
+  fi
+  BATCH_PRS="$(grep -E '^[0-9]+$' "$f" | head -n "$BATCH_MAX" | tr '\n' ' ')"
+  BATCH_PRS="${BATCH_PRS% }"
+  [ -n "$BATCH_PRS" ] || return 0
+  if [ -e "$mark" ]; then rm -f "$mark"; log "$slug: drain batch file fresh again; batch-first on"; fi
+}
+in_batch() { case " $BATCH_PRS " in *" $1 "*) return 0 ;; esac; return 1; }
+
+# main is green and a fresh batch exists: cancel queued PR runs that are not the batch's
+batch_cancel() { # <repo> <ledger>
+  local repo="$1" ledger="$2" n pr bbr="" br
+  for n in $BATCH_PRS; do
+    pr="$(api "repos/$repo/pulls/$n")" || { log "$repo: API failure reading batch PR #$n, no batch cancel this tick"; return 0; }
+    br="$(printf '%s' "$pr" | py 'print(d["head"]["ref"])')"
+    [ -n "$br" ] && bbr="$bbr $br"
+  done
+  local prruns; prruns="$(api "repos/$repo/actions/runs?status=queued&event=pull_request&per_page=100")" || { log "$repo: API failure reading queued PR runs, no batch cancel this tick"; return 0; }
+  local cand; cand="$(printf '%s' "$prruns" | python3 -c '
+import sys,json
+d=json.load(sys.stdin)
+for x in d["workflow_runs"]:
+    if x.get("status")!="queued" or x.get("event","pull_request")!="pull_request": continue
+    prs=x.get("pull_requests") or []
+    print(x["id"], x.get("head_branch",""), x.get("head_sha",""), prs[0]["number"] if prs else 0)' 2>/dev/null)" || { log "$repo: bad PR runs JSON, no batch cancel this tick"; return 0; }
+  local rid sha prn jobs labels todo=() e rest
+  while read -r rid br sha prn; do
+    [ -n "$rid" ] || continue
+    [ "$br" = main ] && continue
+    case " $bbr " in *" $br "*) log "$repo: PR #$prn run $rid is in the drain batch; kept"; continue ;; esac
+    case ",$ALLOW_BRANCHES," in *",$br,"*) continue ;; esac
+    jobs="$(api "repos/$repo/actions/runs/$rid/jobs?per_page=100")" || { log "$repo: API failure reading jobs of $rid, no batch cancel this tick"; return 0; }
+    if ! printf '%s' "$jobs" | python3 -c '
+import sys,json
+d=json.load(sys.stdin)
+sys.exit(0 if all(j.get("status")=="queued" for j in d.get("jobs",[])) else 1)' 2>/dev/null; then
+      log "$repo: PR #$prn run $rid already partially started; kept"; continue
+    fi
+    if [ "$prn" != 0 ]; then
+      labels="$(api "repos/$repo/issues/$prn/labels")" || { log "$repo: API failure reading labels of #$prn, no batch cancel this tick"; return 0; }
+      if printf '%s' "$labels" | AL="$ALLOW_LABEL" python3 -c '
+import sys,json,os
+sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin)) else 1)' 2>/dev/null; then continue; fi
+    fi
+    todo+=("$rid:$sha:$prn")
+  done <<<"$cand"
+  for e in "${todo[@]+"${todo[@]}"}"; do
+    rid="${e%%:*}"; rest="${e#*:}"; sha="${rest%%:*}"; prn="${rest#*:}"
+    if cancel_run "$repo" "$rid" "batch-first: cancel queued PR run $rid ($repo PR #$prn, head $sha): not in drain batch [$BATCH_PRS]"; then
+      [ "$DRY" = 1 ] || { cut -f1 "$ledger" | grep -qx "$rid" || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$NOW" >> "$ledger"; }
+    fi
+  done
+}
+
 process_repo() {
+
   local repo="$1" slug; slug="${repo//\//__}"
   local ledger="$STATE/$slug.cancelled.tsv" commented="$STATE/$slug.commented"
   touch "$ledger" "$commented"
+  load_batch "$slug"
 
   # ---- gather (no mutation until everything needed is in hand) ----
   local mains; mains="$(api "repos/$repo/actions/runs?branch=main&event=push&per_page=30")" || { log "$repo: API failure reading main runs, skip tick"; return; }
@@ -122,6 +207,7 @@ print(json.dumps(r[0]) if r else "")' 2>/dev/null)" || { log "$repo: bad main ru
   # ---- phase 3: main completed green -> re-request cancelled PR runs ----
   if [ "$nstatus" = "completed" ]; then
     log "$repo: newest main $WORKFLOW run $nid ($nsha) completed ${nconc:-unknown}"
+    if [ "$nconc" = "success" ] && [ -n "$BATCH_PRS" ]; then batch_cancel "$repo" "$ledger"; fi
     if [ "$nconc" = "success" ]; then rerun_cancelled "$repo" "$ledger" "$nid"; else log "$repo: newest main run $nid completed $nconc; nothing re-run"; fi
     return
   fi
@@ -212,12 +298,15 @@ sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin))
 rerun_cancelled() { # <repo> <ledger> <main run id>
   local repo="$1" ledger="$2" nid="$3"
   [ -s "$ledger" ] || return 0
-  local rid prn sha ts pr st hsha ap tmp done_n=0 rows="" drops="" cleared=""
+  local rid prn sha ts pr st hsha ap grp tmp done_n=0 rows="" drops="" cleared=""
   # resolve each entry (PR open? head unchanged? approval time) BEFORE any re-run
   while IFS=$'\t' read -r rid prn sha ts; do
     [ -n "$rid" ] || continue
     if [ $((NOW - ts)) -gt 86400 ]; then log "$repo: ledger entry run $rid expired (>24h); dropped"; drops="$drops $rid"; continue; fi
-    if [ "$prn" = 0 ]; then rows="$rows"$'\n'"9999999999 $ts $rid $prn $sha"; continue; fi
+    if [ "$prn" = 0 ]; then
+      [ -n "$BATCH_PRS" ] || rows="$rows"$'\n'"29999999999 $ts $rid $prn $sha"
+      continue
+    fi
     pr="$(api "repos/$repo/pulls/$prn")" || { log "$repo: API failure reading PR #$prn, skip tick"; return; }
     st="$(printf '%s' "$pr" | py 'print(d.get("state",""))')"; hsha="$(printf '%s' "$pr" | py 'print(d["head"]["sha"])')"
     if [ "$st" != open ] || [ "$hsha" != "$sha" ]; then log "$repo: PR #$prn closed or head moved; run $rid dropped from ledger"; drops="$drops $rid"; continue; fi
@@ -228,8 +317,9 @@ d=json.load(sys.stdin); last={}
 for r in sorted(d,key=lambda r:r.get("submitted_at","")): last[r["user"]["login"]]=r
 t=sorted(r["submitted_at"] for r in last.values() if r.get("state")=="APPROVED")
 print(t[0] if t else "")' 2>/dev/null)" || ap=""
-    # approved first (key = approval time), unapproved after
-    if [ -n "$ap" ]; then rows="$rows"$'\n'"0$ap $ts $rid $prn $sha"; else rows="$rows"$'\n'"9999999999 $ts $rid $prn $sha"; fi
+    # batch PRs first (0), then approved by approval time (1), then unapproved (2); non-batch HELD while a batch is fresh
+    if in_batch "$prn"; then grp=0; elif [ -n "$BATCH_PRS" ]; then log "$repo: PR #$prn run $rid held: drain batch [$BATCH_PRS] goes first"; continue; elif [ -n "$ap" ]; then grp=1; else grp=2; fi
+    if [ -n "$ap" ]; then rows="$rows"$'\n'"$grp$ap $ts $rid $prn $sha"; else rows="$rows"$'\n'"${grp}9999999999 $ts $rid $prn $sha"; fi
   done < "$ledger"
   local key _t
   while read -r key _t rid prn sha; do
