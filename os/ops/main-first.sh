@@ -298,11 +298,20 @@ sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin))
 rerun_cancelled() { # <repo> <ledger> <main run id>
   local repo="$1" ledger="$2" nid="$3"
   [ -s "$ledger" ] || return 0
-  local rid prn sha ts pr st hsha ap grp tmp done_n=0 rows="" drops="" cleared=""
+  local rid prn sha ts pr st hsha ap grp tmp done_n=0 rows="" drops="" cleared="" seen="" run rst rcon rat rsha
   # resolve each entry (PR open? head unchanged? approval time) BEFORE any re-run
   while IFS=$'\t' read -r rid prn sha ts; do
     [ -n "$rid" ] || continue
+    case " $seen " in *" $rid "*) continue ;; esac   # duplicate ledger row: one request per id per tick
+    seen="$seen $rid"
     if [ $((NOW - ts)) -gt 86400 ]; then log "$repo: ledger entry run $rid expired (>24h); dropped"; drops="$drops $rid"; continue; fi
+    # re-request ONLY a run that is still completed+cancelled on its recorded head: another actor may have
+    # re-run it already (success/failure/in_progress/queued) and a second rerun would restart a passing run
+    run="$(api "repos/$repo/actions/runs/$rid")" || { log "$repo: API failure reading run $rid, kept in ledger this tick"; continue; }
+    rst="$(printf '%s' "$run" | py 'print(d.get("status",""))')"; rcon="$(printf '%s' "$run" | py 'print(d.get("conclusion") or "")')"
+    rat="$(printf '%s' "$run" | py 'print(d.get("run_attempt",""))')"; rsha="$(printf '%s' "$run" | py 'print(d.get("head_sha",""))')"
+    if [ "$rst" != completed ] || [ "$rcon" != cancelled ]; then log "$repo: run $rid dropped: already ${rst:-unknown}${rcon:+/$rcon} attempt ${rat:-?}"; drops="$drops $rid"; continue; fi
+    if [ -n "$rsha" ] && [ "$prn" != 0 ] && [ "$rsha" != "$sha" ]; then log "$repo: run $rid dropped: run head $rsha != ledger head $sha"; drops="$drops $rid"; continue; fi
     if [ "$prn" = 0 ]; then
       [ -n "$BATCH_PRS" ] || rows="$rows"$'\n'"29999999999 $ts $rid $prn $sha"
       continue
@@ -327,13 +336,17 @@ print(t[0] if t else "")' 2>/dev/null)" || ap=""
     if [ "$done_n" -ge "$CAP" ]; then log "$repo: rerun cap $CAP reached; run $rid waits for the next tick"; continue; fi
     if act "re-request cancelled run $rid ($repo PR #$prn, head $sha) after main run $nid went green" -X POST "repos/$repo/actions/runs/$rid/rerun"; then
       done_n=$((done_n+1)); cleared="$cleared $rid"
+    else
+      # act already logged FAILED once; never retry the same id forever
+      drops="$drops $rid"; log "$repo: re-request of run $rid failed; dropped from ledger"
     fi
   done <<<"$(printf '%s\n' "$rows" | sort)"
   [ "$DRY" = 1 ] && return 0
-  tmp="$ledger.tmp"; : > "$tmp"
+  tmp="$ledger.tmp"; : > "$tmp"; seen=""
   while IFS=$'\t' read -r rid prn sha ts; do
     [ -n "$rid" ] || continue
-    case " $cleared $drops " in *" $rid "*) continue ;; esac
+    case " $cleared $drops $seen " in *" $rid "*) continue ;; esac
+    seen="$seen $rid"
     printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$ts" >> "$tmp"
   done < "$ledger"
   mv -f "$tmp" "$ledger"
