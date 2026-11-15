@@ -8,6 +8,8 @@ import type { TurnResult } from './types';
 const textOf = (r: TurnResult): string => r.segments.map((s) => (s.kind === 'text' ? s.text : s.kind === 'cap' ? `<${s.capabilityId}>` : s.kind === 'cite' ? `{${s.articleId}}` : `<${s.href}>`)).join('');
 const reqJson = (p: { requests: unknown[] }) => JSON.stringify(p.requests);
 
+const META = ['EAAGm0PX4ZCps', 'BO1234567890a', 'bcdefghijKLMN', 'OPqrstuvwxyz'].join(''); // split: no contiguous secret-shaped literal
+
 describe('runTurn: stage order and early exits', () => {
   it('stages run in the documented order', async () => {
     const f = fakeAdapter();
@@ -184,6 +186,16 @@ describe('runTurn: model and free tools', () => {
     const p = { byoKey: false, async complete() { throw new LlmError('network', true); } };
     const r = await runTurn(f.adapter, f.ctx(), { text: 'ازاي اضيف كوبون' }, { provider: p });
     expect(r.status).toBe('limited');
+  });
+  it('a pasted secret keeps the secure-screen note on a not_covered reply (and the secret stays out of the model)', async () => {
+    const f = fakeAdapter();
+    f.hits.list = [];
+    const p = scriptedProvider([]);
+    const r = await runTurn(f.adapter, f.ctx(), { text: `ازاي احسب الضريبه المتقدمه للاستيراد ${META}` }, { provider: p });
+    expect(r.status).toBe('not_covered');
+    expect(textOf(r)).toContain(NOT_COVERED_REPLY.ar);
+    expect(r.segments.some((s) => s.kind === 'cap' && s.capabilityId === 'secure.connect')).toBe(true);
+    expect(p.requests).toHaveLength(0);
   });
   it('not covered: no relevant help and no relevant tool skips the model; the second time hands off', async () => {
     const f = fakeAdapter();
