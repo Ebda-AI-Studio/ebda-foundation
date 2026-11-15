@@ -70,21 +70,8 @@ read_int() { local v; v="$(cat "$1" 2>/dev/null || true)"; case "$v" in ''|*[!0-
 # prints "<pr> <sha> <risky 0|1> <passed 0|1>" per green+mergeable PR; exit 3 when GitHub cannot be read (unknown is not "nothing")
 list_ready() {
   local raw; raw="$(gh pr list --repo "$REPO" --state open --base main --limit 60 --json number,mergeable,statusCheckRollup,isDraft,labels,headRefOid 2>/dev/null)" || return 3
-  printf '%s' "$raw" | python3 -I -c '
-import json, sys
-for p in json.load(sys.stdin):
-    if p.get("isDraft") or p.get("mergeable") != "MERGEABLE": continue
-    cs = p.get("statusCheckRollup") or []
-    if not cs: continue                      # zero checks is "CI has not started", never green
-    ok = True
-    for c in cs:
-        st = c.get("status") or ("COMPLETED" if c.get("state") in ("SUCCESS", "FAILURE", "ERROR") else "PENDING")
-        co = c.get("conclusion") or {"SUCCESS": "SUCCESS", "FAILURE": "FAILURE", "ERROR": "FAILURE"}.get(c.get("state"), "")
-        if st != "COMPLETED" or co in ("FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"): ok = False; break
-    if not ok: continue
-    names = {l.get("name") for l in p.get("labels") or []}
-    print(p["number"], p["headRefOid"], int("risky-path" in names), int("ai-review-passed" in names))
-' 2>/dev/null || return 3
+  # eligibility lives in ONE place (lib/drain_eligible.py), shared with loop-watchdog's stall count (G15)
+  printf '%s' "$raw" | python3 -I "$HERE/lib/drain_eligible.py" --mode drain 2>/dev/null || return 3
 }
 
 # PR numbers repeat across repos: match this repo too, or a gate on another repo's #N would skip ours
