@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- G16 (cross-repo runner fairness): `main-first.sh` now, when a repo's main CI starves, also cancels the OTHER repos' fully-queued heavy-label PR runs round-robin by repo (`MAIN_FIRST_FAIR_CAP` 3 per repo, `MAIN_FIRST_FAIR_TOTAL` 6 per tick), records them in their own repo's ledger for re-request, and rotates the repo order every tick (`rr-cursor`). Main-before-PR is still rule one. Test `tests/main-first-fairness.test.sh`.
 - G15 (stall alert counts drain-eligible PRs): new `ops/lib/drain_eligible.py` is the single eligibility rule for `drain.sh` and `loop-watchdog.sh`; the watchdog no longer counts every `ai-review-passed` PR (ebda-store said 64). The drain now also skips PRs labelled `hold`. Tests in `tests/loop-watchdog.test.sh`.
 - G14 (scheduled-job failure opens a fixer): `ops/lib/job-failure.sh` + `os-selftest.sh` `check_last_exit`; a launchd job whose last exit code is non-zero files a deduped (per job per day) `review-finding` issue with the secret-masked log tail. Test `lib/__tests__/job-failure.test.sh`.
 - G13 (hygiene squash-merge): `wt_squash_integrated` in `ops/lib/wt-safety.sh`; `wt_merge_verdict` and `worktree-cleanup.sh` treat a squash-merged branch as merged by content (tree equals a main commit, or merged PR mergeCommit identical for every changed file). Test `lib/__tests__/wt-squash-merged.test.sh`.

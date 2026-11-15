@@ -39,6 +39,7 @@ host disk fails CI runner jobs and degrades the Mac. Now:
   `npm run generate -w packages/database`) still run per worktree and only write the files they touch.
 - Disk guard: `new-task-worktree.sh` refuses under 30 GB free (`WT_MIN_FREE_GB`, override once with `WT_FORCE=1`),
   printing top space users + the cleanup command.
+- `main-first.sh` fairness (G16): a starved repo's main CI also gets runners by round-robin cancel of other repos' queued PR runs (see the script header); knobs `MAIN_FIRST_FAIR_CAP`, `MAIN_FIRST_FAIR_TOTAL`.
 - `os-selftest.sh` (G14) reads each launchd job's `last exit code`; non-zero opens ONE `review-finding` issue per job per UTC day on the OS repo with the masked log tail (`lib/job-failure.sh`; stamp written only after the issue exists, skipped on DRY_RUN). No new daemon.
 - `lib/wt-safety.sh` `wt_squash_integrated` (G13): a squash/rebase-merged branch counts as merged when its tree equals a recent main commit, or a MERGED PR's mergeCommit holds byte-identical content for every file the branch changed (so a PR head that moved after merge no longer keeps the worktree); a post-merge commit, a new branch, or a dirty tree still keeps it. Used by `workspace-hygiene.sh` and `worktree-cleanup.sh`.
 - `workspace-hygiene.sh` drops node_modules from worktrees whose PR is MERGED even when kept for uncommitted files
