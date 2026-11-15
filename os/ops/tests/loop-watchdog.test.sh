@@ -77,7 +77,8 @@ import sys; sys.path.insert(0, sys.argv[1]); import drain_eligible as d
 mk=lambda ls: {"isDraft":False,"mergeable":"MERGEABLE","statusCheckRollup":[{"status":"COMPLETED","conclusion":"SUCCESS"}],"labels":[{"name":l} for l in ls]}
 assert not d.eligible(mk(["risky","risky-path","money-review-passed"]), require_passed=False)
 assert not d.eligible(mk(["risky","risky-path","ai-review-passed"]), require_passed=False)
-assert d.eligible(mk(["risky","risky-path","ai-review-passed","money-review-passed"]), require_passed=False)' "$OPS/lib" && pass "eligible(): risky + risky-path need BOTH reviews (no masking by require_passed)" || fail "eligible() gate collapse"
+assert d.eligible(mk(["risky","risky-path","ai-review-passed","money-review-passed"]), require_passed=False)
+assert not d.eligible(mk(["risky","ai-review-passed"]), hold_risky=False, require_passed=False)   # money gate ignores hold_risky' "$OPS/lib" && pass "eligible(): risky + risky-path need BOTH reviews (no masking by require_passed)" || fail "eligible() gate collapse"
 # money gate (per label): risky needs money-review-passed; risky-path needs ai-review-passed
 healthy; iso_ago 55 > "$T/merged"
 echo "[$(mkpr 1 MERGEABLE 0 risky,ai-review-passed SUCCESS)]" > "$T/ready"; run; rc=$?

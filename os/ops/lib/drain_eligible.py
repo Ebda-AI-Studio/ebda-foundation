@@ -59,6 +59,11 @@ def needs_review(names):
     return "risky-path" in names or "risky" in names
 
 
+def money_ok(names):
+    """The money gate is unconditional (no flag, no repo): a `risky` PR never passes without `money-review-passed`."""
+    return "risky" not in names or "money-review-passed" in names
+
+
 def review_ok(names):
     """Required reviews AND together: risky-path needs ai-review-passed, risky needs money-review-passed, both labels need both."""
     return ("risky-path" not in names or "ai-review-passed" in names) and ("risky" not in names or "money-review-passed" in names)
@@ -69,6 +74,8 @@ def eligible(pr, hold_risky=True, strict=True, require_passed=False):
         return False
     names = _labels(pr)
     if require_passed and "ai-review-passed" not in names:
+        return False
+    if not money_ok(names):
         return False
     if hold_risky and not review_ok(names):
         return False
@@ -83,6 +90,8 @@ def main(argv):
         for p in prs:
             if classify(p, True) == "ok":
                 n = _labels(p)
+                if not money_ok(n):
+                    continue   # never offered to the drain, so it cannot merge even without --hold-risky
                 # drain.sh holds (risky=1, passed=0) PRs; the verdict is review_ok(), the same function eligible() uses
                 print(p["number"], p["headRefOid"], int(needs_review(n)), int(review_ok(n)))
     elif mode == "stall":
