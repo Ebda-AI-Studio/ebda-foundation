@@ -109,7 +109,7 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | cf-workers-watch | PORT-BRAIN | cf-workers | HTTP/API poll of Cloudflare Workers state; brain health.ts covers only 2 URLs |
 | ci-alert | REPLACED-BY | cloud/brain/src/relay.ts | CI failures arrive as signed webhooks into the brain relay inbox |
 | ci-runner-guard | KEEP-MAC | ci-runner-guard | reports native Mac runner fleet health from the GitHub API |
-| main-first | KEEP-MAC | main-first | cancels superseded main CI runs + queued PR runs so a starved main CI gets a heavy runner (gh API, local ledger, every 5 min) |
+| main-first | KEEP-MAC | main-first | cancels superseded main CI runs + queued PR runs so a starved main CI gets a heavy runner (+ batch-first: only the drain's next PRs keep their queued runs) (gh API, local ledger, every 5 min) |
 | claude-home-export | DROP | - | Ahmad 2026-11-09 turned it off: it wrote a 300 MB tgz to the Desktop every day |
 | cost-guard | PORT-BRAIN | cost-guard | billing API poll |
 | dead-gate-detect | KEEP-MAC | dead-gate-detect | inspects locally installed hooks and gates |

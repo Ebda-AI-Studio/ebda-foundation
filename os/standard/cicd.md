@@ -89,6 +89,11 @@ queued/in_progress and one of its jobs has been queued longer than `MAIN_FIRST_M
 3. when the newest main CI run completes `success`, re-request each cancelled run once (approved PRs first, oldest
    approval first, `MAIN_FIRST_RERUN_CAP` (2) per tick); a closed PR or a moved head is dropped (the push already
    started a fresh run); ledger entries expire after 24 h. A red main re-runs nothing.
+Batch-first (2026-11-15): the merge drain writes `~/.whisky-os-state/main-first/drain-batch-<owner>__<repo>` (one PR number
+per line, max `MAIN_FIRST_BATCH_MAX` 3, rewritten every drain tick). While it is fresh (mtime <= `MAIN_FIRST_BATCH_MAX_AGE_MIN`,
+15) and main CI is green, queued `pull_request` runs of non-batch PRs whose jobs are ALL still queued are cancelled (partially
+started, push and schedule runs are left alone) and ledgered; re-runs go batch PRs first and hold non-batch entries until the
+batch goes stale. Missing/stale file = off (today's behaviour). main-first only reads the file; header of `ops/main-first.sh` has the contract.
 A cancel on a QUEUED self-hosted run often does nothing: after ~20 s (`MAIN_FIRST_VERIFY_WAIT`) the run is re-read and, if still
 `queued`, `POST .../force-cancel` is called (both logged). Runs older than 24 h whose branch has no open PR are logged and skipped.
 All reads happen before any cancel; a 5xx/504 or unparsable response skips the repo for that tick. Tests:
