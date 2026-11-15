@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- G14 (scheduled-job failure opens a fixer): `ops/lib/job-failure.sh` + `os-selftest.sh` `check_last_exit`; a launchd job whose last exit code is non-zero files a deduped (per job per day) `review-finding` issue with the secret-masked log tail. Test `lib/__tests__/job-failure.test.sh`.
 - G13 (hygiene squash-merge): `wt_squash_integrated` in `ops/lib/wt-safety.sh`; `wt_merge_verdict` and `worktree-cleanup.sh` treat a squash-merged branch as merged by content (tree equals a main commit, or merged PR mergeCommit identical for every changed file). Test `lib/__tests__/wt-squash-merged.test.sh`.
 
 ## v0.3.2
