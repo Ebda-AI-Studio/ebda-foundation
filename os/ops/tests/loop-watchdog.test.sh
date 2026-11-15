@@ -71,6 +71,13 @@ prs 2 "${inel[@]}" "${pend[@]}" > "$T/ready"; run; rc=$?
 { [ "$rc" = 0 ] && grep -q 'with 2 drain-eligible' "$T/out" && ! grep -q 'approved PRs' "$T/out"; } && pass "stall counts only drain-eligible PRs (2 of 84 approved-labelled: red/conflict/hold/draft/unreviewed-risky excluded)" || { fail "eligible count rc=$rc"; cat "$T/out"; }
 printf '[%s]' "$(IFS=,; echo "${inel[*]}" "${pend[*]}" | tr ' ' ',')" > "$T/ready"; run; rc=$?
 [ "$rc" = 1 ] && pass "many approved PRs but none drain-eligible is not a stall (must not fire)" || { fail "ineligible-only rc=$rc"; cat "$T/out"; }
+# eligible() itself (stall mode additionally requires ai-review-passed, which would mask a collapsed gate): reviews must AND
+python3 -I -c '
+import sys; sys.path.insert(0, sys.argv[1]); import drain_eligible as d
+mk=lambda ls: {"isDraft":False,"mergeable":"MERGEABLE","statusCheckRollup":[{"status":"COMPLETED","conclusion":"SUCCESS"}],"labels":[{"name":l} for l in ls]}
+assert not d.eligible(mk(["risky","risky-path","money-review-passed"]), require_passed=False)
+assert not d.eligible(mk(["risky","risky-path","ai-review-passed"]), require_passed=False)
+assert d.eligible(mk(["risky","risky-path","ai-review-passed","money-review-passed"]), require_passed=False)' "$OPS/lib" && pass "eligible(): risky + risky-path need BOTH reviews (no masking by require_passed)" || fail "eligible() gate collapse"
 # money gate (per label): risky needs money-review-passed; risky-path needs ai-review-passed
 healthy; iso_ago 55 > "$T/merged"
 echo "[$(mkpr 1 MERGEABLE 0 risky,ai-review-passed SUCCESS)]" > "$T/ready"; run; rc=$?
