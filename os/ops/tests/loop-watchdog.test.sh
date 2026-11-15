@@ -67,7 +67,7 @@ for i in $(seq 140 150); do inel+=("$(mkpr $i CONFLICTING 0 ai-review-passed SUC
 for i in $(seq 160 165); do inel+=("$(mkpr $i MERGEABLE 0 ai-review-passed,hold SUCCESS)"); done             # hold label
 for i in $(seq 170 175); do inel+=("$(mkpr $i MERGEABLE 1 ai-review-passed SUCCESS)"); done                  # drafts
 for i in $(seq 180 184); do inel+=("$(mkpr $i MERGEABLE 0 risky-path SUCCESS)"); done                        # risky, not reviewed
-prs 2 "${inel[@]}" "${pend[@]}" > "$T/ready"; run; rc=$?
+prs 2 ${inel[@]+"${inel[@]}"} ${pend[@]+"${pend[@]}"} > "$T/ready"; run; rc=$?
 { [ "$rc" = 0 ] && grep -q 'with 2 drain-eligible' "$T/out" && ! grep -q 'approved PRs' "$T/out"; } && pass "stall counts only drain-eligible PRs (2 of 84 approved-labelled: red/conflict/hold/draft/unreviewed-risky excluded)" || { fail "eligible count rc=$rc"; cat "$T/out"; }
 printf '[%s]' "$(IFS=,; echo "${inel[*]}" "${pend[*]}" | tr ' ' ',')" > "$T/ready"; run; rc=$?
 [ "$rc" = 1 ] && pass "many approved PRs but none drain-eligible is not a stall (must not fire)" || { fail "ineligible-only rc=$rc"; cat "$T/out"; }
