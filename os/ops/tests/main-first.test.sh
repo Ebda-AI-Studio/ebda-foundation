@@ -18,7 +18,7 @@ while [ $# -gt 0 ]; do
   case "$1" in -X) method="$2"; shift ;; -f) shift ;; *) [ -z "$path" ] && path="$1" ;; esac
   shift
 done
-if [ "$method" = POST ]; then echo "$path" >> "$FK/posts.log"; echo '{}'; exit 0; fi
+if [ "$method" = POST ]; then echo "$path" >> "$FK/posts.log"; if [ -f "$FK/postfail" ] && grep -q -F -f "$FK/postfail" <<<"$path"; then exit 1; fi; echo '{}'; exit 0; fi
 echo "$path" >> "$FK/gets.log"
 if [ -f "$FK/fail" ] && grep -q -F -f "$FK/fail" <<<"$path"; then echo "HTTP 504" >&2; exit 1; fi
 f=""
@@ -52,6 +52,8 @@ prq() { local a="" s i br sha n; for s in "$@"; do IFS=: read -r i br sha n <<<"
 run() { FAKE_DIR="$FK" PATH="$BIN:$PATH" HOME="$T/home" MAIN_FIRST_REPOS="o/r" MAIN_FIRST_STATE="$T/state" MAIN_FIRST_LOG="$T/log" MAIN_FIRST_NOW="$NOW" MAIN_FIRST_VERIFY_WAIT=0 MAIN_FIRST_ALLOW_BRANCHES="${ALLOW:-}" bash "$OPS/main-first.sh" "$@" >"$T/out" 2>&1; }
 posts() { cat "$FK/posts.log" 2>/dev/null; }
 has() { posts | grep -q -F "$1"; }
+# ledger runs are completed+cancelled unless a test says otherwise
+canc() { for i in "$@"; do echo "{\"status\":\"completed\",\"conclusion\":\"cancelled\",\"run_attempt\":1}" > "$FK/run_$i.json"; done; }
 
 # 1. main queued 30m + PR queued -> PR cancelled + one comment
 reset; main 90:aaa:queued:; jobs 90 "$OLD"; prq 11:feat-x:p1:101; jobs 11 "$NEW"
@@ -98,6 +100,7 @@ run --dry-run; [ -z "$(posts)" ] && grep -q "DRYRUN would cancel queued PR run 1
 reset; main 95:ddd:completed:success
 mkdir -p "$T/state"; printf '11\t101\tp1\t%s\n12\t102\tp2\t%s\n14\t104\tp4\t%s\n15\t105\tp5\t%s\n' "$NOW" "$NOW" "$NOW" "$NOW" > "$T/state/o__r.cancelled.tsv"
 for n in 1 2 4; do echo "{\"state\":\"open\",\"head\":{\"sha\":\"p$n\"}}" > "$FK/pull_10$n.json"; done
+canc 11 12 14 15
 echo '{"state":"open","head":{"sha":"MOVED"}}' > "$FK/pull_105.json"
 echo '[]' > "$FK/reviews_101.json"
 echo '[{"user":{"login":"a"},"state":"APPROVED","submitted_at":"2026-11-14T10:00:00Z"}]' > "$FK/reviews_102.json"
@@ -183,7 +186,7 @@ reset; main 95:ddd:completed:failure; bfile 60 101; run; [ -z "$(posts)" ] && pa
 rr_world() {
   reset; main 95:ddd:completed:success; mkdir -p "$T/state"
   printf '12\t102\tp2\t%s\n14\t104\tp4\t%s\n11\t101\tp1\t%s\n' "$NOW" "$NOW" "$NOW" > "$T/state/o__r.cancelled.tsv"
-  for n in 1 2 4; do pullf "10$n" "p$n" "b$n"; done
+  for n in 1 2 4; do pullf "10$n" "p$n" "b$n"; done; canc 11 12 14
   echo '[]' > "$FK/reviews_101.json"
   echo '[{"user":{"login":"a"},"state":"APPROVED","submitted_at":"2026-11-14T10:00:00Z"}]' > "$FK/reviews_102.json"
   echo '[{"user":{"login":"a"},"state":"APPROVED","submitted_at":"2026-11-14T09:00:00Z"}]' > "$FK/reviews_104.json"
@@ -193,5 +196,27 @@ rr_world; bfile 60 101 102; run
 [ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && grep -q "PR #104 run 14 held" "$T/log" && pass "rerun: batch PRs first (approved before unapproved), non-batch held" || fail "batch rerun order ($(posts | tr '\n' ' '))"
 rr_world; bfile $((20*60)) 101 102; run
 [ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun " ] && pass "stale batch -> old oldest-approval rerun order" || fail "stale rerun order ($(posts | tr '\n' ' '))"
+
+# 16. state check before re-request (2026-11-15: a run another actor re-ran to SUCCESS was restarted ~10x, ~1h of CI wasted)
+rs_world() { reset; main 95:ddd:completed:success; mkdir -p "$T/state"; printf '%s\t%s\tp%s\t%s\n' "$1" "$2" "${2#10}" "$NOW" > "$T/state/o__r.cancelled.tsv"; pullf "$2" "p${2#10}" "b"; echo '[]' > "$FK/reviews_$2.json"; }
+rs_world 11 101; echo '{"status":"completed","conclusion":"success","run_attempt":3,"head_sha":"p1"}' > "$FK/run_11.json"
+run; [ -z "$(posts)" ] && [ ! -s "$T/state/o__r.cancelled.tsv" ] && grep -q "run 11 dropped: already completed/success attempt 3" "$T/log" && pass "completed success run: not re-requested, dropped from ledger" || fail "success rerun ($(posts | tr '\n' ' '))"
+rs_world 11 101; echo '{"status":"completed","conclusion":"failure","run_attempt":2,"head_sha":"p1"}' > "$FK/run_11.json"
+run; [ -z "$(posts)" ] && [ ! -s "$T/state/o__r.cancelled.tsv" ] && pass "completed failure run: not re-requested, dropped" || fail "failure rerun"
+for st in in_progress queued; do
+  rs_world 11 101; echo "{\"status\":\"$st\",\"conclusion\":null,\"run_attempt\":4,\"head_sha\":\"p1\"}" > "$FK/run_11.json"
+  run; [ -z "$(posts)" ] && [ ! -s "$T/state/o__r.cancelled.tsv" ] && grep -q "run 11 dropped: already $st attempt 4" "$T/log" && pass "$st run: not re-requested, dropped" || fail "$st rerun ($(posts | tr '\n' ' '))"
+done
+rs_world 11 101; canc 11
+run; [ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/11/rerun " ] && [ ! -s "$T/state/o__r.cancelled.tsv" ] && pass "completed cancelled run re-requested exactly once" || fail "cancelled rerun ($(posts | tr '\n' ' '))"
+run; [ "$(posts | wc -l | tr -d ' ')" = 1 ] && pass "no second request on the next tick" || fail "second request"
+rs_world 11 101; echo '{"status":"completed","conclusion":"cancelled","run_attempt":1,"head_sha":"OTHER"}' > "$FK/run_11.json"
+run; [ -z "$(posts)" ] && [ ! -s "$T/state/o__r.cancelled.tsv" ] && pass "cancelled run on a different head: dropped, not re-requested" || fail "head mismatch"
+rs_world 11 101; canc 11; echo "actions/runs/11/rerun" > "$FK/postfail"
+run; [ "$(posts | wc -l | tr -d ' ')" = 1 ] && [ ! -s "$T/state/o__r.cancelled.tsv" ] && [ "$(grep -c 'FAILED re-request cancelled run 11' "$T/log")" = 1 ] && pass "failing re-request: logged once, dropped, never retried" || fail "failing rerun ($(posts | tr '\n' ' '))"
+run; [ "$(posts | wc -l | tr -d ' ')" = 1 ] && pass "dropped failing id not retried next tick" || fail "retried"
+rs_world 11 101; canc 11; printf '11\t101\tp1\t%s\n' "$NOW" >> "$T/state/o__r.cancelled.tsv"
+run; [ "$(posts | wc -l | tr -d ' ')" = 1 ] && [ ! -s "$T/state/o__r.cancelled.tsv" ] && pass "duplicate ledger id requested once per tick" || fail "duplicate ($(posts | tr '\n' ' '))"
+rs_world 11 101; run; [ -z "$(posts)" ] && [ -s "$T/state/o__r.cancelled.tsv" ] && pass "run read fails -> kept in ledger, no request" || fail "run read failure"
 
 echo "$_pass passed, $_fail failed"; [ "$_fail" = 0 ]
