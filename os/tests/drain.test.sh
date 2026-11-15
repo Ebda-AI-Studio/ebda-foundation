@@ -44,7 +44,10 @@ print(json.dumps({"number": n, "headRefOid": sha, "mergeable": mer, "isDraft": d
 PY
 }
 prs() { { echo '['; local first=1; for j in "$@"; do [ "$first" = 1 ] || echo ','; echo "$j"; first=0; done; echo ']'; } > "$PRS_FILE"; }
-run() { bash "$DRAIN" --repo o/r --dir "$T/checkout" --gate "$T/gate.sh" --name r --once "$@" 2>&1; }
+# unique repo slug per run: drain.sh `gate_running` is a host-wide pgrep on "merge-gate.sh <pr> .*--repo <repo> ", and merge-gate.test.sh
+# runs real "merge-gate.sh 1 ... --repo o/r" processes; with o/r a concurrent suite on the same runner made every gate look "already running" (main CI red 2026-11-15)
+REPO_SLUG="drain-test-$$/r"
+run() { bash "$DRAIN" --repo "$REPO_SLUG" --dir "$T/checkout" --gate "$T/gate.sh" --name r --once "$@" 2>&1; }
 reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$T/locks" "$HOME/.claude/handoff/drain.stop"; : > "$GATE_LOG"; mkdir -p "$SD"; GATE_RC=0; unset GH_FAIL; }
 on() { touch "$SD/r.enabled"; }
 calls() { wc -l < "$GATE_LOG" | tr -d ' '; }
@@ -53,7 +56,7 @@ reset; prs "$(pr 1 aaaaaaa1 green)"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "off until the enabled marker exists: no gate call" || no "ran while off"
 
 reset; on; prs "$(pr 1 aaaaaaa1 green)"
-run >/dev/null; [ "$(calls)" = 1 ] && grep -q '^1 aaaaaaa1 --repo o/r ' "$GATE_LOG" && ok "green+mergeable PR goes through the gate, head pinned, --repo passed" || no "green PR not gated ($(cat "$GATE_LOG"))"
+run >/dev/null; [ "$(calls)" = 1 ] && grep -q "^1 aaaaaaa1 --repo $REPO_SLUG " "$GATE_LOG" && ok "green+mergeable PR goes through the gate, head pinned, --repo passed" || no "green PR not gated ($(cat "$GATE_LOG"))"
 
 reset; on; prs "$(pr 1 a1 pending)" "$(pr 2 a2 red)" "$(pr 3 a3 none)" "$(pr 4 a4 green '' CONFLICTING)" "$(pr 5 a5 green '' MERGEABLE draft)"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "pending / red / zero-check / conflicting / draft PRs are never gated" || no "gated a non-green PR"
