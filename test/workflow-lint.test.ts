@@ -20,7 +20,7 @@ describe('workflow-lint hosted-only exception', () => {
 });
 
 describe('workflow-lint fork-guard exemption', () => {
-  const wf = (job: string) => `name: x\non:\n  pull_request:\nconcurrency:\n  group: g\njobs:\n  a:\n${job}    runs-on: \${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}\n    timeout-minutes: 5\n`;
+  const wf = (job: string) => `name: x\non:\n  pull_request:\nconcurrency:\n  group: g\njobs:\n  a:\n${job}    runs-on: \${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}\n    timeout-minutes: 5\n`;
   it('a pull_request job with neither the guard nor an exemption is flagged', () => {
     expect(lintWorkflow('w.yml', wf('')).join('\n')).toMatch(/without the fork guard/);
   });
@@ -30,3 +30,9 @@ describe('workflow-lint fork-guard exemption', () => {
   });
 });
 
+describe('workflow-lint never falls back to paid GitHub-hosted runners (Ruling CI-MIN-2)', () => {
+  it('rejects the old ubuntu-latest fallback', () => {
+    const job = `name: x\non:\n  push:\nconcurrency:\n  group: g\njobs:\n  a:\n    runs-on: \${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}\n    timeout-minutes: 5\n`;
+    expect(lintWorkflow('w.yml', job).join('\n')).toMatch(/runs-on must be exactly/);
+  });
+});

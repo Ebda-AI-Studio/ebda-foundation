@@ -15,8 +15,9 @@ name: Prod watch
 # A missing required secret turns the run RED (never silently green); GitHub's failed-run mail is the fallback channel.
 # Footprint: ~1 min per run, 144 runs/day ~ 4,300 Actions min/month of the org's 50,000; R2 reads ~40 API calls per run.
 on:
-  schedule:
-    - cron: '*/10 * * * *'
+  # Ruling CI-MIN-2 (Ahmad 2026-11-16, "do not use GitHub again, I don't have money to pay"): the 10-minute schedule is OFF.
+  # This hosted job billed ~250-300 Actions minutes/day. The brain's Cron Trigger stays the primary probe loop (Ruling AIOS-7).
+  # Manual drills/digests only. Cost: no outside-Cloudflare heartbeat during a Cloudflare-wide outage.
   workflow_dispatch:
     inputs:
       mode:

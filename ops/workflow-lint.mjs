@@ -3,7 +3,7 @@
 // usage: node workflow-lint.mjs [workflowsDir=.github/workflows]      exit 1 and one line per violation
 //   - every workflow has a top-level `concurrency:`
 //   - every job has `timeout-minutes:`
-//   - every `runs-on:` is exactly ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}, except a job whose runs-on line is
+//   - every `runs-on:` is exactly ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }} (Ruling CI-MIN-2: never fall back to paid GitHub-hosted runners), except a job whose runs-on line is
 //     `runs-on: ubuntu-latest` directly under a `# hosted-only: <reason>` comment (a job that must NOT follow EBDA_RUNS_ON onto the
 //     self-hosted runner, e.g. an outside-in production watch); it may not run on pull_request
 //   - a job that can run on a pull_request carries the fork guard (or a `    # fork-guard-exempt: <reason>` comment line in the job, for a job that
@@ -15,7 +15,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const RUNS_ON = "${{ fromJSON(vars.EBDA_RUNS_ON || '\"ubuntu-latest\"') }}";
+const RUNS_ON = "${{ fromJSON(vars.EBDA_RUNS_ON || '[\"ebda-mac-light\"]') }}";
 
 export function lintWorkflow(name, text) {
   const out = [];

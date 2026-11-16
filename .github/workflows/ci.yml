@@ -1,6 +1,6 @@
 name: CI
 
-# Every runs-on reads repo variable EBDA_RUNS_ON (the native macOS runners when set) and falls back to ubuntu-latest when unset.
+# Every runs-on reads repo variable EBDA_RUNS_ON (the native macOS runners when set) and falls back to the ebda-mac-light runner when unset (Ruling CI-MIN-2: never paid GitHub-hosted runners).
 # setup-node's remote npm cache is for hosted runners only: on the self-hosted Mac runners ~/.npm already persists locally.
 on:
   push:
@@ -19,7 +19,7 @@ concurrency:
 jobs:
   test:
     name: Typecheck, test, lint workflows
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 15
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -35,7 +35,7 @@ jobs:
 
   audit:
     name: Dependency audit
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -52,7 +52,7 @@ jobs:
   # PR changed, then the relative-markdown-link guard. The only `if` is the repo-wide fork guard (workflow-lint requires it; the gate treats it as always-run for same-repo PRs).
   pr-sanity:
     name: PR sanity
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 5
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -80,7 +80,7 @@ jobs:
   # unless os/ or this workflow changed (one checkout + one git diff, ~10 s). On push to main it always runs.
   os:
     name: OS layer (shellcheck, guards, suites, Linux smoke)
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 25
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -116,7 +116,7 @@ jobs:
   # unless os/cloud/ or this workflow changed. Its own lockfile; ~/.npm persists on the Mac runners, the remote cache is for hosted runners.
   brain:
     name: OS brain Worker (typecheck, workerd tests, audit)
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 15
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     defaults:
@@ -157,7 +157,7 @@ jobs:
   # npm audit. Affected-only like `brain` (os/cloud/ or this workflow). Builds no image and spends no container minutes.
   hands:
     name: OS hands (tests, dry-run, Dockerfile checks, audit)
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     defaults:
