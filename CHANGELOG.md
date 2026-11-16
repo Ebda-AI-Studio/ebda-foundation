@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- G39/G40 (loop-watchdog races): `alert-wait not running` waits `ALERT_WAIT_GRACE` s (default 15) and re-checks before reporting; the ack matches by reason SUBSET (a cleared reason no longer re-wakes); the last merge is the MAX `mergedAt` of 50 merged PRs (`gh pr list` orders by creation time, so `--limit 1` gave a stale merge: store said 272 min right after #805 merged). Tests in `tests/loop-watchdog.test.sh`.
 - G16 (cross-repo runner fairness): `main-first.sh` now, when a repo's main CI starves, also cancels the OTHER repos' fully-queued heavy-label PR runs round-robin by repo (`MAIN_FIRST_FAIR_CAP` 3 per repo, `MAIN_FIRST_FAIR_TOTAL` 6 per tick), records them in their own repo's ledger for re-request, and rotates the repo order every tick (`rr-cursor`). Main-before-PR is still rule one. Test `tests/main-first-fairness.test.sh`.
 - G15 (stall alert counts drain-eligible PRs): new `ops/lib/drain_eligible.py` is the single eligibility rule for `drain.sh` and `loop-watchdog.sh`; the watchdog no longer counts every `ai-review-passed` PR (ebda-store said 64). The drain now also skips PRs labelled `hold`. Tests in `tests/loop-watchdog.test.sh`.
 - G14 (scheduled-job failure opens a fixer): `ops/lib/job-failure.sh` + `os-selftest.sh` `check_last_exit`; a launchd job whose last exit code is non-zero files a deduped (per job per day) `review-finding` issue with the secret-masked log tail. Test `lib/__tests__/job-failure.test.sh`.
