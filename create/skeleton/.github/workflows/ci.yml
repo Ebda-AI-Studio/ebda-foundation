@@ -10,6 +10,8 @@ permissions:
   contents: read
 jobs:
   test:
+    # Fork guard: a fork's PR never runs on the self-hosted Mac runners (untrusted code on our machine).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 15
     steps:
