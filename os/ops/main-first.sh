@@ -81,6 +81,21 @@ act() { # <description> <gh args...>
   if _ut "$GH_TIMEOUT" gh api "$@" >/dev/null 2>&1; then log "$desc"; return 0; fi
   log "FAILED $desc"; return 1
 }
+# cancel a run; GitHub often leaves a cancelled QUEUED self-hosted run queued, so re-read after
+# $MAIN_FIRST_VERIFY_WAIT s (default 20) and escalate to force-cancel when it is still queued.
+cancel_run() { # <repo> <run id> <description>
+  local repo="$1" id="$2" desc="$3" st
+  act "$desc" -X POST "repos/$repo/actions/runs/$id/cancel" || return 1
+  [ "$DRY" = 1 ] && return 0
+  sleep "${MAIN_FIRST_VERIFY_WAIT:-20}"
+  st="$(api "repos/$repo/actions/runs/$id" | py 'print(d.get("status",""))')" || st=""
+  case "$st" in
+    queued) log "$repo: run $id still queued after cancel; escalating"
+            act "force-cancel run $id ($repo)" -X POST "repos/$repo/actions/runs/$id/force-cancel" || true ;;
+    '')     log "$repo: could not re-read run $id after cancel; no force-cancel this tick" ;;
+  esac
+  return 0
+}
 # jq-ish helper: py '<expr over d>' reads JSON on stdin
 py() { python3 -c 'import sys,json; d=json.load(sys.stdin); '"$1" 2>/dev/null; }
 
@@ -149,11 +164,15 @@ d=json.load(sys.stdin)
 for x in d.get("runs",[]):
     if x.get("status")!="queued": continue
     prs=x.get("pull_requests") or []
-    print(x["id"], x.get("head_branch",""), x.get("head_sha",""), prs[0]["number"] if prs else 0)' 2>/dev/null)" || { log "$repo: bad PR runs JSON, skip tick"; return; }
-  local to_cancel_pr=() rid br sha prn jobs labels
-  while read -r rid br sha prn; do
+    print(x["id"], x.get("head_branch",""), x.get("head_sha",""), prs[0]["number"] if prs else 0, x.get("created_at",""))' 2>/dev/null)" || { log "$repo: bad PR runs JSON, skip tick"; return; }
+  local to_cancel_pr=() rid br sha prn created jobs labels openpr
+  while read -r rid br sha prn created; do
     [ -n "$rid" ] || continue
     case ",$ALLOW_BRANCHES," in *",$br,"*) log "$repo: PR run $rid branch $br allowlisted; untouched"; continue ;; esac
+    if [ -n "$created" ] && [ $((NOW - $(date -u -j -f %Y-%m-%dT%H:%M:%SZ "$created" +%s 2>/dev/null || date -u -d "$created" +%s 2>/dev/null || echo "$NOW"))) -gt 86400 ]; then
+      openpr="$(api "repos/$repo/pulls?head=${repo%%/*}:$br&state=open")" || { log "$repo: API failure reading PRs of branch $br, skip tick"; return; }
+      if [ "$(printf '%s' "$openpr" | py 'print(len(d))')" = 0 ]; then log "$repo: orphan run $rid (>24h, branch $br has no open PR); skipped"; continue; fi
+    fi
     jobs="$(api "repos/$repo/actions/runs/$rid/jobs?per_page=100")" || { log "$repo: API failure reading jobs of $rid, skip tick"; return; }
     printf '%s' "$jobs" | LABEL="$LABEL" python3 -c '
 import sys,json,os
@@ -173,11 +192,11 @@ sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin))
   # ---- mutate ----
   local e rest
   for e in "${to_cancel_main[@]+"${to_cancel_main[@]}"}"; do
-    act "cancel superseded main run ${e%%:*} ($repo, head ${e#*:})" -X POST "repos/$repo/actions/runs/${e%%:*}/cancel" || true
+    cancel_run "$repo" "${e%%:*}" "cancel superseded main run ${e%%:*} ($repo, head ${e#*:})" || true
   done
   for e in "${to_cancel_pr[@]+"${to_cancel_pr[@]}"}"; do
     rid="${e%%:*}"; rest="${e#*:}"; sha="${rest%%:*}"; rest="${rest#*:}"; prn="${rest%%:*}"
-    if act "cancel queued PR run $rid ($repo PR #$prn, head $sha) so main CI $nid gets a runner" -X POST "repos/$repo/actions/runs/$rid/cancel"; then
+    if cancel_run "$repo" "$rid" "cancel queued PR run $rid ($repo PR #$prn, head $sha) so main CI $nid gets a runner"; then
       [ "$DRY" = 1 ] || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$NOW" >> "$ledger"
       if [ "$prn" != 0 ] && ! grep -qx "$prn:$sha" "$commented"; then
         if act "comment on $repo#$prn (head $sha)" -X POST "repos/$repo/issues/$prn/comments" -f "body=CI re-run deferred: main CI first (main run $nid is waiting for a heavy runner). Push or re-run to retry; the OS re-requests this run once main is green."; then

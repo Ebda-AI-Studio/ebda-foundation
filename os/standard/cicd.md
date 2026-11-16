@@ -89,6 +89,8 @@ queued/in_progress and one of its jobs has been queued longer than `MAIN_FIRST_M
 3. when the newest main CI run completes `success`, re-request each cancelled run once (approved PRs first, oldest
    approval first, `MAIN_FIRST_RERUN_CAP` (2) per tick); a closed PR or a moved head is dropped (the push already
    started a fresh run); ledger entries expire after 24 h. A red main re-runs nothing.
+A cancel on a QUEUED self-hosted run often does nothing: after ~20 s (`MAIN_FIRST_VERIFY_WAIT`) the run is re-read and, if still
+`queued`, `POST .../force-cancel` is called (both logged). Runs older than 24 h whose branch has no open PR are logged and skipped.
 All reads happen before any cancel; a 5xx/504 or unparsable response skips the repo for that tick. Tests:
 `ops/tests/main-first.test.sh` (fake `gh`).
 The guard only REPORTS; it never starts, stops or rebuilds anything. The runners are launchd services on the Mac

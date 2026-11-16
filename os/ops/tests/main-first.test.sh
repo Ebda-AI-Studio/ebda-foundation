@@ -28,6 +28,8 @@ case "$path" in
   */actions/runs/*/jobs*) id="${path#*/actions/runs/}"; f="jobs_${id%%/*}.json" ;;
   */compare/*) s="${path#*/compare/}"; f="cmp_${s%%...*}.json" ;;
   */issues/*/labels) id="${path#*/issues/}"; f="labels_${id%%/*}.json" ;;
+  */actions/runs/[0-9]*) id="${path#*/actions/runs/}"; f="run_${id}.json" ;;
+  */pulls\?head=*) b="${path#*head=*:}"; b="${b%%&*}"; f="openpr_${b}.json" ;;
   */pulls/*/reviews*) id="${path#*/pulls/}"; f="reviews_${id%%/*}.json" ;;
   */pulls/*) id="${path#*/pulls/}"; f="pull_${id%%\?*}.json" ;;
 esac
@@ -47,7 +49,7 @@ main() { local a="" s i sh st c; for s in "$@"; do IFS=: read -r i sh st c <<<"$
 jobs() { echo "{\"jobs\":[{\"status\":\"queued\",\"created_at\":\"$2\",\"labels\":[\"self-hosted\",\"ebda-mac\"]}]}" > "$FK/jobs_$1.json"; }
 prq() { local a="" s i br sha n; for s in "$@"; do IFS=: read -r i br sha n <<<"$s"; a="$a{\"id\":$i,\"status\":\"queued\",\"head_branch\":\"$br\",\"head_sha\":\"$sha\",\"pull_requests\":[{\"number\":$n}]},"; done
   echo "{\"runs\":[${a%,}]}" > "$FK/prq.json"; }
-run() { FAKE_DIR="$FK" PATH="$BIN:$PATH" HOME="$T/home" MAIN_FIRST_REPOS="o/r" MAIN_FIRST_STATE="$T/state" MAIN_FIRST_LOG="$T/log" MAIN_FIRST_NOW="$NOW" MAIN_FIRST_ALLOW_BRANCHES="${ALLOW:-}" bash "$OPS/main-first.sh" "$@" >"$T/out" 2>&1; }
+run() { FAKE_DIR="$FK" PATH="$BIN:$PATH" HOME="$T/home" MAIN_FIRST_REPOS="o/r" MAIN_FIRST_STATE="$T/state" MAIN_FIRST_LOG="$T/log" MAIN_FIRST_NOW="$NOW" MAIN_FIRST_VERIFY_WAIT=0 MAIN_FIRST_ALLOW_BRANCHES="${ALLOW:-}" bash "$OPS/main-first.sh" "$@" >"$T/out" 2>&1; }
 posts() { cat "$FK/posts.log" 2>/dev/null; }
 has() { posts | grep -q -F "$1"; }
 
@@ -105,6 +107,19 @@ run
 run   # next tick: 14,12 gone from ledger; 15 dropped (head moved); 11 (unapproved) re-run once
 [ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && [ ! -s "$T/state/o__r.cancelled.tsv" ] && pass "each cancelled run re-requested exactly once; moved head dropped" || fail "rerun once ($(posts | tr '\n' ' '))"
 run; [ "$(posts | wc -l | tr -d ' ')" = 3 ] && pass "idempotent: empty ledger -> nothing more" || fail "not idempotent"
+
+# 10. cancel leaves the run queued -> force-cancel; cancel that works -> no force-cancel
+reset; main 90:aaa:queued:; jobs 90 "$OLD"; prq 11:feat-x:p1:101 12:feat-y:p2:102; jobs 11 "$NEW"; jobs 12 "$NEW"
+echo '{"status":"queued"}' > "$FK/run_11.json"; echo '{"status":"completed"}' > "$FK/run_12.json"
+run
+has "actions/runs/11/force-cancel" && ! has "actions/runs/12/force-cancel" && grep -q "still queued after cancel" "$T/log" && pass "queued after cancel -> force-cancel; completed -> none" || fail "force-cancel ($(posts | tr '\n' ' '))"
+
+# 11. orphan run >24h with no open PR skipped; same age with an open PR is cancelled
+reset; main 90:aaa:queued:; jobs 90 "$OLD"; jobs 11 "$NEW"; jobs 12 "$NEW"
+echo '{"runs":[{"id":11,"status":"queued","head_branch":"gone","head_sha":"p1","pull_requests":[],"created_at":"2026-11-12T00:00:00Z"},{"id":12,"status":"queued","head_branch":"live","head_sha":"p2","pull_requests":[{"number":102}],"created_at":"2026-11-12T00:00:00Z"}]}' > "$FK/prq.json"
+echo '[]' > "$FK/openpr_gone.json"; echo '[{"number":102}]' > "$FK/openpr_live.json"; echo '{"status":"completed"}' > "$FK/run_12.json"
+run
+has "actions/runs/12/cancel" && ! has "actions/runs/11/cancel" && grep -q "orphan run 11" "$T/log" && pass ">24h orphan skipped + logged; >24h with open PR still cancelled" || fail "orphan ($(posts | tr '\n' ' '))"
 
 # 9. main completed red -> nothing re-run
 reset; main 95:ddd:completed:failure; mkdir -p "$T/state"; printf '11\t101\tp1\t%s\n' "$NOW" > "$T/state/o__r.cancelled.tsv"
