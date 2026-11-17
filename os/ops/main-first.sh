@@ -162,6 +162,22 @@ load_batch() { # <repo slug>
   if [ -e "$mark" ]; then rm -f "$mark"; log "$slug: drain batch file fresh again; batch-first on"; fi
 }
 in_batch() { case " $BATCH_PRS " in *" $1 "*) return 0 ;; esac; return 1; }
+# HELD-RERUN-1b: the LAUNCH LIST = the PRs the controller wants through first, one PR number per line in priority order, in
+# `$STATE/launch-list-<owner>__<repo>` (override MAIN_FIRST_LAUNCH_FILE; written by the drain/window script from its priority order, same contract style as the
+# drain-batch file). A missing, empty or unreadable file = NO list: the idle release then keeps the plain old order (approved first), never a hold.
+LAUNCH_PRS=""
+load_launch() { # <repo slug>
+  local f="${MAIN_FIRST_LAUNCH_FILE:-$STATE/launch-list-$1}"
+  LAUNCH_PRS=""
+  [ -s "$f" ] || return 0
+  LAUNCH_PRS="$(grep -E '^[0-9]+$' "$f" 2>/dev/null | tr '\n' ' ')" || LAUNCH_PRS=""
+  LAUNCH_PRS="${LAUNCH_PRS% }"
+}
+launch_pos() { # <pr> -> 1-based position in the launch list, empty when not on it
+  local i=0 x
+  for x in $LAUNCH_PRS; do i=$((i + 1)); [ "$x" = "$1" ] && { echo "$i"; return 0; }; done
+  return 0
+}
 
 # main is green and a fresh batch exists: cancel queued PR runs that are not the batch's
 batch_cancel() { # <repo> <ledger>
@@ -417,7 +433,12 @@ sys.exit(0 if not [r for r in runs if age(r)<=recent] else 1)' 2>/dev/null
 rerun_cancelled() { # <repo> <ledger> <main run id>
   local repo="$1" ledger="$2" nid="$3"
   [ -s "$ledger" ] || return 0
-  local idle="" rid prn sha ts pr st hsha ap grp tmp done_n=0 rows="" drops="" cleared="" seen="" run rst rcon rat rsha
+  local slugl idle="" lpend="" lpos rid prn sha ts pr st hsha ap grp tmp done_n=0 rows="" drops="" cleared="" seen="" run rst rcon rat rsha
+  slugl="$(basename "$ledger")"; slugl="${slugl%%.*}"; load_launch "$slugl"
+  # HELD-RERUN-1b: a launch-list PR with a run still in this ledger counts as PENDING (it is about to be re-run): non-launch held runs wait for it
+  if [ -n "$LAUNCH_PRS" ]; then
+    while IFS=$'\t' read -r rid prn _; do [ -n "$rid" ] || continue; [ -n "$(launch_pos "$prn")" ] && { lpend=1; break; }; done < "$ledger"
+  fi
   # resolve each entry (PR open? head unchanged? approval time) BEFORE any re-run
   while IFS=$'\t' read -r rid prn sha ts; do
     [ -n "$rid" ] || continue
@@ -447,10 +468,15 @@ t=sorted(r["submitted_at"] for r in last.values() if r.get("state")=="APPROVED")
 print(t[0] if t else "")' 2>/dev/null)" || ap=""
     # batch PRs first (0), then approved by approval time (1), then unapproved (2); non-batch HELD while a batch is fresh
     # held only while the batch needs the runners: with the repo idle (no recent queued run) the held run starts, in the old order (approved first), CAP per tick
+    # sort key groups: 0 batch PRs, 1 launch-list PRs (in list order), 2 approved (by approval time), 3 unapproved
+    lpos="$(launch_pos "$prn")"
     if in_batch "$prn"; then grp=0
     elif [ -n "$BATCH_PRS" ] && { [ -n "${idle:-}" ] || { if repo_idle "$repo"; then idle=1; else idle=0; fi; }; [ "$idle" = 0 ]; }; then log "$repo: PR #$prn run $rid held: drain batch [$BATCH_PRS] goes first"; continue
-    elif [ -n "$ap" ]; then grp=1; else grp=2; fi
-    if [ -n "$ap" ]; then rows="$rows"$'\n'"$grp$ap $ts $rid $prn $sha"; else rows="$rows"$'\n'"${grp}9999999999 $ts $rid $prn $sha"; fi
+    elif [ -n "$BATCH_PRS" ] && [ -n "$LAUNCH_PRS" ] && [ -z "$lpos" ] && [ -n "$lpend" ]; then log "$repo: PR #$prn run $rid held: a launch-list PR is still pending [$LAUNCH_PRS]"; continue
+    elif [ -n "$lpos" ]; then grp=1
+    elif [ -n "$ap" ]; then grp=2; else grp=3; fi
+    if [ "$grp" = 1 ]; then rows="$rows"$'\n'"1$(printf '%03d' "$lpos") $ts $rid $prn $sha"
+    elif [ -n "$ap" ]; then rows="$rows"$'\n'"$grp$ap $ts $rid $prn $sha"; else rows="$rows"$'\n'"${grp}9999999999 $ts $rid $prn $sha"; fi
   done < "$ledger"
   local key _t
   while read -r key _t rid prn sha; do

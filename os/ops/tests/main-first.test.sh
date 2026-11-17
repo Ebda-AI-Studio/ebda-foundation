@@ -213,6 +213,27 @@ has "actions/runs/14/rerun" && pass "HELD-RERUN-1: a days-old queued ghost run d
 rr_world; echo "actions/runs?status=queued" > "$FK/fail"; bfile 60 101 102; MAIN_FIRST_RERUN_CAP=5 run
 ! has "actions/runs/14/rerun" && grep -q "PR #104 run 14 held" "$T/log" && pass "HELD-RERUN-1: unreadable queue -> hold stays (fail safe)" || fail "api error released the hold ($(posts | tr '\n' ' '))"
 rm -f "$FK/fail"
+# HELD-RERUN-1b: the LAUNCH LIST (drain priority, file launch-list-o__r). The idle release runs launch PRs first and keeps non-launch runs held while a launch PR is pending.
+lfile() { mkdir -p "$T/state"; printf '%s\n' "$@" > "$T/state/launch-list-o__r"; }
+# idle + launch PR 104 held + non-launch 101/102 held: ONLY the launch PR is re-run first, the others stay held ("a launch-list PR is still pending")
+rr_world; lfile 104; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun " ] && grep -q "held: a launch-list PR is still pending" "$T/log" && pass "HELD-RERUN-1b: idle + a launch PR held -> the launch PR is re-run first, non-launch runs stay held" || fail "launch first ($(posts | tr '\n' ' '))"
+# idle + NO launch PR pending in the ledger: non-launch runs are released (approved first, old order)
+rr_world; lfile 555 556; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && pass "HELD-RERUN-1b: idle and no launch-list PR pending -> non-launch runs are released (approved first)" || fail "non-launch release ($(posts | tr '\n' ' '))"
+# launch order is the launch LIST order, not approval order
+rr_world; lfile 102 101 104; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun repos/o/r/actions/runs/14/rerun " ] && pass "HELD-RERUN-1b: launch PRs re-run in launch-list order" || fail "launch order ($(posts | tr '\n' ' '))"
+# unreadable / empty / missing list -> the old order, never a hold (idle release as in HELD-RERUN-1)
+rr_world; mkdir -p "$T/state"; : > "$T/state/launch-list-o__r"; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && ! grep -q "launch-list PR is still pending" "$T/log" && pass "HELD-RERUN-1b: an empty launch list -> old order, no hold" || fail "empty list ($(posts | tr '\n' ' '))"
+rr_world; printf 'garbage\nnot a pr\n' > "$T/state/launch-list-o__r"; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && pass "HELD-RERUN-1b: an unparseable launch list -> old order, no hold" || fail "garbage list ($(posts | tr '\n' ' '))"
+rr_world; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && pass "HELD-RERUN-1b: no launch list file -> old order, no hold" || fail "missing list ($(posts | tr '\n' ' '))"
+# RERUN_CAP per tick stays
+rr_world; lfile 104 102 101; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=2 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun " ] && pass "HELD-RERUN-1b: the per-tick re-run cap still applies to the launch order" || fail "cap ($(posts | tr '\n' ' '))"
 rr_world; bfile $((20*60)) 101 102; run
 [ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun " ] && pass "stale batch -> old oldest-approval rerun order" || fail "stale rerun order ($(posts | tr '\n' ' '))"
 
