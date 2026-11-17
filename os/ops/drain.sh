@@ -2,7 +2,7 @@
 # Ebda AI OS - drain.sh: the durable merge loop for ONE repo (replaces the controller's drain2.sh / drain-fdn.sh).
 #
 #   drain.sh --repo OWNER/NAME --dir CHECKOUT [--gate PATH] [--hold-risky] [--name N] [--interval S]
-#            [--stall-min 60] [--held-min 120] [--max-wait-min 20] [--once]
+#            [--stall-min 60] [--held-min 120] [--max-wait-min 20] [--main-workflow CI|none] [--max-ahead 3] [--starve-min 20] [--once]
 #
 # Every cycle: list open PRs into main that are green and mergeable, and merge each through the merge gate (head pinned, three
 # consecutive polls, explicit required checks: never `gh pr merge` directly). With --hold-risky a PR labelled `risky-path` (set by
@@ -10,6 +10,19 @@
 #   --gate     the merge-gate script, absolute or relative to --dir (default: $HOME/.claude/scripts/merge-gate.sh). It runs as
 #              `<gate> <pr> <sha> --repo R --interval 30 --max-wait-min M`. DRAIN_REQUIRED_JSON, when set, becomes MERGE_GATE_REQUIRED_JSON.
 #   --once     one cycle, then exit (tests, manual runs).
+#   --main-workflow  the repo's push-CI workflow on main (default CI; `none` turns the main checks off). MAIN GATE (G74 / DRAIN-5): nothing
+#              merges unless the newest completed main run is a success, no main run is queued/in progress, and at most --max-ahead
+#              (default 3, DRAIN-BATCH-1) merges sit on top of the last green main commit. Unreadable = not green (fail closed). A PR
+#              labelled `fixes-main` may merge while main is red (one per cycle) so the fix for a red main is never deadlocked. A main
+#              run that ended CANCELLED on the newest commit is re-run once per run id+attempt (every main commit gets a full run).
+#   HEAL (G47, DRAIN-HEAL-6/7): a PR whose only red is a CANCELLED/TIMED_OUT run (main-first preemption, hung job) gets that workflow's
+#              run re-run once per run id+attempt (cap 20), for ANY workflow incl. "Deploy change label" - never only the required ones -
+#              but ONLY while main is green with batch room and no main run is queued/in progress (a heal then is a cancel/re-run loop
+#              that starves main CI), and at most (max-ahead - ahead) PRs per cycle, oldest first (DRAIN-HEAL-4).
+#   STARVE (DRAIN-STARVE-1): runners take the NEWEST queued job first, so a required check on a `fixes-main` PR head can sit queued for
+#              hours (#884, 2h20m). Any run on a fixes-main PR's current head queued > --starve-min (default 20) is cancelled and re-run
+#              (back of the queue, picked next), once per run id+attempt. Only current fixes-main heads are touched (old ghost runs 409).
+#   MONEY (G49, DRAIN-MONEY-2): a `risky` PR needs money-review-passed applied AFTER its last non-merge commit; a PASS covers one head.
 # Safety:
 #   - OFF until switched over: does nothing unless $OS_STATE_DIR/drain/<name>.enabled exists (so installing the launchd job never
 #     races a controller's own loop). Turn on: touch it. Turn off: rm it, or touch <name>.stop. A global ~/.claude/handoff/drain.stop
@@ -26,12 +39,13 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
 args_help "${BASH_SOURCE[0]}" "$@"
-REPO=""; DIR=""; GATE="$HOME/.claude/scripts/merge-gate.sh"; HOLD=0; NAME=""; INTERVAL=60; STALL_MIN=60; HELD_MIN=120; MAXWAIT=20; ONCE=0
+REPO=""; DIR=""; GATE="$HOME/.claude/scripts/merge-gate.sh"; HOLD=0; NAME=""; INTERVAL=60; STALL_MIN=60; HELD_MIN=120; MAXWAIT=20; ONCE=0; MAIN_WF="CI"; MAX_AHEAD=3; STARVE_MIN=20
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="${2:?}"; shift ;; --dir) DIR="${2:?}"; shift ;; --gate) GATE="${2:?}"; shift ;; --hold-risky) HOLD=1 ;;
     --name) NAME="${2:?}"; shift ;; --interval) INTERVAL="${2:?}"; shift ;; --stall-min) STALL_MIN="${2:?}"; shift ;;
     --held-min) HELD_MIN="${2:?}"; shift ;; --max-wait-min) MAXWAIT="${2:?}"; shift ;; --once) ONCE=1 ;;
+    --main-workflow) MAIN_WF="${2:?}"; shift ;; --max-ahead) MAX_AHEAD="${2:?}"; shift ;; --starve-min) STARVE_MIN="${2:?}"; shift ;;
     *) args_unknown "${BASH_SOURCE[0]}" "$1" ;;
   esac
   shift
@@ -39,7 +53,7 @@ done
 [ -n "$REPO" ] && [ -n "$DIR" ] || { echo "drain: --repo and --dir are required (try --help)" >&2; exit 2; }
 case "$REPO" in */*) ;; *) echo "drain: --repo must be OWNER/NAME" >&2; exit 2 ;; esac
 whole() { case "$2" in ''|*[!0-9]*) echo "drain: $1 must be a whole number" >&2; exit 2 ;; esac; }
-whole --interval "$INTERVAL"; whole --stall-min "$STALL_MIN"; whole --held-min "$HELD_MIN"; whole --max-wait-min "$MAXWAIT"
+whole --interval "$INTERVAL"; whole --stall-min "$STALL_MIN"; whole --held-min "$HELD_MIN"; whole --max-wait-min "$MAXWAIT"; whole --max-ahead "$MAX_AHEAD"; whole --starve-min "$STARVE_MIN"
 [ -n "$NAME" ] || NAME="${REPO##*/}"
 case "$NAME" in *[!A-Za-z0-9._-]*|'') echo "drain: --name must be [A-Za-z0-9._-]" >&2; exit 2 ;; esac
 [ -d "$DIR" ] || { echo "drain: --dir $DIR does not exist" >&2; exit 2; }
@@ -77,20 +91,110 @@ list_ready() {
 # PR numbers repeat across repos: match this repo too, or a gate on another repo's #N would skip ours
 gate_running() { pgrep -f "merge-gate.sh $1 .*--repo $REPO " >/dev/null 2>&1; }
 
+DE="$HERE/lib/drain_eligible.py"
+# MAIN GATE. Sets MAIN_VERDICT (green|full|red|pending|unverified|unknown|off), MAIN_SHA, MAIN_AHEAD. Rc 0 = may merge ordinary PRs.
+main_gate() {
+  MAIN_VERDICT=off; MAIN_SHA=-; MAIN_AHEAD=0
+  [ "$MAIN_WF" = none ] && return 0
+  local runs green ahead v rid att
+  runs="$(gh run list --repo "$REPO" --branch main --event push --workflow "$MAIN_WF" --limit 15 --json databaseId,headSha,status,conclusion,attempt 2>/dev/null)" || { MAIN_VERDICT=unknown; return 1; }
+  green="$(printf '%s' "$runs" | python3 -I -c 'import json,sys
+for r in json.load(sys.stdin):
+    if r.get("status") == "completed" and r.get("conclusion") == "success": print(r["headSha"]); break' 2>/dev/null)"
+  ahead=0
+  if [ -n "$green" ]; then
+    ahead="$(gh api "repos/$REPO/compare/$green...main" 2>/dev/null | python3 -I -c 'import json,sys;print(json.load(sys.stdin).get("ahead_by",99))' 2>/dev/null)" || ahead=99
+    case "$ahead" in ''|*[!0-9]*) ahead=99 ;; esac
+  else ahead=99; fi
+  MAIN_AHEAD="$ahead"
+  read -r v MAIN_SHA rid att <<EOV
+$(printf '%s' "$runs" | python3 -I "$DE" --mode main --max-ahead "$MAX_AHEAD" --ahead "$ahead" 2>/dev/null || echo "unknown - 0 0")
+EOV
+  MAIN_VERDICT="${v:-unknown}"
+  if [ "$MAIN_VERDICT" = unverified ] && [ "${rid:-0}" -gt 0 ] && [ ! -f "$SD/$NAME.healed-main-$rid-a$att" ]; then
+    : > "$SD/$NAME.healed-main-$rid-a$att"   # G74: the newest main commit has no completed run: ask for one (once per id+attempt)
+    gh run rerun "$rid" --repo "$REPO" >/dev/null 2>&1 && log "main run $rid on $MAIN_SHA ended cancelled: re-run requested"
+  fi
+  case "$MAIN_VERDICT" in green|off) return 0 ;; *) return 1 ;; esac
+}
+
+# G47: re-run cancelled/timed-out runs of otherwise-eligible PRs. Caller guarantees main is green with room and nothing pending.
+heal_pass() { # $1 = how many PRs may be healed this cycle
+  local room="$1" p sha id att n=0
+  [ "$room" -gt 0 ] || return 0
+  while read -r p sha; do
+    [ -n "$p" ] || continue
+    [ "$n" -lt "$room" ] || break
+    gh run list --repo "$REPO" --commit "$sha" --limit 60 --json databaseId,workflowName,status,conclusion,attempt 2>/dev/null \
+      | python3 -I "$DE" --mode runs 2>/dev/null | while read -r id att; do
+        [ -n "$id" ] || continue
+        [ -f "$SD/$NAME.healed-$id-a$att" ] && continue
+        [ "${att:-1}" -ge 20 ] && continue   # main-first preemption counts too, but not forever
+        : > "$SD/$NAME.healed-$id-a$att"
+        gh run rerun "$id" --repo "$REPO" --failed >/dev/null 2>&1 && log "HEAL #$p re-run $id (cancelled on ${sha:0:8})"
+      done
+    n=$((n + 1))
+  done <<EOH
+$(gh pr list --repo "$REPO" --state open --base main --limit 60 --json number,mergeable,statusCheckRollup,isDraft,labels,headRefOid 2>/dev/null | python3 -I "$DE" --mode heal 2>/dev/null | sort -n)
+EOH
+}
+
+# DRAIN-MONEY-2: is money-review-passed on the PR and newer than its last non-merge commit?
+money_at_head() { # $1 = PR
+  local ev cm rc
+  ev="$(mktemp)"; cm="$(mktemp)"
+  gh api "repos/$REPO/issues/$1/events" --paginate > "$ev" 2>/dev/null && gh api "repos/$REPO/pulls/$1/commits" --paginate > "$cm" 2>/dev/null
+  python3 -I "$DE" --mode label-at-head --label money-review-passed --events "$ev" --commits "$cm" 2>/dev/null; rc=$?
+  rm -f "$ev" "$cm"; return $rc
+}
+
+# DRAIN-STARVE-1: requeue runs of fixes-main PR heads that sat queued too long. Runs every cycle, whatever main's state (main is red when this matters).
+starve_pass() {
+  local p sha id att
+  while read -r p sha; do
+    [ -n "$p" ] || continue
+    gh run list --repo "$REPO" --commit "$sha" --limit 60 --json databaseId,status,createdAt,attempt 2>/dev/null \
+      | python3 -I "$DE" --mode starved --min "$STARVE_MIN" 2>/dev/null | while read -r id att; do
+        [ -n "$id" ] || continue
+        [ -f "$SD/$NAME.starved-$id-a$att" ] && continue
+        : > "$SD/$NAME.starved-$id-a$att"
+        gh run cancel "$id" --repo "$REPO" >/dev/null 2>&1; sleep "${STARVE_SLEEP:-20}"
+        gh run rerun "$id" --repo "$REPO" >/dev/null 2>&1 && log "STARVE #$p run $id queued >${STARVE_MIN}m: cancelled and re-queued"
+      done
+  done <<EOS
+$(gh pr list --repo "$REPO" --state open --base main --label fixes-main --limit 30 --json number,headRefOid --jq '.[]|"\(.number) \(.headRefOid)"' 2>/dev/null)
+EOS
+}
+
 cycle() {
   local ready rc now merged=0 eligible=0 held=0 p sha risky passed fk fail_at oldest_held hf a
   now="$(epoch)"
   ready="$(list_ready)"; rc=$?
   if [ "$rc" -ne 0 ]; then log "cannot read PRs of $REPO; skipping this cycle (no progress claimed, no stall judged)"; return 3; fi
   oldest_held=0
-  while read -r p sha risky passed; do
+  local gate_ok=1 fixes_only=0 heal_room
+  starve_pass
+  main_gate || gate_ok=0
+  if [ "$gate_ok" = 0 ]; then
+    if [ "$MAIN_VERDICT" = unknown ]; then log "main CI unreadable ($MAIN_WF): merging nothing this cycle"; return 3; fi
+    log "main not green ($MAIN_VERDICT $MAIN_SHA, +$MAIN_AHEAD since green): only fixes-main PRs"; fixes_only=1
+  elif [ "$MAIN_VERDICT" = green ]; then
+    heal_room=$((MAX_AHEAD - MAIN_AHEAD)); [ "$heal_room" -gt 0 ] && heal_pass "$heal_room"
+  fi
+  while read -r p sha risky passed fixes moneyneeded; do
     [ -n "$p" ] || continue
+    if [ "$MAIN_VERDICT" != off ] && [ $((MAIN_AHEAD + merged)) -ge "$MAX_AHEAD" ] && [ "$fixes_only" = 0 ]; then log "batch full ($MAX_AHEAD merges on the last green main): waiting for main CI"; break; fi
     if [ "$HOLD" = 1 ] && [ "$risky" = 1 ] && [ "$passed" != 1 ]; then
       held=$((held + 1)); log "HOLD #$p risky, awaiting ai-review-passed"
       hf="$SD/$NAME.held.$p"; [ -f "$hf" ] || epoch > "$hf"
       continue
     fi
     eligible=$((eligible + 1))
+    if [ "$fixes_only" = 1 ]; then
+      # red main: only a PR labelled fixes-main may merge, one per cycle, and only when main is red (not pending/full/unverified)
+      if [ "$fixes" != 1 ] || [ "$MAIN_VERDICT" != red ] || [ "$merged" -gt 0 ]; then continue; fi
+    fi
+    if [ "$moneyneeded" = 1 ] && ! money_at_head "$p"; then log "HOLD #$p money-review-passed predates the head (a PASS covers one head)"; continue; fi
     fk="$SD/$NAME.failed.$p.$sha"; fail_at="$(read_int "$fk")"
     if [ "$fail_at" -gt 0 ] && [ $((now - fail_at)) -lt 600 ]; then log "skip #$p ${sha:0:8}: gate failed $((now - fail_at))s ago"; continue; fi
     gate_running "$p" && { log "skip #$p: a gate is already running"; continue; }
