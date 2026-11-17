@@ -392,10 +392,32 @@ sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin))
   log "$repo: done (cancelled ${#to_cancel_main[@]} superseded main, ${#to_cancel_pr[@]} queued PR runs)"
 }
 
+# HELD-RERUN-1 (2026-11-17): the batch-first hold below keeps non-batch cancelled runs OFF the runners while the drain's batch needs them. It must not hold
+# when nothing needs them: measured, 72 cancelled runs sat "held: drain batch goes first" for hours while both heavy runners were idle, because the batch
+# file stays fresh as long as the drain keeps re-listing the same PRs. repo_idle = 0 when the repo has NO queued run younger than MAIN_FIRST_IDLE_RECENT_S
+# (default 6 h: older queued runs are dead ghosts that never get a runner). An API error is "not idle" (hold), so the hold fails safe.
+IDLE_RECENT_S="${MAIN_FIRST_IDLE_RECENT_S:-21600}"
+repo_idle() { # <repo>
+  local q
+  q="$(api "repos/$1/actions/runs?status=queued&per_page=100")" || return 1
+  printf '%s' "$q" | NOW_E="$NOW" RECENT="$IDLE_RECENT_S" python3 -c '
+import sys,json,os,datetime
+try:
+    runs=json.load(sys.stdin).get("workflow_runs")
+except Exception:
+    sys.exit(1)
+if not isinstance(runs,list): sys.exit(1)
+now=int(os.environ["NOW_E"]); recent=int(os.environ["RECENT"])
+def age(r):
+    try: return now-int(datetime.datetime.strptime(r.get("created_at",""),"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp())
+    except Exception: return 0   # an unreadable timestamp counts as fresh: a queued run we cannot date is not a ghost
+sys.exit(0 if not [r for r in runs if age(r)<=recent] else 1)' 2>/dev/null
+}
+
 rerun_cancelled() { # <repo> <ledger> <main run id>
   local repo="$1" ledger="$2" nid="$3"
   [ -s "$ledger" ] || return 0
-  local rid prn sha ts pr st hsha ap grp tmp done_n=0 rows="" drops="" cleared="" seen="" run rst rcon rat rsha
+  local idle="" rid prn sha ts pr st hsha ap grp tmp done_n=0 rows="" drops="" cleared="" seen="" run rst rcon rat rsha
   # resolve each entry (PR open? head unchanged? approval time) BEFORE any re-run
   while IFS=$'\t' read -r rid prn sha ts; do
     [ -n "$rid" ] || continue
@@ -424,7 +446,10 @@ for r in sorted(d,key=lambda r:r.get("submitted_at","")): last[r["user"]["login"
 t=sorted(r["submitted_at"] for r in last.values() if r.get("state")=="APPROVED")
 print(t[0] if t else "")' 2>/dev/null)" || ap=""
     # batch PRs first (0), then approved by approval time (1), then unapproved (2); non-batch HELD while a batch is fresh
-    if in_batch "$prn"; then grp=0; elif [ -n "$BATCH_PRS" ]; then log "$repo: PR #$prn run $rid held: drain batch [$BATCH_PRS] goes first"; continue; elif [ -n "$ap" ]; then grp=1; else grp=2; fi
+    # held only while the batch needs the runners: with the repo idle (no recent queued run) the held run starts, in the old order (approved first), CAP per tick
+    if in_batch "$prn"; then grp=0
+    elif [ -n "$BATCH_PRS" ] && { [ -n "${idle:-}" ] || { if repo_idle "$repo"; then idle=1; else idle=0; fi; }; [ "$idle" = 0 ]; }; then log "$repo: PR #$prn run $rid held: drain batch [$BATCH_PRS] goes first"; continue
+    elif [ -n "$ap" ]; then grp=1; else grp=2; fi
     if [ -n "$ap" ]; then rows="$rows"$'\n'"$grp$ap $ts $rid $prn $sha"; else rows="$rows"$'\n'"${grp}9999999999 $ts $rid $prn $sha"; fi
   done < "$ledger"
   local key _t
