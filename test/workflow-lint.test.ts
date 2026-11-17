@@ -30,3 +30,14 @@ describe('workflow-lint fork-guard exemption', () => {
   });
 });
 
+describe('workflow-lint light runner variant', () => {
+  const light = "${{ fromJSON(vars.EBDA_LIGHT_RUNS_ON || vars.EBDA_RUNS_ON || '\"ubuntu-latest\"') }}";
+  it('accepts the light-first runs-on chain', () => {
+    expect(lintWorkflow('w.yml', `${head}    runs-on: ${light}\n    timeout-minutes: 5\n`)).toEqual([]);
+  });
+  it('rejects a light variable with no EBDA_RUNS_ON fallback or a different fallback', () => {
+    const a = "${{ fromJSON(vars.EBDA_LIGHT_RUNS_ON || '\"ubuntu-latest\"') }}";
+    const b = "${{ fromJSON(vars.EBDA_LIGHT_RUNS_ON || vars.EBDA_RUNS_ON || '\"ubuntu-24.04\"') }}";
+    for (const v of [a, b]) expect(lintWorkflow('w.yml', `${head}    runs-on: ${v}\n    timeout-minutes: 5\n`).join('\n')).toMatch(/runs-on must be exactly/);
+  });
+});

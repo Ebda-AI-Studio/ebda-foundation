@@ -3,7 +3,7 @@
 // usage: node workflow-lint.mjs [workflowsDir=.github/workflows]      exit 1 and one line per violation
 //   - every workflow has a top-level `concurrency:`
 //   - every job has `timeout-minutes:`
-//   - every `runs-on:` is exactly ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}, except a job whose runs-on line is
+//   - every `runs-on:` is exactly ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }} (or the same with vars.EBDA_LIGHT_RUNS_ON || in front, for a seconds-long job), except a job whose runs-on line is
 //     `runs-on: ubuntu-latest` directly under a `# hosted-only: <reason>` comment (a job that must NOT follow EBDA_RUNS_ON onto the
 //     self-hosted runner, e.g. an outside-in production watch); it may not run on pull_request
 //   - a job that can run on a pull_request carries the fork guard (or a `    # fork-guard-exempt: <reason>` comment line in the job, for a job that
@@ -16,6 +16,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const RUNS_ON = "${{ fromJSON(vars.EBDA_RUNS_ON || '\"ubuntu-latest\"') }}";
+// A seconds-long plain-node job may route to the light runners: same fallback chain, the light variable first (pr-quality.yml).
+const RUNS_ON_LIGHT = "${{ fromJSON(vars.EBDA_LIGHT_RUNS_ON || vars.EBDA_RUNS_ON || '\"ubuntu-latest\"') }}";
 
 export function lintWorkflow(name, text) {
   const out = [];
@@ -43,7 +45,7 @@ export function lintWorkflow(name, text) {
       const val = block[ro].replace(/^    runs-on:\s*/, '').trim();
       const hostedOnly = val === 'ubuntu-latest' && ro > 0 && /^    # hosted-only: \S.{9,}/.test(block[ro - 1]);
       if (hostedOnly && onPr) bad(j.start + ro + 1, `job ${j.id}: a hosted-only job may not run on pull_request`);
-      else if (!hostedOnly && val !== RUNS_ON) bad(j.start + ro + 1, `job ${j.id}: runs-on must be exactly ${RUNS_ON}`);
+      else if (!hostedOnly && val !== RUNS_ON && val !== RUNS_ON_LIGHT) bad(j.start + ro + 1, `job ${j.id}: runs-on must be exactly ${RUNS_ON}`);
     }
     if (onPr && ro >= 0 && !block.some((l) => /head\.repo\.full_name\s*==\s*github\.repository/.test(l)) && !block.some((l) => /^    # fork-guard-exempt: \S.{9,}/.test(l)) && !/needs:/.test(block.join('\n'))) {
       bad(j.start + 1, `job ${j.id}: pull_request job without the fork guard (github.event.pull_request.head.repo.full_name == github.repository)`);
