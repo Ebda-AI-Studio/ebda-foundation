@@ -9,7 +9,7 @@ SCRIPT="$(cd "$(dirname "$0")/../.." && pwd)/graph-verify.sh"
 _pass=0; _fail=0
 ok() { echo "PASS: $1"; _pass=$((_pass+1)); }
 no() { echo "FAIL: $1"; _fail=$((_fail+1)); }
-saw() { printf '%s' "$2" | grep -q "$1"; }
+saw() { grep -q "$1" <<<"$2"; }
 
 mkrepo() {                       # $1 = dir
   mkdir -p "$1/src" "$1/graphify-out"

@@ -3,7 +3,7 @@
 # env file must reach the journeys (set -a). Fake HOME, fixture journeys, offline.
 # (#197: JOURNEY_STORE_STORE_URL unset -> 0 pass / 1 skip was written ok=true.)
 set -uo pipefail
-cd "$(dirname "$0")/.."; OPS="$(pwd)"
+cd "$(dirname "$0")/.." || exit 1; OPS="$(pwd)"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 _pass=0; _fail=0
 pass() { echo "PASS: $1"; _pass=$((_pass+1)); }
@@ -26,8 +26,8 @@ st_ok() { printf '%s' "$STATUS" | python3 -c "import sys,json;print(json.load(sy
 
 run "$T/j-skip" /dev/null
 [ "$(st_ok)" = "warn" ] && pass "all-skip -> status ok='warn' (not true)" || fail "all-skip status ok=$(st_ok): $STATUS"
-echo "$OUT" | grep -q "WARN — all 1 journey(s) SKIPPED" && pass "all-skip prints a WARN naming the var to set" || fail "no WARN line: $OUT"
-echo "$OUT" | grep -q "JOURNEY_STORE_STORE_URL" && pass "WARN names JOURNEY_STORE_STORE_URL" || fail "var not named"
+grep -q "WARN — all 1 journey(s) SKIPPED" <<<"$OUT" && pass "all-skip prints a WARN naming the var to set" || fail "no WARN line: $OUT"
+grep -q "JOURNEY_STORE_STORE_URL" <<<"$OUT" && pass "WARN names JOURNEY_STORE_STORE_URL" || fail "var not named"
 [ "$RC" -eq 0 ] && pass "all-skip stays fail-open (exit 0)" || fail "rc=$RC"
 
 run "$T/j-mixed" /dev/null
@@ -36,7 +36,7 @@ run "$T/j-mixed" /dev/null
 # plain KEY=value (no export) must reach the node journey
 echo 'JOURNEY_TEST_URL=https://shop.example.com' > "$T/svc.env"
 run "$T/j-env" "$T/svc.env"
-echo "$OUT" | grep -q "PASS  needs-env — saw https://shop.example.com" && [ "$(st_ok)" = "true" ] \
+grep -q "PASS  needs-env — saw https://shop.example.com" <<<"$OUT" && [ "$(st_ok)" = "true" ] \
   && pass "env file value reaches the journey (set -a): real run, not skip" || fail "env not exported: $OUT"
 
 echo "== MUTATION CHECKS =="
@@ -58,5 +58,5 @@ assert old in t
 open(p,'w').write(t.replace(old,'. "$SVC_ENV"',1))
 PY
 h="$T/hm2"; mkdir -p "$h"; o="$(HOME="$h" WHISKY_SERVICES_ENV="$T/svc.env" JOURNEY_DIR="$T/j-env" DRY_RUN=0 bash "$M2/journey-monitor.sh" 2>&1)"
-echo "$o" | grep -q "SKIP  needs-env" && pass "mutation 2 (drop set -a) is caught: journey skips" || fail "MUTATION 2 survived"
+grep -q "SKIP  needs-env" <<<"$o" && pass "mutation 2 (drop set -a) is caught: journey skips" || fail "MUTATION 2 survived"
 echo; echo "journey-allskip.test: $_pass passed, $_fail failed"; [ "$_fail" -eq 0 ]

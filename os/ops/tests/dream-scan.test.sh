@@ -70,7 +70,7 @@ sys.exit(0 if len(rows)>=6 and any(r['source']=='dream' and r['detail'].get('pro
 # no targets: exit 3, loud
 printf '{}' > "$T/local.json"
 out="$("${E[@]}" bash "$OPS/dream-scan.sh" 2>&1)"; rc=$?
-{ [ "$rc" = 3 ] && echo "$out" | grep -q "NO TARGETS"; } && pass "no dream_products -> exit 3 and a loud message" || fail "no-target rc=$rc"
+{ [ "$rc" = 3 ] && grep -q "NO TARGETS" <<<"$out"; } && pass "no dream_products -> exit 3 and a loud message" || fail "no-target rc=$rc"
 "${E[@]}" DREAM_PHASES_DIR="$OPS" bash "$OPS/dream.sh" --daily >/dev/null 2>&1; rc=$?
 [ "$rc" = 1 ] && pass "dream.sh fails when the scan has no targets" || fail "dream with no targets rc=$rc"
 

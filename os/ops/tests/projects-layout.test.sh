@@ -11,7 +11,7 @@
 # legacy symlink of the same name exists, and the checker must flag a repo that
 # sits anywhere else (the positive control: a top-level repo and a _clients repo).
 set -uo pipefail
-cd "$(dirname "$0")/.."   # -> ops/
+cd "$(dirname "$0")/.." || exit 1   # -> ops/
 OPS="$(pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 _pass=0; _fail=0
@@ -51,13 +51,13 @@ out=$(bash "$OPS/projects-layout-check.sh" 2>&1); rc=$?
 mkrepo stray-top; mkrepo _clients/stray-client; mkrepo Ebda-AI-Studio/business/ebda/ebda
 out=$(bash "$OPS/projects-layout-check.sh" 2>&1); rc=$?
 [ $rc -eq 1 ] && pass "misplaced repos fail the check" || fail "misplaced repos not caught (rc=$rc)"
-echo "$out" | grep -q 'stray-top' && echo "$out" | grep -q '_clients/stray-client' && echo "$out" | grep -q 'Ebda-AI-Studio/business/ebda/ebda' && pass "all misplaced repos are named" || fail "misplaced not named: $out"
+grep -q 'stray-top' <<<"$out" && grep -q '_clients/stray-client' <<<"$out" && grep -q 'Ebda-AI-Studio/business/ebda/ebda' <<<"$out" && pass "all misplaced repos are named" || fail "misplaced not named: $out"
 
 # a pending (declared, not-yet-moved) repo is reported but does not fail
 rm -rf "$R/stray-top" "$R/_clients/stray-client" "$R/Ebda-AI-Studio/business"; mkrepo _clients/busy-repo
 printf '_clients/busy-repo\tsession active 2026-09-25\n' > "$TMP/pending.tsv"
 out=$(PROJECTS_LAYOUT_PENDING="$TMP/pending.tsv" bash "$OPS/projects-layout-check.sh" 2>&1); rc=$?
-[ $rc -eq 0 ] && echo "$out" | grep -q 'PENDING _clients/busy-repo' && pass "declared pending move is reported, not failed" || fail "pending handling (rc=$rc): $out"
+[ $rc -eq 0 ] && grep -q 'PENDING _clients/busy-repo' <<<"$out" && pass "declared pending move is reported, not failed" || fail "pending handling (rc=$rc): $out"
 
 # --refs: a script that names a project path that no longer exists is a silent
 # coverage hole (2026-09-25: agent-dispatch pointed at a deleted digital-card,
@@ -69,13 +69,13 @@ out=$(bash "$OPS/projects-layout-check.sh" --refs "$TMP/scripts" 2>&1); rc=$?
 [ $rc -eq 0 ] && pass "a script naming a real project path passes --refs" || fail "real path flagged: $out"
 printf 'B="$HOME/Desktop/projects/_clients/digital-card"\n' > "$TMP/scripts/dead.sh"
 out=$(bash "$OPS/projects-layout-check.sh" --refs "$TMP/scripts" 2>&1); rc=$?
-[ $rc -eq 1 ] && echo "$out" | grep -q 'DEAD _clients/digital-card' && pass "a dead project path is named and fails --refs" || fail "dead path not caught (rc=$rc): $out"
+[ $rc -eq 1 ] && grep -q 'DEAD _clients/digital-card' <<<"$out" && pass "a dead project path is named and fails --refs" || fail "dead path not caught (rc=$rc): $out"
 
 # a binary file (e.g. a .pyc) that embeds a path must not be reported — grep prints
 # "Binary file … matches", which the checker once read as a dead path.
 rm -f "$TMP/scripts/dead.sh"; printf 'x\0y Desktop/projects/Ebda-AI-Studio/internal-projects/store\0' > "$TMP/scripts/cache.pyc"
 out=$(bash "$OPS/projects-layout-check.sh" --refs "$TMP/scripts" 2>&1); rc=$?
-[ $rc -eq 0 ] && ! echo "$out" | grep -q 'Binary' && pass "binary files are skipped by --refs" || fail "binary file reported (rc=$rc): $out"
+[ $rc -eq 0 ] && ! grep -q 'Binary' <<<"$out" && pass "binary files are skipped by --refs" || fail "binary file reported (rc=$rc): $out"
 
 # list_repo_roots — the ONE repo enumerator. Five scripts listed repos with a
 # fixed-depth glob ("$PROJECTS"/*/ or find -maxdepth 1) and went blind after the
@@ -113,7 +113,7 @@ mk2 Whisky-11/studio/app; mk2 Whisky-11/studio/shared; mk2 Whisky-11/internal-pr
 got=$(PROJECTS_ROOT="$R2" bash -c ". '$OPS/lib/projects-layout.sh'; list_repo_roots" | sed "s#^$R2/##" | LC_ALL=C sort | tr '\n' ' ')
 [ "$got" = "Whisky-11/internal-projects/whisky11-site Whisky-11/studio/app " ] && pass "list_repo_roots lists studio/app (and not studio/shared)" || fail "list_repo_roots with studio: got '$got'"
 out=$(PROJECTS_ROOT="$R2" bash "$OPS/projects-layout-check.sh" 2>&1); rc=$?
-{ [ "$rc" = 1 ] && printf '%s' "$out" | grep -q '^MISPLACED Whisky-11/studio/shared' && ! printf '%s' "$out" | grep -q 'MISPLACED Whisky-11/studio/app'; } && pass "the checker flags studio/shared, not studio/app" || fail "checker with studio: rc=$rc out=$out"
+{ [ "$rc" = 1 ] && grep -q '^MISPLACED Whisky-11/studio/shared' <<<"$out" && ! grep -q 'MISPLACED Whisky-11/studio/app' <<<"$out"; } && pass "the checker flags studio/shared, not studio/app" || fail "checker with studio: rc=$rc out=$out"
 
 echo "projects-layout: $_pass passed, $_fail failed"
 [ "$_fail" -eq 0 ]

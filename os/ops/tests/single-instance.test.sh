@@ -58,7 +58,7 @@ ok "5 hung du: sweep still finishes (<40 s)" "$([ "$el" -lt 40 ] && echo fast)" 
 ok "5 hung du: the orphan is removed, size shows ?" "$(echo "$out" | grep -c 'victim__orphan (?)')/$([ -d "$P/_worktrees/victim__orphan" ] && echo kept || echo gone)" "1/gone"
 mkdir -p "$P/_worktrees/victim__orphan2"; rm -rf "$OS_LOCK_DIR"
 out="$(SHIM_DF_SLEEP=100 HYGIENE_DF_TIMEOUT=1 H 2>&1)"
-ok "5 hung df: UNKNOWN, dry run, nothing deleted" "$(echo "$out" | grep -q UNKNOWN && echo unknown)/$([ -d "$P/_worktrees/victim__orphan2" ] && echo kept)" "unknown/kept"
+ok "5 hung df: UNKNOWN, dry run, nothing deleted" "$(grep -q UNKNOWN <<<"$out" && echo unknown)/$([ -d "$P/_worktrees/victim__orphan2" ] && echo kept)" "unknown/kept"
 
 # ---- 6. held / stale lock
 sleep 30 & holder=$!

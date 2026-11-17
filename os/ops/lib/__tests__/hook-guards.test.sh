@@ -48,7 +48,7 @@ for c in 'git add ./path/file' 'git add src/a.ts src/b.ts' 'git add -p src/a.ts'
 done
 allows "$(file_payload /tmp/x Read)" "$A" && ok "git-add-all: non-Bash passes" || no "git-add-all: non-Bash passes"
 printf 'not json' | bash "$A" >/dev/null 2>&1 && ok "git-add-all: malformed payload does not block" || no "git-add-all: malformed payload does not block"
-msg="$(printf '%s' "$(cmd_payload 'git add -A')" | bash "$A" 2>&1)"; printf '%s' "$msg" | grep -q 'never -A/\. (nested repos + untracked sensitive files)' && ok "git-add-all reason text" || no "git-add-all reason text"
+msg="$(printf '%s' "$(cmd_payload 'git add -A')" | bash "$A" 2>&1)"; grep -q 'never -A/\. (nested repos + untracked sensitive files)' <<<"$msg" && ok "git-add-all reason text" || no "git-add-all reason text"
 
 # ======================= block-root-checkout-commit ======================
 R="$HOOKS/block-root-checkout-commit.sh"
@@ -70,7 +70,7 @@ allows "$(cwd_payload "$RT/root" 'git status')"                        "$R" && o
 allows "$(cwd_payload "$RT/root" 'git log -1')"                        "$R" && ok "root-commit ignores git log"                 || no "root-commit ignores git log"
 allows "$(cwd_payload "$RT" 'git commit -m x')"                        "$R" && ok "root-commit allows non-repo dir"             || no "root-commit allows non-repo dir"
 printf 'not json' | bash "$R" >/dev/null 2>&1 && ok "root-commit: malformed payload does not block" || no "root-commit: malformed payload does not block"
-msg="$(printf '%s' "$(cwd_payload "$RT/root" 'git commit -m x')" | bash "$R" 2>&1)"; printf '%s' "$msg" | grep -q 'root checkouts stay on main read-only — use ~/.claude/scripts/new-task-worktree.sh' && ok "root-commit reason text" || no "root-commit reason text"
+msg="$(printf '%s' "$(cwd_payload "$RT/root" 'git commit -m x')" | bash "$R" 2>&1)"; grep -q 'root checkouts stay on main read-only — use ~/.claude/scripts/new-task-worktree.sh' <<<"$msg" && ok "root-commit reason text" || no "root-commit reason text"
 rm -rf "$RT"
 
 # ========================== warn-agent-no-model ==========================
