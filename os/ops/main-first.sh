@@ -33,6 +33,18 @@
 #   Cancelled runs go to the ledger. Re-run order while a batch is fresh: batch PRs first (oldest approval first),
 #   non-batch entries are HELD (re-running them would only be re-cancelled next tick) until the batch file goes
 #   stale or no longer lists the batch; with no fresh batch the order is the plain oldest-approval order.
+# MAIN LEASE (Ruling MAIN-LEASE-1, 2026-11-17): the 5-minute tick above cancels the PR runs that are queued AT THE TICK, but GitHub hands queued
+# jobs to runners NEWEST-first, so a PR queue that refills between ticks keeps winning and main CI starved twice in one day (61 min queued, 54
+# approved PRs blocked). While a repo's newest main CI run has a QUEUED job (queued longer than $MAIN_FIRST_LEASE_MIN_QUEUED_S, default 30, so a
+# job that starts at once costs nothing) main holds a LEASE: after the normal pass the tick keeps running a short loop ($MAIN_FIRST_LEASE_TICK s,
+# default 30, for at most $MAIN_FIRST_LEASE_BUDGET s, default 270, inside the 5-minute launchd interval) that cancels every NEWLY queued,
+# non-protected PR run on arrival (every job still queued, asking for the heavy OR the light label; protected = a batch PR from the drain's batch file, a
+# fixes-main PR, an allow-listed branch, main/push/schedule runs), logging each to the lease ledger. The lease is released the moment main has
+# no queued job left for TWO steps in a row (main queues in waves: `needs:`), or main completed, or the run is gone: the logged runs are re-run
+# and each re-run is CONFIRMED (queued / in progress / higher attempt); a run still cancelling or whose re-run did not take stays in the lease ledger
+# and is retried each step (5 steps, then LEASE-RERUN-FAILED); a run the lease already re-ran for this main run is never cancelled again. Both pools
+# count: a queued main job on EITHER ebda-mac or ebda-mac-light ($MAIN_FIRST_LEASE_LABELS) takes the lease and PR runs queued on either are cancelled.
+# (PR open, head unchanged, still cancelled are checked before a re-run; a fresh drain batch hands non-batch runs to the normal ledger.) A repo whose main has no queued job never takes a lease. MAIN_FIRST_LEASE=0 turns it off.
 # CROSS-REPO FAIRNESS (G16, 2026-11-15): the heavy runners are an ORG pool shared by ebda-store, ebda-whatsapp and ebda-foundation, but
 # the rules above only cancel the STARVED repo's own PR runs, so one repo's PR backlog could hold the pool while another repo's main CI
 # starved (its own queue had nothing left to cancel). Main-before-PR stays rule one; after a starved repo's own PR runs are cancelled,
@@ -81,7 +93,10 @@ BATCH_MAX="${MAIN_FIRST_BATCH_MAX:-3}"
 BATCH_AGE="${MAIN_FIRST_BATCH_MAX_AGE_MIN:-15}"
 GH_TIMEOUT="${GH_TIMEOUT:-45}"
 FAIR_CAP="${MAIN_FIRST_FAIR_CAP:-3}"; FAIR_TOTAL="${MAIN_FIRST_FAIR_TOTAL:-6}"
-for v in MIN CAP BATCH_MAX BATCH_AGE FAIR_CAP FAIR_TOTAL; do case "${!v}" in ''|*[!0-9]*) echo "main-first: $v must be a whole number" >&2; exit 2 ;; esac; done
+LEASE="${MAIN_FIRST_LEASE:-1}"; LEASE_TICK="${MAIN_FIRST_LEASE_TICK:-30}"; LEASE_BUDGET="${MAIN_FIRST_LEASE_BUDGET:-270}"
+LEASE_MIN_Q="${MAIN_FIRST_LEASE_MIN_QUEUED_S:-30}"; LEASE_CAP="${MAIN_FIRST_LEASE_RERUN_CAP:-10}"
+LEASE_LABELS="${MAIN_FIRST_LEASE_LABELS:-$LABEL ${MAIN_FIRST_LIGHT_LABEL:-ebda-mac-light}}"
+for v in MIN CAP BATCH_MAX BATCH_AGE FAIR_CAP FAIR_TOTAL LEASE LEASE_TICK LEASE_BUDGET LEASE_MIN_Q LEASE_CAP; do case "${!v}" in ''|*[!0-9]*) echo "main-first: $v must be a whole number" >&2; exit 2 ;; esac; done
 mkdir -p "$STATE" "$(dirname "$LOG")" 2>/dev/null || true
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG"; }
@@ -416,7 +431,7 @@ print(t[0] if t else "")' 2>/dev/null)" || ap=""
   while read -r key _t rid prn sha; do
     [ -n "$rid" ] || continue
     if [ "$done_n" -ge "$CAP" ]; then log "$repo: rerun cap $CAP reached; run $rid waits for the next tick"; continue; fi
-    if act "re-request cancelled run $rid ($repo PR #$prn, head $sha) after main run $nid went green" -X POST "repos/$repo/actions/runs/$rid/rerun"; then
+    if act "re-request cancelled run $rid ($repo PR #$prn, head $sha) ${RERUN_WHY:-after main run $nid went green}" -X POST "repos/$repo/actions/runs/$rid/rerun"; then
       done_n=$((done_n+1)); cleared="$cleared $rid"
     else
       # act already logged FAILED once; never retry the same id forever
@@ -434,6 +449,157 @@ print(t[0] if t else "")' 2>/dev/null)" || ap=""
   mv -f "$tmp" "$ledger"
 }
 
+# ---- main lease (MAIN-LEASE-1) ----
+# Re-request one cancelled run and CONFIRM it took (RERUN-VERIFIED-1 for this script): it must read back queued / in progress or on a higher
+# attempt. 0 = confirmed, 1 = not (the caller keeps the row and retries on a later step).
+mf_rerun() { # <repo> <run id> <description>
+  local repo="$1" rid="$2" desc="$3" run att0 st att2
+  run="$(api "repos/$repo/actions/runs/$rid")" || return 1
+  att0="$(printf '%s' "$run" | py 'print(d.get("run_attempt",""))')"; [ -n "$att0" ] || return 1
+  act "$desc" -X POST "repos/$repo/actions/runs/$rid/rerun" || return 1
+  [ "$DRY" = 1 ] && return 0
+  sleep "${MAIN_FIRST_VERIFY_WAIT:-20}"
+  run="$(api "repos/$repo/actions/runs/$rid")" || return 1
+  st="$(printf '%s' "$run" | py 'print(d.get("status",""))')"; att2="$(printf '%s' "$run" | py 'print(d.get("run_attempt",0))')"
+  [ "$st" = queued ] || [ "$st" = in_progress ] || [ "${att2:-0}" -gt "$att0" ] 2>/dev/null
+}
+
+# Re-run what the lease cancelled. A row stays in the lease ledger until its run is confirmed re-queued, so a run that is still cancelling, or whose
+# re-run did not take, is retried on the next step (after 5 failed steps it is reported as LEASE-RERUN-FAILED and dropped). A row is dropped when the
+# run was already re-run by someone else, or its PR closed / its head moved. With a fresh drain batch a non-batch PR's run goes to the normal ledger.
+lease_release_runs() { # <repo> <slug> <main run id>
+  local repo="$1" slug="$2" nid="$3" lledger="$STATE/$2.lease.tsv" ledger="$STATE/$2.cancelled.tsv" tmp rid prn sha ts run rst rcon rsha pr st hsha tries
+  [ -s "$lledger" ] || return 0
+  load_batch "$slug"
+  tmp="$lledger.tmp"; : > "$tmp"
+  while IFS=$'\t' read -r rid prn sha ts; do
+    [ -n "$rid" ] || continue
+    run="$(api "repos/$repo/actions/runs/$rid")" || { log "$repo: lease: API failure reading run $rid; kept for the next step"; printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$ts" >> "$tmp"; continue; }
+    rst="$(printf '%s' "$run" | py 'print(d.get("status",""))')"; rcon="$(printf '%s' "$run" | py 'print(d.get("conclusion") or "")')"; rsha="$(printf '%s' "$run" | py 'print(d.get("head_sha",""))')"
+    if [ "$rst" != completed ]; then
+      log "$repo: lease: run $rid is still ${rst:-unknown} (cancelling); kept for the next step"; printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$ts" >> "$tmp"; continue
+    fi
+    if [ "$rcon" != cancelled ]; then log "$repo: lease: run $rid dropped: already $rcon"; continue; fi
+    if [ -n "$rsha" ] && [ "$prn" != 0 ] && [ "$rsha" != "$sha" ]; then log "$repo: lease: run $rid dropped: head moved"; continue; fi
+    if [ "$prn" != 0 ]; then
+      pr="$(api "repos/$repo/pulls/$prn")" || { log "$repo: lease: API failure reading PR #$prn; kept for the next step"; printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$ts" >> "$tmp"; continue; }
+      st="$(printf '%s' "$pr" | py 'print(d.get("state",""))')"; hsha="$(printf '%s' "$pr" | py 'print(d["head"]["sha"])')"
+      if [ "$st" != open ] || [ "$hsha" != "$sha" ]; then log "$repo: lease: PR #$prn closed or head moved; run $rid dropped"; continue; fi
+      if [ -n "$BATCH_PRS" ] && ! in_batch "$prn"; then
+        log "$repo: lease: PR #$prn run $rid held: drain batch [$BATCH_PRS] goes first; handed to the normal ledger"
+        [ "$DRY" = 1 ] || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$ts" >> "$ledger"; continue
+      fi
+    fi
+    if mf_rerun "$repo" "$rid" "lease released: re-request cancelled run $rid ($repo PR #$prn, head $sha) after main run $nid"; then
+      [ "$DRY" = 1 ] || echo "$nid $rid" >> "$STATE/$slug.lease.rerun"   # never re-cancelled under this main run
+      rm -f "$STATE/$slug.lease.try.$rid"
+    else
+      tries=$(( $(cat "$STATE/$slug.lease.try.$rid" 2>/dev/null || echo 0) + 1 )); echo "$tries" > "$STATE/$slug.lease.try.$rid"
+      if [ "$tries" -ge 5 ]; then log "$repo: LEASE-RERUN-FAILED run $rid not confirmed after $tries steps; dropped, needs a manual re-run"
+      else log "$repo: lease: re-run of run $rid not confirmed (step $tries/5); kept"; printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$ts" >> "$tmp"; fi
+    fi
+  done < "$lledger"
+  if [ "$DRY" = 1 ]; then rm -f "$tmp"; else mv -f "$tmp" "$lledger"; fi
+}
+
+# One step for one repo. Sets LEASE_STATE (a global: the caller must not use a subshell, the mutations log and write the ledger):
+#   held      = main still has a queued job (or just went idle for the first of 2 steps): arrivals are cancelled / the lease is kept
+#   releasing = the lease is over but some cancelled runs are not yet confirmed re-queued: keep stepping
+#   idle      = nothing to do
+lease_step() { # <repo>
+  local repo="$1" slug lf lledger idlef mains newest nid nsha nstatus njobs qn rid br sha prn created prruns cand jobs labels idle
+  slug="${repo//\//__}"; lf="$STATE/$slug.lease"; lledger="$STATE/$slug.lease.tsv"; idlef="$STATE/$slug.lease.idle"
+  LEASE_STATE=idle
+  touch "$lledger"
+  mains="$(api "repos/$repo/actions/runs?branch=main&event=push&per_page=30")" || { log "$repo: lease: API failure reading main runs; lease state kept"; if [ -f "$lf" ]; then LEASE_STATE=held; elif [ -s "$lledger" ]; then LEASE_STATE=releasing; fi; return; }
+  newest="$(printf '%s' "$mains" | WF="$WORKFLOW" python3 -c '
+import sys,json,os
+d=json.load(sys.stdin)
+r=[x for x in d["workflow_runs"] if x.get("name","").lower()==os.environ["WF"].lower()]
+r.sort(key=lambda x:x.get("created_at",""),reverse=True)
+print(json.dumps(r[0]) if r else "")' 2>/dev/null)" || newest=""
+  nid=""; nstatus=""
+  if [ -n "$newest" ]; then nid="$(printf '%s' "$newest" | py 'print(d["id"])')"; nsha="$(printf '%s' "$newest" | py 'print(d["head_sha"])')"; nstatus="$(printf '%s' "$newest" | py 'print(d["status"])')"; fi
+  qn=0
+  if [ "$nstatus" = queued ] || [ "$nstatus" = in_progress ]; then
+    njobs="$(api "repos/$repo/actions/runs/$nid/jobs?per_page=100")" || { log "$repo: lease: API failure reading jobs of main run $nid; lease state kept"; [ -f "$lf" ] && LEASE_STATE=held; return; }
+    qn="$(printf '%s' "$njobs" | NOW="$NOW" GRACE="$LEASE_MIN_Q" python3 -c '
+import sys,json,os,datetime
+d=json.load(sys.stdin); now=int(os.environ["NOW"]); g=int(os.environ["GRACE"])
+def ep(s): return int(datetime.datetime.strptime(s,"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp())
+print(sum(1 for j in d.get("jobs",[]) if j.get("status")=="queued" and now-ep(j["created_at"])>=g))' 2>/dev/null)" || qn=0
+  fi
+  if [ "${qn:-0}" -le 0 ]; then
+    if [ -f "$lf" ]; then
+      # Hysteresis (review of #105): main queues its jobs in waves (`needs:`), so "no queued job" for one step is not "main is running". Release only when
+      # main's run is no longer queued / in progress, or after 2 steps in a row with no queued job; the PR runs are then re-run once, not once per wave.
+      if [ "$nstatus" = queued ] || [ "$nstatus" = in_progress ]; then
+        idle=$(( $(cat "$idlef" 2>/dev/null || echo 0) + 1 )); [ "$DRY" = 1 ] || echo "$idle" > "$idlef"
+        if [ "$idle" -lt 2 ]; then log "$repo: lease: main run $nid has no queued job ($idle/2); lease kept in case a later wave queues"; LEASE_STATE=held; return; fi
+      fi
+      log "$repo: lease released (main run ${nid:-none} ${nstatus:-gone}, no queued job): re-running the runs cancelled under it"
+      [ "$DRY" = 1 ] || rm -f "$lf" "$idlef"
+    fi
+    lease_release_runs "$repo" "$slug" "${nid:-0}"
+    [ -s "$lledger" ] && LEASE_STATE=releasing
+    return
+  fi
+  # main has a queued job: hold the lease and cancel what arrived
+  LEASE_STATE=held
+  rm -f "$idlef"
+  if [ ! -f "$lf" ]; then
+    [ "$DRY" = 1 ] || printf '%s\t%s\n' "$nid" "$NOW" > "$lf"
+    log "$repo: lease ACQUIRED by main run $nid ($nsha): $qn job(s) queued; PR runs arriving from now are cancelled until main's last job starts"
+  fi
+  load_batch "$slug"
+  prruns="$(api "repos/$repo/actions/runs?status=queued&event=pull_request&per_page=100")" || { log "$repo: lease: API failure reading queued PR runs; skip this step"; return; }
+  cand="$(printf '%s' "$prruns" | python3 -c '
+import sys,json
+d=json.load(sys.stdin)
+for x in d["workflow_runs"]:
+    if x.get("status")!="queued": continue
+    prs=x.get("pull_requests") or []
+    print(x["id"], x.get("head_branch",""), x.get("head_sha",""), prs[0]["number"] if prs else 0, x.get("created_at",""))' 2>/dev/null)" || { log "$repo: lease: bad PR runs JSON; skip this step"; return; }
+  while read -r rid br sha prn created; do
+    [ -n "$rid" ] || continue
+    grep -q "^$rid	" "$lledger" 2>/dev/null && continue                      # already cancelled under this lease
+    grep -q "^$nid $rid$" "$STATE/$slug.lease.rerun" 2>/dev/null && continue  # this lease already re-ran it for this main run: never cancel it twice
+    case ",$ALLOW_BRANCHES," in *",$br,"*) continue ;; esac                  # allow-listed branch: protected
+    [ "$prn" != 0 ] && in_batch "$prn" && continue                           # the drain's batch: protected
+    jobs="$(api "repos/$repo/actions/runs/$rid/jobs?per_page=100")" || { log "$repo: lease: API failure reading jobs of $rid; skip this step"; return; }
+    printf '%s' "$jobs" | LABELS="$LEASE_LABELS" python3 -c '
+import sys,json,os
+d=json.load(sys.stdin); js=d.get("jobs",[]); want=os.environ["LABELS"].split()
+# every job still queued (a run that has started is left alone) and at least one asks for a pool main also uses: heavy OR light
+sys.exit(0 if js and all(j.get("status")=="queued" for j in js) and any(l in want for j in js for l in (j.get("labels") or [])) else 1)' 2>/dev/null || continue
+    if [ "$prn" != 0 ]; then
+      labels="$(api "repos/$repo/issues/$prn/labels")" || { log "$repo: lease: API failure reading labels of #$prn; skip this step"; return; }
+      if printf '%s' "$labels" | AL="$ALLOW_LABEL" python3 -c '
+import sys,json,os
+sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin)) else 1)' 2>/dev/null; then continue; fi   # fixes-main: protected
+    fi
+    if cancel_run "$repo" "$rid" "lease: cancel PR run $rid on arrival ($repo PR #$prn, head $sha) so main run $nid gets a runner"; then
+      [ "$DRY" = 1 ] || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$NOW" >> "$lledger"
+    fi
+  done <<<"$cand"
+}
+
+# after the normal pass: keep the lease for every repo whose main still waits, one step per repo every LEASE_TICK s, at most LEASE_BUDGET s
+lease_loop() {
+  [ "$LEASE" = 1 ] || return 0
+  local t=$SECONDS r any steps=0 max
+  max=$(( LEASE_BUDGET / (LEASE_TICK > 0 ? LEASE_TICK : 1) )); [ "$max" -ge 1 ] || max=1
+  while :; do
+    any=0
+    for r in $REPOS; do LEASE_STATE=idle; lease_step "$r"; if [ "$LEASE_STATE" = held ] || [ "$LEASE_STATE" = releasing ]; then any=1; fi; done
+    steps=$((steps + 1))
+    [ "$any" = 1 ] || break                      # no repo holds a lease: nothing to wait for
+    [ "$DRY" = 1 ] && break                      # a dry run takes one step, never waits
+    [ "$steps" -ge "$max" ] && { log "lease: budget (${LEASE_BUDGET}s) used; the lease carries into the next tick"; break; }
+    sleep "$LEASE_TICK"
+  done
+}
+
 log "tick start (dry=$DRY repos: $REPOS)"
 # round-robin start: rotate the repo order every tick so no repo is always processed first (G16)
 RR_FILE="$STATE/rr-cursor"; RR_N=0; for r in $REPOS; do RR_N=$((RR_N + 1)); done
@@ -444,5 +610,6 @@ i=0; for r in $REPOS; do [ "$i" -lt "$RR_K" ] && ORDER="$ORDER $r"; i=$((i + 1))
 [ "$DRY" = 1 ] || echo $((RR_C + 1)) > "$RR_FILE"
 REPOS_CONFIGURED="$REPOS"; REPOS="${ORDER# }"
 for r in $REPOS; do process_repo "$r"; done
+lease_loop
 if [ "$DRY" = 0 ] && command -v write_status >/dev/null 2>&1; then write_status main-first true "main-first tick ok" '{}'; fi
 exit 0

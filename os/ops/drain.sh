@@ -2,7 +2,7 @@
 # Ebda AI OS - drain.sh: the durable merge loop for ONE repo (replaces the controller's drain2.sh / drain-fdn.sh).
 #
 #   drain.sh --repo OWNER/NAME --dir CHECKOUT [--gate PATH] [--hold-risky] [--name N] [--interval S]
-#            [--stall-min 60] [--held-min 120] [--max-wait-min 20] [--main-workflow CI|none] [--max-ahead 3] [--starve-min 20] [--once]
+#            [--stall-min 60] [--held-min 120] [--max-wait-min 20] [--main-workflow CI|none] [--max-ahead 3] [--starve-min 20] [--freeze] [--thaw-top 10] [--once]
 #
 # Every cycle: list open PRs into main that are green and mergeable, and merge each through the merge gate (head pinned, three
 # consecutive polls, explicit required checks: never `gh pr merge` directly). With --hold-risky a PR labelled `risky-path` (set by
@@ -25,6 +25,10 @@
 #              hours (#884, 2h20m). Any run on a fixes-main PR's current head queued > --starve-min (default 20) is cancelled and re-run
 #              (back of the queue, picked next), at most 2 times per RUN ID and --starve-min apart (createdAt does not move on a re-run). Only current
 #              fixes-main heads are touched, never one labelled `hold` (old ghost runs 409). Every re-run is read back and confirmed (RERUN-VERIFIED-1).
+#   FREEZE (--freeze, Ruling MAIN-RED-FREEZE-1): while main CI is RED, every QUEUED run that is not on main and not a fixes-main PR head is
+#              cancelled (they compete for the runners that main's fix needs; 101 queued runs once starved #884 for 3 h) and recorded in
+#              <name>.frozen; a run whose cancel is refused (409, a ghost that holds no runner) is remembered and never retried. When main turns
+#              green the --thaw-top (default 10) oldest PRs' frozen runs are re-run, AI review first, a batch per cycle; the rest follow.
 #   MONEY (G49, MONEY-SHA-1): a `risky` PR needs the label money-review-passed AND the commit status `controller/money-review` = success on its
 #              exact head sha (set by the controller after the independent review: `gh api repos/<repo>/statuses/<sha> -f state=success
 #              -f context=controller/money-review`) by an account in OS_MONEY_STATUS_CREATORS (os.env, default the personal owner; empty = refuse all). A new head has no status,
@@ -45,13 +49,13 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
 args_help "${BASH_SOURCE[0]}" "$@"
-REPO=""; DIR=""; GATE="$HOME/.claude/scripts/merge-gate.sh"; HOLD=0; NAME=""; INTERVAL=60; STALL_MIN=60; HELD_MIN=120; MAXWAIT=20; ONCE=0; MAIN_WF="CI"; MAX_AHEAD=3; STARVE_MIN=20; STARVE_CAP=2
+REPO=""; DIR=""; GATE="$HOME/.claude/scripts/merge-gate.sh"; HOLD=0; NAME=""; INTERVAL=60; STALL_MIN=60; HELD_MIN=120; MAXWAIT=20; ONCE=0; MAIN_WF="CI"; MAX_AHEAD=3; STARVE_MIN=20; STARVE_CAP=2; FREEZE=0; THAW_TOP=10
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="${2:?}"; shift ;; --dir) DIR="${2:?}"; shift ;; --gate) GATE="${2:?}"; shift ;; --hold-risky) HOLD=1 ;;
     --name) NAME="${2:?}"; shift ;; --interval) INTERVAL="${2:?}"; shift ;; --stall-min) STALL_MIN="${2:?}"; shift ;;
     --held-min) HELD_MIN="${2:?}"; shift ;; --max-wait-min) MAXWAIT="${2:?}"; shift ;; --once) ONCE=1 ;;
-    --main-workflow) MAIN_WF="${2:?}"; shift ;; --max-ahead) MAX_AHEAD="${2:?}"; shift ;; --starve-min) STARVE_MIN="${2:?}"; shift ;;
+    --main-workflow) MAIN_WF="${2:?}"; shift ;; --max-ahead) MAX_AHEAD="${2:?}"; shift ;; --starve-min) STARVE_MIN="${2:?}"; shift ;; --freeze) FREEZE=1 ;; --thaw-top) THAW_TOP="${2:?}"; shift ;;
     *) args_unknown "${BASH_SOURCE[0]}" "$1" ;;
   esac
   shift
@@ -59,7 +63,7 @@ done
 [ -n "$REPO" ] && [ -n "$DIR" ] || { echo "drain: --repo and --dir are required (try --help)" >&2; exit 2; }
 case "$REPO" in */*) ;; *) echo "drain: --repo must be OWNER/NAME" >&2; exit 2 ;; esac
 whole() { case "$2" in ''|*[!0-9]*) echo "drain: $1 must be a whole number" >&2; exit 2 ;; esac; }
-whole --interval "$INTERVAL"; whole --stall-min "$STALL_MIN"; whole --held-min "$HELD_MIN"; whole --max-wait-min "$MAXWAIT"; whole --max-ahead "$MAX_AHEAD"; whole --starve-min "$STARVE_MIN"
+whole --interval "$INTERVAL"; whole --stall-min "$STALL_MIN"; whole --held-min "$HELD_MIN"; whole --max-wait-min "$MAXWAIT"; whole --max-ahead "$MAX_AHEAD"; whole --starve-min "$STARVE_MIN"; whole --thaw-top "$THAW_TOP"
 [ -n "$NAME" ] || NAME="${REPO##*/}"
 case "$NAME" in *[!A-Za-z0-9._-]*|'') echo "drain: --name must be [A-Za-z0-9._-]" >&2; exit 2 ;; esac
 [ -d "$DIR" ] || { echo "drain: --dir $DIR does not exist" >&2; exit 2; }
@@ -231,6 +235,52 @@ $(gh pr list --repo "$REPO" --state open --base main --label fixes-main --limit 
 EOS
 }
 
+# MAIN-RED-FREEZE-1: main is red -> cancel queued runs that are not main's fix. Runs only when --freeze is on and the verdict is `red`
+# (not pending / unverified / unknown: a main run in progress or unreadable CI is no reason to cancel other people's work).
+freeze_pass() {
+  [ "$FREEZE" = 1 ] && [ "$MAIN_VERDICT" = red ] || return 0
+  local keep id br sha wf att cout crc
+  keep="$(gh pr list --repo "$REPO" --state open --label fixes-main --limit 30 --json headRefName --jq '[.[].headRefName]|join(",")' 2>/dev/null)" || return 0
+  gh run list --repo "$REPO" --status queued --limit 300 --json databaseId,headBranch,headSha,workflowName,attempt 2>/dev/null \
+    | python3 -I "$DE" --mode freeze --keep "$keep" 2>/dev/null | while IFS=$'\t' read -r id br sha wf att; do
+      [ -n "$id" ] || continue
+      grep -qxF "$id" "$SD/$NAME.frozen-ghost" 2>/dev/null && continue
+      grep -q "^$id	" "$SD/$NAME.frozen" 2>/dev/null && continue
+      cout="$(gh run cancel "$id" --repo "$REPO" 2>&1)"; crc=$?
+      if [ "$crc" = 0 ]; then
+        printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$br" "$sha" "$wf" "$att" >> "$SD/$NAME.frozen"
+        log "FREEZE main red: cancelled queued run $id ($wf on $br)"
+      elif grep -q "409" <<<"$cout"; then echo "$id" >> "$SD/$NAME.frozen-ghost"   # 409: a ghost that holds no runner, never retried
+      else log "FREEZE: cancel of run $id failed (not a 409, will retry): $(printf '%s' "$cout" | head -c 120)"; fi
+    done
+}
+
+# Main is green again: re-run the frozen runs of the oldest --thaw-top PRs (AI review first), drop them from the record.
+thaw_pass() {
+  [ "$FREEZE" = 1 ] && [ "$MAIN_VERDICT" = green ] && [ -s "$SD/$NAME.frozen" ] || return 0
+  local order batch id br sha wf att n=0 opens cur
+  order="$(gh pr list --repo "$REPO" --state open --base main --limit 100 --json number,headRefName --jq 'sort_by(.number)|map(.headRefName)|join(",")' 2>/dev/null)" || return 0
+  # a frozen run is re-run only while its PR is still open on the head it was frozen at (the sha is stored abbreviated: compare by prefix)
+  opens="$(gh pr list --repo "$REPO" --state open --base main --limit 100 --json headRefName,headRefOid --jq '.[]|"\(.headRefName)=\(.headRefOid)"' 2>/dev/null)" || return 0
+  batch="$(python3 -I "$DE" --mode thaw --branches "$order" --top "$THAW_TOP" < "$SD/$NAME.frozen" 2>/dev/null)"
+  [ -n "$batch" ] || return 0
+  while IFS=$'\t' read -r id br sha wf att; do
+    [ -n "$id" ] || continue
+    cur="$(printf '%s\n' "$opens" | sed -n "s|^$br=||p" | head -1)"
+    if [ -z "$cur" ] || [ "${cur#"$sha"}" = "$cur" ]; then
+      log "THAW run $id dropped: ${cur:+head moved on }${cur:-PR closed or not open} ($wf on $br)"
+      grep -v "^$id	" "$SD/$NAME.frozen" > "$SD/$NAME.frozen.tmp" 2>/dev/null; mv "$SD/$NAME.frozen.tmp" "$SD/$NAME.frozen"; continue
+    fi
+    if rerun_verified "$id"; then log "THAW main green: re-run $id confirmed ($wf on $br)"
+    else rerun_failed_note "$id" "thaw $wf on $br"; rerun_gaveup "$id" || continue   # keep it in the record for the next cycle
+    fi
+    grep -v "^$id	" "$SD/$NAME.frozen" > "$SD/$NAME.frozen.tmp" 2>/dev/null; mv "$SD/$NAME.frozen.tmp" "$SD/$NAME.frozen"
+    n=$((n + 1))
+  done <<EOT
+$batch
+EOT
+}
+
 cycle() {
   local ready rc now merged=0 eligible=0 held=0 p sha risky passed fk fail_at oldest_held hf a
   now="$(epoch)"
@@ -242,6 +292,8 @@ cycle() {
   main_gate || gate_ok=0
   if [ "$MAIN_VERDICT" = unknown ]; then UNK_STREAK=$(( $(read_int "$SD/$NAME.unknown-streak") + 1 )); else UNK_STREAK=0; fi
   echo "$UNK_STREAK" > "$SD/$NAME.unknown-streak"
+  freeze_pass
+  thaw_pass
   if [ "$gate_ok" = 0 ]; then
     if [ "$MAIN_VERDICT" = unknown ]; then
       log "main CI unreadable ($MAIN_WF), streak $UNK_STREAK: merging nothing this cycle"

@@ -36,6 +36,9 @@ set -uo pipefail
 cd "$(dirname "$0")" || exit 1
 
 QUIET=0
+# A suite slower than this prints a `slow` line even in --quiet mode, as it finishes (the CI job once ran 25 min with no output to say where).
+SLOW_S="${RUN_TESTS_SLOW_S:-20}"
+slow_names=()
 [ "${1:-}" = "--quiet" ] && QUIET=1
 
 # CLASSES — "label|glob|runner". A repo's test stack is not one shape: this one
@@ -85,6 +88,7 @@ for line in $CLASSES; do
     if grep -qE "^${name}([[:space:]]|\$)" tests-pending.list 2>/dev/null; then
       skipped=$(( skipped + 1 )); printf '  SKIP  %s (pending Task 3 content, see tests-pending.list)\n' "$name"; continue
     fi
+    t0=$SECONDS
     if out="$(run_one "$runner" "$t")"; then
       [ "$QUIET" = "1" ] || printf '  ok    %s\n' "$name"
     else
@@ -93,6 +97,11 @@ for line in $CLASSES; do
       printf '  FAIL  %s\n' "$name"
       printf '%s\n' "$out" | sed 's/^/          /' \
         | grep -E 'FAIL|AssertionError|Traceback|passed|Error' | head -12
+    fi
+    dt=$(( SECONDS - t0 ))
+    if [ "$dt" -ge "$SLOW_S" ]; then
+      printf '  slow  %s %ss\n' "$name" "$dt"
+      slow_names+=("${dt}s $name")
     fi
   done
 
@@ -105,6 +114,10 @@ for line in $CLASSES; do
 done
 
 echo
+if [ "${#slow_names[@]}" -gt 0 ]; then
+  echo "ops tests: slowest suites (>= ${SLOW_S}s):"
+  printf '%s\n' ${slow_names[@]+"${slow_names[@]}"} | sort -rn | head -5 | sed 's/^/             /'
+fi
 # Finding NOTHING is a failure, not a pass. The installed runtime copy at
 # ~/.claude/scripts/ has no lib/__tests__/ (install.sh copies lib/*.sh, *.py,
 # *.json and *.mjs — not the test dir), so running it there printed
