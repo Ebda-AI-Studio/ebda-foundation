@@ -45,7 +45,14 @@ jobs:
           node-version: 22
           cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
       - run: npm ci
-      - run: npm audit --audit-level=low
+      - name: Audit production dependencies (blocking)
+        # Ruling AUDIT-SPLIT-1: `npm audit --omit=dev`, zero tolerance beyond .github/audit-allow.json (id, package, reason, expiry; an expired
+        # entry fails this step). Was `npm audit --audit-level=low` over EVERY dependency: GHSA-fc5q-39xc-vjpf (picomatch ReDoS, no patched
+        # version, test tooling only) turned it red on every PR and main.
+        run: node .github/scripts/audit-gate.mjs
+      - name: Report development advisories (non-blocking)
+        continue-on-error: true
+        run: node .github/scripts/audit-gate.mjs --all
 
   # Always-run PR check (no `if`, no paths filter): the one check the merge gate can always require, so a PR that touches
   # nothing under os/ or os/cloud/ still has a guaranteed explicit SUCCESS. Cheap (~15 s): shellcheck on the shell files this
@@ -159,8 +166,13 @@ jobs:
         run: npm run typecheck
       - if: steps.chg.outputs.changed == 'true'
         run: npm test
-      - if: steps.chg.outputs.changed == 'true'
-        run: npm audit --audit-level=low
+      - name: Audit production dependencies (blocking, Ruling AUDIT-SPLIT-1)
+        if: steps.chg.outputs.changed == 'true'
+        run: node "$GITHUB_WORKSPACE/.github/scripts/audit-gate.mjs"
+      - name: Report development advisories (non-blocking)
+        if: steps.chg.outputs.changed == 'true'
+        continue-on-error: true
+        run: node "$GITHUB_WORKSPACE/.github/scripts/audit-gate.mjs" --all
 
   # OS hands (os/cloud/hands): vitest with every leaf mocked, the --dry-run fixture walk, engine-free Dockerfile checks,
   # npm audit. Affected-only like `brain` (os/cloud/ or this workflow). Builds no image and spends no container minutes.
@@ -202,8 +214,13 @@ jobs:
         run: npm run dry-run
       - if: steps.chg.outputs.changed == 'true'
         run: npm run lint:dockerfile
-      - if: steps.chg.outputs.changed == 'true'
-        run: npm audit --audit-level=low
+      - name: Audit production dependencies (blocking, Ruling AUDIT-SPLIT-1)
+        if: steps.chg.outputs.changed == 'true'
+        run: node "$GITHUB_WORKSPACE/.github/scripts/audit-gate.mjs"
+      - name: Report development advisories (non-blocking)
+        if: steps.chg.outputs.changed == 'true'
+        continue-on-error: true
+        run: node "$GITHUB_WORKSPACE/.github/scripts/audit-gate.mjs" --all
       - name: Audit the pinned Claude Code CLI lockfile (image dependency)
         if: steps.chg.outputs.changed == 'true'
         working-directory: os/cloud/hands/claude-cli
