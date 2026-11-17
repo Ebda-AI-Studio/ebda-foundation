@@ -11,8 +11,10 @@
 #              `<gate> <pr> <sha> --repo R --interval 30 --max-wait-min M`. DRAIN_REQUIRED_JSON, when set, becomes MERGE_GATE_REQUIRED_JSON.
 #   --once     one cycle, then exit (tests, manual runs).
 #   --main-workflow  the repo's push-CI workflow on main (default CI; `none` turns the main checks off). MAIN GATE (G74 / DRAIN-5): nothing
-#              merges unless the newest completed main run is a success, no main run is queued/in progress, and at most --max-ahead
-#              (default 3, DRAIN-BATCH-1) merges sit on top of the last green main commit. Unreadable = not green (fail closed). A PR
+#              merges unless the newest completed main run is a success and no main run is queued/in progress at that moment, and at most
+#              --max-ahead (default 3, DRAIN-BATCH-1) merges sit on top of the last green main commit (so up to 3 PRs may merge in a row; main is
+#              re-read before EVERY gate call, and a main that turned red/pending mid-cycle stops the cycle). If the merge's own push run is not
+#              registered yet the previous green run is the newest: bounded by --max-ahead. Unreadable = not green (fail closed). A PR
 #              labelled `fixes-main` may merge while main is red (one per cycle) so the fix for a red main is never deadlocked. A main
 #              run that ended CANCELLED on the newest commit is re-run once per run id+attempt (every main commit gets a full run).
 #   HEAL (G47, DRAIN-HEAL-6/7): a PR whose only red is a CANCELLED/TIMED_OUT run (main-first preemption, hung job) gets that workflow's
@@ -21,8 +23,12 @@
 #              that starves main CI), and at most (max-ahead - ahead) PRs per cycle, oldest first (DRAIN-HEAL-4).
 #   STARVE (DRAIN-STARVE-1): runners take the NEWEST queued job first, so a required check on a `fixes-main` PR head can sit queued for
 #              hours (#884, 2h20m). Any run on a fixes-main PR's current head queued > --starve-min (default 20) is cancelled and re-run
-#              (back of the queue, picked next), once per run id+attempt. Only current fixes-main heads are touched (old ghost runs 409).
-#   MONEY (G49, DRAIN-MONEY-2): a `risky` PR needs money-review-passed applied AFTER its last non-merge commit; a PASS covers one head.
+#              (back of the queue, picked next), at most 2 times per RUN ID and --starve-min apart (createdAt does not move on a re-run). Only current
+#              fixes-main heads are touched, never one labelled `hold` (old ghost runs 409). Every re-run is read back and confirmed (RERUN-VERIFIED-1).
+#   MONEY (G49, MONEY-SHA-1): a `risky` PR needs the label money-review-passed AND the commit status `controller/money-review` = success on its
+#              exact head sha (set by the controller after the independent review: `gh api repos/<repo>/statuses/<sha> -f state=success
+#              -f context=controller/money-review`). A new head has no status, so a PASS covers one head; a fetch error, an empty or
+#              non-list answer refuses.
 # Safety:
 #   - OFF until switched over: does nothing unless $OS_STATE_DIR/drain/<name>.enabled exists (so installing the launchd job never
 #     races a controller's own loop). Turn on: touch it. Turn off: rm it, or touch <name>.stop. A global ~/.claude/handoff/drain.stop
@@ -39,7 +45,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
 args_help "${BASH_SOURCE[0]}" "$@"
-REPO=""; DIR=""; GATE="$HOME/.claude/scripts/merge-gate.sh"; HOLD=0; NAME=""; INTERVAL=60; STALL_MIN=60; HELD_MIN=120; MAXWAIT=20; ONCE=0; MAIN_WF="CI"; MAX_AHEAD=3; STARVE_MIN=20
+REPO=""; DIR=""; GATE="$HOME/.claude/scripts/merge-gate.sh"; HOLD=0; NAME=""; INTERVAL=60; STALL_MIN=60; HELD_MIN=120; MAXWAIT=20; ONCE=0; MAIN_WF="CI"; MAX_AHEAD=3; STARVE_MIN=20; STARVE_CAP=2
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="${2:?}"; shift ;; --dir) DIR="${2:?}"; shift ;; --gate) GATE="${2:?}"; shift ;; --hold-risky) HOLD=1 ;;
@@ -97,7 +103,8 @@ gate_running() { pgrep -f "merge-gate.sh $1 .*--repo $REPO " >/dev/null 2>&1; }
 # higher attempt. Up to 3 tries. Returns 0 only when the re-run is confirmed; 1 = still dead, the caller must NOT mark it done.
 rerun_verified() { # $1 = run id, rest = extra `gh run rerun` args (e.g. --failed)
   local id="$1" i w st st2 att0 att2; shift
-  att0="$(gh run view "$id" --repo "$REPO" --json attempt --jq .attempt 2>/dev/null)" || att0=0
+  att0="$(gh run view "$id" --repo "$REPO" --json attempt --jq .attempt 2>/dev/null)" || att0=""
+  [ -n "$att0" ] || return 1   # cannot read the run's attempt now: nothing to compare a later read with, so never confirm (a failed first read used to make any later read look like progress)
   for i in 1 2 3; do
     for w in 1 2 3 4 5 6; do
       st="$(gh run view "$id" --repo "$REPO" --json status --jq .status 2>/dev/null)" || st=""
@@ -176,32 +183,41 @@ $(gh pr list --repo "$REPO" --state open --base main --limit 60 --json number,me
 EOH
 }
 
-# DRAIN-MONEY-2: is money-review-passed on the PR and newer than its last non-merge commit?
-money_at_head() { # $1 = PR
-  local ev cm rc
-  ev="$(mktemp)"; cm="$(mktemp)"
-  gh api "repos/$REPO/issues/$1/events" --paginate > "$ev" 2>/dev/null && gh api "repos/$REPO/pulls/$1/commits" --paginate > "$cm" 2>/dev/null
-  python3 -I "$DE" --mode label-at-head --label money-review-passed --events "$ev" --commits "$cm" 2>/dev/null; rc=$?
-  rm -f "$ev" "$cm"; return $rc
+# Ruling MONEY-SHA-1 (supersedes DRAIN-MONEY-2's label-vs-commit-date check, which the review of 2026-11-17 showed fails open on an API error and trusts a
+# client-set committer date): a `risky` PR merges only when the controller has set the commit status `controller/money-review` = success on the EXACT
+# head sha (`gh api repos/<repo>/statuses/<sha> -f state=success -f context=controller/money-review`), after the independent review. A new head has no
+# such status, so a PASS covers one head by construction. Any fetch error, empty list or non-list body = refuse.
+MONEY_CONTEXT="controller/money-review"
+money_at_head() { # $1 = PR, $2 = head sha
+  local st rc
+  st="$(mktemp)"
+  if ! gh api "repos/$REPO/commits/$2/statuses" --paginate > "$st" 2>/dev/null; then rm -f "$st"; return 1; fi
+  python3 -I "$DE" --mode status-ok --context "$MONEY_CONTEXT" --file "$st" 2>/dev/null; rc=$?
+  rm -f "$st"; return $rc
 }
 
 # DRAIN-STARVE-1: requeue runs of fixes-main PR heads that sat queued too long. Runs every cycle, whatever main's state (main is red when this matters).
 starve_pass() {
-  local p sha id att
+  local p sha id att now n last
+  now="$(epoch)"
   while read -r p sha; do
     [ -n "$p" ] || continue
     gh run list --repo "$REPO" --commit "$sha" --limit 60 --json databaseId,status,createdAt,attempt 2>/dev/null \
       | python3 -I "$DE" --mode starved --min "$STARVE_MIN" 2>/dev/null | while read -r id att; do
         [ -n "$id" ] || continue
-        [ -f "$SD/$NAME.starved-$id-a$att" ] && continue
         rerun_gaveup "$id" && continue
-        # cancel, then re-run and CONFIRM it is queued again; the run is only marked done once it is (a cancelled run that never came
-        # back is what took #811's CI and a main run out on 2026-11-17)
+        # Per RUN ID, not per attempt: `createdAt` does not move on a re-run, so a re-queued run still looks old and an attempt-keyed marker never
+        # matched (the review of 2026-11-17: an endless cancel / re-run loop). At most $STARVE_CAP requeues per run id, at least $STARVE_MIN min apart.
+        n="$(read_int "$SD/$NAME.starve-n-$id")"; last="$(read_int "$SD/$NAME.starve-t-$id")"
+        [ "$n" -ge "$STARVE_CAP" ] && continue
+        [ "$last" -gt 0 ] && [ $((now - last)) -lt $((STARVE_MIN * 60)) ] && continue
+        # cancel, then re-run and CONFIRM it is queued again; counted only once it is (a cancelled run that never came back is what took #811's CI
+        # and a main run out on 2026-11-17)
         if [ -f "$SD/$NAME.rerun-fails-$id" ] || gh run cancel "$id" --repo "$REPO" >/dev/null 2>&1; then
           # (a later cycle after a failed re-run only retries the re-run: the run is already cancelled, never cancel it twice)
-          if rerun_verified "$id"; then : > "$SD/$NAME.starved-$id-a$att"; log "STARVE #$p run $id queued >${STARVE_MIN}m: cancelled and re-queued (confirmed)"
+          if rerun_verified "$id"; then echo $((n + 1)) > "$SD/$NAME.starve-n-$id"; echo "$now" > "$SD/$NAME.starve-t-$id"; log "STARVE #$p run $id queued >${STARVE_MIN}m: cancelled and re-queued (confirmed, $((n + 1))/$STARVE_CAP)"
           else rerun_failed_note "$id" "starve #$p"; fi
-        else : > "$SD/$NAME.starved-$id-a$att"; fi   # cancel refused (409 ghost, holds no runner): never retried
+        else echo "$STARVE_CAP" > "$SD/$NAME.starve-n-$id"; fi   # cancel refused (409 ghost, holds no runner): never retried
       done
   done <<EOS
 $(gh pr list --repo "$REPO" --state open --base main --label fixes-main --limit 30 --json number,headRefOid,labels --jq '.[]|select(all(.labels[]; .name != "hold"))|"\(.number) \(.headRefOid)"' 2>/dev/null)
@@ -214,18 +230,26 @@ cycle() {
   ready="$(list_ready)"; rc=$?
   if [ "$rc" -ne 0 ]; then log "cannot read PRs of $REPO; skipping this cycle (no progress claimed, no stall judged)"; return 3; fi
   oldest_held=0
-  local gate_ok=1 fixes_only=0 heal_room
+  local gate_ok=1 fixes_only=0 heal_room ahead0 ahead_eff
   starve_pass
   main_gate || gate_ok=0
+  if [ "$MAIN_VERDICT" = unknown ]; then UNK_STREAK=$(( $(read_int "$SD/$NAME.unknown-streak") + 1 )); else UNK_STREAK=0; fi
+  echo "$UNK_STREAK" > "$SD/$NAME.unknown-streak"
   if [ "$gate_ok" = 0 ]; then
-    if [ "$MAIN_VERDICT" = unknown ]; then log "main CI unreadable ($MAIN_WF): merging nothing this cycle"; return 3; fi
+    if [ "$MAIN_VERDICT" = unknown ]; then
+      log "main CI unreadable ($MAIN_WF), streak $UNK_STREAK: merging nothing this cycle"
+      [ "$UNK_STREAK" -ge 3 ] && log "ALERT: no main $MAIN_WF run could be read for $UNK_STREAK cycles in a row; if the workflow name is wrong pass --main-workflow, or --main-workflow none"
+      return 3
+    fi
     log "main not green ($MAIN_VERDICT $MAIN_SHA, +$MAIN_AHEAD since green): only fixes-main PRs"; fixes_only=1
   elif [ "$MAIN_VERDICT" = green ]; then
     heal_room=$((MAX_AHEAD - MAIN_AHEAD)); [ "$heal_room" -gt 0 ] && heal_pass "$heal_room"
   fi
+  ahead0="$MAIN_AHEAD"
   while read -r p sha risky passed fixes moneyneeded; do
     [ -n "$p" ] || continue
-    if [ "$MAIN_VERDICT" != off ] && [ $((MAIN_AHEAD + merged)) -ge "$MAX_AHEAD" ] && [ "$fixes_only" = 0 ]; then log "batch full ($MAX_AHEAD merges on the last green main): waiting for main CI"; break; fi
+    ahead_eff=$((ahead0 + merged)); [ "$MAIN_AHEAD" -gt "$ahead_eff" ] && ahead_eff="$MAIN_AHEAD"
+    if [ "$MAIN_VERDICT" != off ] && [ "$ahead_eff" -ge "$MAX_AHEAD" ] && [ "$fixes_only" = 0 ]; then log "batch full ($MAX_AHEAD merges on the last green main): waiting for main CI"; break; fi
     if [ "$HOLD" = 1 ] && [ "$risky" = 1 ] && [ "$passed" != 1 ]; then
       held=$((held + 1)); log "HOLD #$p risky, awaiting ai-review-passed"
       hf="$SD/$NAME.held.$p"; [ -f "$hf" ] || epoch > "$hf"
@@ -236,7 +260,16 @@ cycle() {
       # red main: only a PR labelled fixes-main may merge, one per cycle, and only when main is red (not pending/full/unverified)
       if [ "$fixes" != 1 ] || [ "$MAIN_VERDICT" != red ] || [ "$merged" -gt 0 ]; then continue; fi
     fi
-    if [ "$moneyneeded" = 1 ] && ! money_at_head "$p"; then log "HOLD #$p money-review-passed predates the head (a PASS covers one head)"; continue; fi
+    if [ "$moneyneeded" = 1 ] && ! money_at_head "$p" "$sha"; then log "HOLD #$p no ${MONEY_CONTEXT} success on head ${sha:0:8} (a PASS covers one head; fetch errors refuse)"; continue; fi
+    # Re-read main before EVERY gate call (a gate waits up to --max-wait-min, so main can turn red or pending between two merges of one cycle).
+    if [ "$merged" -gt 0 ] || [ "$fixes_only" = 0 ]; then
+      if main_gate; then :; else
+        if [ "$MAIN_VERDICT" = unknown ]; then log "main CI unreadable before gating #$p: stopping this cycle"; break; fi
+        if [ "$fixes" != 1 ] || [ "$MAIN_VERDICT" != red ] || [ "$merged" -gt 0 ]; then log "main is $MAIN_VERDICT ($MAIN_SHA) before gating #$p: not gating"; continue; fi
+      fi
+      ahead_eff=$((ahead0 + merged)); [ "$MAIN_AHEAD" -gt "$ahead_eff" ] && ahead_eff="$MAIN_AHEAD"
+      if [ "$MAIN_VERDICT" != off ] && [ "$MAIN_VERDICT" != red ] && [ "$ahead_eff" -ge "$MAX_AHEAD" ]; then log "batch full ($MAX_AHEAD ahead of the last green main): waiting for main CI"; break; fi
+    fi
     fk="$SD/$NAME.failed.$p.$sha"; fail_at="$(read_int "$fk")"
     if [ "$fail_at" -gt 0 ] && [ $((now - fail_at)) -lt 600 ]; then log "skip #$p ${sha:0:8}: gate failed $((now - fail_at))s ago"; continue; fi
     gate_running "$p" && { log "skip #$p: a gate is already running"; continue; }
@@ -291,13 +324,17 @@ print(json.dumps(out))
 PY
 )"
   fi
+  # a drain that cannot read main's workflow merges NOTHING and used to say nothing (wrong --main-workflow name = `runs []` = unknown, forever)
+  if [ "$(read_int "$SD/$NAME.unknown-streak")" -ge 3 ]; then
+    findings="$(python3 -I -c 'import json,sys; f=json.loads(sys.argv[1]); f.append({"source":"drain-"+sys.argv[3],"kind":"drain-main-unreadable","key":sys.argv[2]+"|main","repo":sys.argv[2],"severity":"P1","title":"drain for %s cannot read main workflow %s: nothing merges (wrong --main-workflow name?)" % (sys.argv[2], sys.argv[4]),"detail":{"streak":int(sys.argv[5]),"mainWorkflow":sys.argv[4]}}); print(json.dumps(f))' "$findings" "$REPO" "$NAME" "$MAIN_WF" "$(read_int "$SD/$NAME.unknown-streak")")"
+  fi
   summary="eligible=${CYC_ELIGIBLE:-?} held=${CYC_HELD:-?} merged=${CYC_MERGED:-0} stalled=$stalled"
   printf '{"at":%s,"cycleRc":%s,"stalled":%s,"heldLong":%s,"minutesWithoutProgress":%s}\n' "$now" "$1" \
     "$([ "$stalled" = 1 ] && echo true || echo false)" "$([ "$heldlong" = 1 ] && echo true || echo false)" "$stall_age" > "$HB"
   if command -v write_status >/dev/null 2>&1; then
     if [ "$stalled" = 1 ]; then write_status "drain-$NAME" false "$summary" '{}'; else write_status "drain-$NAME" true "$summary" '{}'; fi
   fi
-  [ "$1" = 0 ] || return 0
+  [ "$1" = 0 ] || [ "$(read_int "$SD/$NAME.unknown-streak")" -ge 3 ] || return 0
   last="$(read_int "$POSTED")"
   # post every 10 min, and at once when the finding set changed (opened or cleared)
   if [ $((now - last)) -ge 600 ] || [ "$findings" != "$(cat "$SD/$NAME.last-findings" 2>/dev/null)" ]; then

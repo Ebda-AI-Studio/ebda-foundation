@@ -27,8 +27,9 @@ CLI: python3 drain_eligible.py --mode drain|stall [--hold-risky]   (gh pr list -
            run of every workflow on that head that ended cancelled/timed_out, provided every workflow on the head is completed
     starved --min N  (stdin: gh run list --commit <sha> --json databaseId,status,createdAt,attempt) prints "<id> <attempt>" for every run
            still queued after N minutes (DRAIN-STARVE-1: runners take the newest queued job first, so an old one can wait for hours)
-    label-at-head --label L --events FILE --commits FILE  (issue events + PR commits, gh api --paginate output) exit 0 only when <label> is on the PR and was applied after
-           the last non-merge commit (DRAIN-MONEY-2: a PASS covers one head)
+    status-ok --context C --file F  (gh api repos/R/commits/<head sha>/statuses --paginate output) exit 0 ONLY when the newest status of that context on
+           that exact head sha is `success` (Ruling MONEY-SHA-1). Fail closed: an empty list, an error body (a dict with `message`), anything that is
+           not a list of status objects, or a newest status that is not success, exits 1.
 """
 import json
 import sys
@@ -151,13 +152,16 @@ def _load_many(text):
     return out
 
 
-def label_at_head(label, events, commits):
-    when = [e["created_at"] for e in events if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == label]
-    unl = [e["created_at"] for e in events if e.get("event") == "unlabeled" and (e.get("label") or {}).get("name") == label]
-    if not when or (unl and max(unl) > max(when)):
+def status_ok(context, data):
+    """True only when the newest status of `context` is success. `data` is the parsed `statuses` response (a list, or several
+    pages concatenated). Anything else is False: a gate that cannot read its evidence refuses."""
+    if not isinstance(data, list) or not data:
         return False
-    own = [c["commit"]["committer"]["date"] for c in commits if len(c.get("parents") or []) == 1]
-    return not own or max(when) > max(own)
+    rows = [r for r in data if isinstance(r, dict) and r.get("context") == context and isinstance(r.get("created_at"), str)]
+    if not rows:
+        return False
+    newest = max(rows, key=lambda r: r["created_at"])
+    return newest.get("state") == "success"
 
 
 def starved_runs(runs, min_minutes, now=None):
@@ -191,10 +195,13 @@ def main(argv):
         for rid, att in heal_runs(json.load(sys.stdin)):
             print(rid, att)
         return
-    if mode == "label-at-head":
+    if mode == "status-ok":
         arg = lambda k: argv[argv.index(k) + 1]
-        ev = _load_many(open(arg("--events")).read()); cm = _load_many(open(arg("--commits")).read())
-        sys.exit(0 if label_at_head(arg("--label"), ev, cm) else 1)
+        try:
+            data = _load_many(open(arg("--file")).read())
+        except Exception:
+            sys.exit(1)
+        sys.exit(0 if status_ok(arg("--context"), data) else 1)
     prs = json.load(sys.stdin)
     if mode == "heal":
         for p in prs:
