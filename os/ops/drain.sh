@@ -91,6 +91,41 @@ list_ready() {
 # PR numbers repeat across repos: match this repo too, or a gate on another repo's #N would skip ours
 gate_running() { pgrep -f "merge-gate.sh $1 .*--repo $REPO " >/dev/null 2>&1; }
 
+# Re-run a run and VERIFY it took (2026-11-17: a cancel + re-run left #811's CI and a main CI run cancelled for good, because the re-run was
+# asked for while the run was still cancelling, failed silently, and the once-per-run marker stopped any retry). Waits for the run to be
+# `completed` (a run that is still cancelling cannot be re-run), re-runs, then reads the run back: it must be queued / in progress or on a
+# higher attempt. Up to 3 tries. Returns 0 only when the re-run is confirmed; 1 = still dead, the caller must NOT mark it done.
+rerun_verified() { # $1 = run id, rest = extra `gh run rerun` args (e.g. --failed)
+  local id="$1" i w st st2 att0 att2; shift
+  att0="$(gh run view "$id" --repo "$REPO" --json attempt --jq .attempt 2>/dev/null)" || att0=0
+  for i in 1 2 3; do
+    for w in 1 2 3 4 5 6; do
+      st="$(gh run view "$id" --repo "$REPO" --json status --jq .status 2>/dev/null)" || st=""
+      [ "$st" = completed ] && break
+      sleep "${RERUN_WAIT:-10}"
+    done
+    gh run rerun "$id" --repo "$REPO" "$@" >/dev/null 2>&1
+    sleep "${RERUN_VERIFY_SLEEP:-5}"
+    read -r st2 att2 <<EOV
+$(gh run view "$id" --repo "$REPO" --json status,attempt --jq '"\(.status) \(.attempt)"' 2>/dev/null)
+EOV
+    if [ "$st2" = queued ] || [ "$st2" = in_progress ] || [ "${att2:-0}" -gt "${att0:-0}" ] 2>/dev/null; then return 0; fi
+  done
+  return 1
+}
+# A re-run that could not be confirmed is retried on later cycles, at most 3 times per run id, then reported once and left to a human.
+rerun_failed_note() { # $1 = id, $2 = what
+  local f="$SD/$NAME.rerun-fails-$1" n
+  n=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$f"
+  if [ "$n" -ge 3 ]; then
+    echo "$1" >> "$SD/$NAME.rerun-failed"
+    log "RERUN-FAILED run $1 ($2): not confirmed after $n cycles x 3 tries, left cancelled; needs a manual re-run"
+    return 0
+  fi
+  log "re-run of run $1 ($2) not confirmed (cycle $n/3), will retry"
+}
+rerun_gaveup() { grep -qxF "$1" "$SD/$NAME.rerun-failed" 2>/dev/null; }
+
 DE="$HERE/lib/drain_eligible.py"
 # MAIN GATE. Sets MAIN_VERDICT (green|full|red|pending|unverified|unknown|off), MAIN_SHA, MAIN_AHEAD. Rc 0 = may merge ordinary PRs.
 main_gate() {
@@ -111,9 +146,10 @@ for r in json.load(sys.stdin):
 $(printf '%s' "$runs" | python3 -I "$DE" --mode main --max-ahead "$MAX_AHEAD" --ahead "$ahead" 2>/dev/null || echo "unknown - 0 0")
 EOV
   MAIN_VERDICT="${v:-unknown}"
-  if [ "$MAIN_VERDICT" = unverified ] && [ "${rid:-0}" -gt 0 ] && [ ! -f "$SD/$NAME.healed-main-$rid-a$att" ]; then
-    : > "$SD/$NAME.healed-main-$rid-a$att"   # G74: the newest main commit has no completed run: ask for one (once per id+attempt)
-    gh run rerun "$rid" --repo "$REPO" >/dev/null 2>&1 && log "main run $rid on $MAIN_SHA ended cancelled: re-run requested"
+  if [ "$MAIN_VERDICT" = unverified ] && [ "${rid:-0}" -gt 0 ] && [ ! -f "$SD/$NAME.healed-main-$rid-a$att" ] && ! rerun_gaveup "$rid"; then
+    # G74: the newest main commit has no completed run: ask for one, and confirm it took (marked done only once it did)
+    if rerun_verified "$rid"; then : > "$SD/$NAME.healed-main-$rid-a$att"; log "main run $rid on $MAIN_SHA ended cancelled: re-run confirmed"
+    else rerun_failed_note "$rid" "main on $MAIN_SHA"; fi
   fi
   case "$MAIN_VERDICT" in green|off) return 0 ;; *) return 1 ;; esac
 }
@@ -130,8 +166,9 @@ heal_pass() { # $1 = how many PRs may be healed this cycle
         [ -n "$id" ] || continue
         [ -f "$SD/$NAME.healed-$id-a$att" ] && continue
         [ "${att:-1}" -ge 20 ] && continue   # main-first preemption counts too, but not forever
-        : > "$SD/$NAME.healed-$id-a$att"
-        gh run rerun "$id" --repo "$REPO" --failed >/dev/null 2>&1 && log "HEAL #$p re-run $id (cancelled on ${sha:0:8})"
+        rerun_gaveup "$id" && continue
+        if rerun_verified "$id" --failed; then : > "$SD/$NAME.healed-$id-a$att"; log "HEAL #$p re-run $id confirmed (cancelled on ${sha:0:8})"
+        else rerun_failed_note "$id" "heal #$p"; fi
       done
     n=$((n + 1))
   done <<EOH
@@ -157,12 +194,17 @@ starve_pass() {
       | python3 -I "$DE" --mode starved --min "$STARVE_MIN" 2>/dev/null | while read -r id att; do
         [ -n "$id" ] || continue
         [ -f "$SD/$NAME.starved-$id-a$att" ] && continue
-        : > "$SD/$NAME.starved-$id-a$att"
-        gh run cancel "$id" --repo "$REPO" >/dev/null 2>&1; sleep "${STARVE_SLEEP:-20}"
-        gh run rerun "$id" --repo "$REPO" >/dev/null 2>&1 && log "STARVE #$p run $id queued >${STARVE_MIN}m: cancelled and re-queued"
+        rerun_gaveup "$id" && continue
+        # cancel, then re-run and CONFIRM it is queued again; the run is only marked done once it is (a cancelled run that never came
+        # back is what took #811's CI and a main run out on 2026-11-17)
+        if [ -f "$SD/$NAME.rerun-fails-$id" ] || gh run cancel "$id" --repo "$REPO" >/dev/null 2>&1; then
+          # (a later cycle after a failed re-run only retries the re-run: the run is already cancelled, never cancel it twice)
+          if rerun_verified "$id"; then : > "$SD/$NAME.starved-$id-a$att"; log "STARVE #$p run $id queued >${STARVE_MIN}m: cancelled and re-queued (confirmed)"
+          else rerun_failed_note "$id" "starve #$p"; fi
+        else : > "$SD/$NAME.starved-$id-a$att"; fi   # cancel refused (409 ghost, holds no runner): never retried
       done
   done <<EOS
-$(gh pr list --repo "$REPO" --state open --base main --label fixes-main --limit 30 --json number,headRefOid --jq '.[]|"\(.number) \(.headRefOid)"' 2>/dev/null)
+$(gh pr list --repo "$REPO" --state open --base main --label fixes-main --limit 30 --json number,headRefOid,labels --jq '.[]|select(all(.labels[]; .name != "hold"))|"\(.number) \(.headRefOid)"' 2>/dev/null)
 EOS
 }
 

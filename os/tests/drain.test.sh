@@ -12,7 +12,7 @@ export HOME="$T/home"; mkdir -p "$HOME/.claude/handoff" "$T/bin" "$T/checkout"
 export OS_STATE_DIR="$T/state" OS_LOCK_DIR="$T/locks" EBDA_OS_LOCAL_ENV="$T/none.env" OS_SERVICES_ENV="$T/none.services"
 export PATH="$T/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 SD="$OS_STATE_DIR/drain"
-export STARVE_SLEEP=0 PRS_FILE="$T/prs.json" GATE_LOG="$T/gate.log" GATE_RC=0 POST_LOG="$T/post.log" MAIN_RUNS="$T/main-runs.json" RERUN_LOG="$T/rerun.log" T
+export RERUN_WAIT=0 RERUN_VERIFY_SLEEP=0 STARVE_SLEEP=0 PRS_FILE="$T/prs.json" GATE_LOG="$T/gate.log" GATE_RC=0 POST_LOG="$T/post.log" MAIN_RUNS="$T/main-runs.json" RERUN_LOG="$T/rerun.log" T
 
 # gh stub: pr list -> $PRS_FILE; run list -> main runs ($MAIN_RUNS) or, with --commit SHA, $T/runs-SHA.json; run rerun -> $RERUN_LOG;
 # api compare -> {"ahead_by": $AHEAD}; api issues/N/events and pulls/N/commits -> $T/events-N.json / $T/commits-N.json
@@ -21,11 +21,13 @@ cat > "$T/bin/gh" <<'STUB'
 [ -n "${GH_FAIL:-}" ] && exit 1
 case "$1 $2" in
   "pr list") case "$*" in *--label*) cat "$T/fixes-list.txt" 2>/dev/null ;; *) cat "$PRS_FILE" ;; esac ;;
-  "run cancel") echo "$*" >> "$RERUN_LOG" ;;
+  "run cancel") echo "$*" >> "$RERUN_LOG"; echo "completed $(cut -d' ' -f2 "$T/rs-$3" 2>/dev/null || echo 1)" > "$T/rs-$3" ;;
+  "run view") rs="$(cat "$T/rs-$3" 2>/dev/null || echo "completed 1")"; case "$*" in *status,attempt*) echo "$rs" ;; *"json status"*) echo "${rs% *}" ;; *"json attempt"*) echo "${rs#* }" ;; esac ;;
   "run list") [ -n "${MAIN_FAIL:-}" ] && exit 1
     sha=""; while [ $# -gt 0 ]; do [ "$1" = --commit ] && sha="$2"; shift; done
     if [ -n "$sha" ]; then cat "$T/runs-$sha.json" 2>/dev/null || echo '[]'; else cat "$MAIN_RUNS"; fi ;;
-  "run rerun") echo "$*" >> "$RERUN_LOG" ;;
+  "run rerun") echo "$*" >> "$RERUN_LOG"
+    case " ${REFUSE_RERUN:-} " in *" $3 "*) ;; *) a="$(cut -d' ' -f2 "$T/rs-$3" 2>/dev/null || echo 1)"; echo "queued $((a + 1))" > "$T/rs-$3" ;; esac ;;
   "api repos"*|"api "*)
     case "$2" in
       */compare/*) echo "{\"ahead_by\": ${AHEAD:-0}}" ;;
@@ -67,7 +69,7 @@ REPO_SLUG="drain-test-$$/r"
 run() { bash "$DRAIN" --repo "$REPO_SLUG" --dir "$T/checkout" --gate "$T/gate.sh" --name r --once "$@" 2>&1; }
 main_runs() { echo "$1" > "$MAIN_RUNS"; }   # newest first: id sha status conclusion attempt
 mr() { printf '{"databaseId":%s,"headSha":"%s","status":"%s","conclusion":"%s","attempt":%s}' "$1" "$2" "$3" "$4" "${5:-1}"; }
-reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$RERUN_LOG" "$T/locks" "$HOME/.claude/handoff/drain.stop" "$T"/events-*.json "$T"/commits-*.json "$T"/runs-*.json "$T/fixes-list.txt"; : > "$GATE_LOG"; mkdir -p "$SD"; GATE_RC=0; unset GH_FAIL MAIN_FAIL; AHEAD=0; export AHEAD
+reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$RERUN_LOG" "$T/locks" "$HOME/.claude/handoff/drain.stop" "$T"/events-*.json "$T"/commits-*.json "$T"/runs-*.json "$T/fixes-list.txt" "$T"/rs-*; : > "$GATE_LOG"; mkdir -p "$SD"; GATE_RC=0; unset GH_FAIL MAIN_FAIL REFUSE_RERUN; AHEAD=0; export AHEAD
   main_runs "[$(mr 900 m000000aa completed success)]"; }
 on() { touch "$SD/r.enabled"; }
 # money fixtures: label applied at <labeled>, last non-merge commit at <commit> (ISO times)
@@ -199,6 +201,23 @@ reset; on; prs; echo "5 hs5" > "$T/fixes-list.txt"; wr hs5 "$(qr 55 "$(date -u +
 run >/dev/null; [ ! -s "$RERUN_LOG" ] && ok "a freshly queued fixes-main run is left alone" || no "requeued a fresh run"
 reset; on; prs; : > "$T/fixes-list.txt"; wr hs5 "$(qr 55 2026-11-17T05:14:00Z)"
 run >/dev/null; [ ! -s "$RERUN_LOG" ] && ok "queued runs on non-fixes-main heads (ghost runs) are never touched" || no "touched a non-fixes-main run"
+
+# ---- re-run is VERIFIED (2026-11-17: #811's CI and a main run stayed cancelled because the re-run silently did not take)
+reset; on; prs "$(cpr 7 h7 CI CANCELLED)"; wr h7 "$(rr 72 CI cancelled)"; REFUSE_RERUN="72"; export REFUSE_RERUN
+run >/dev/null; [ "$(grep -c '^run rerun 72 ' "$RERUN_LOG")" = 3 ] && [ ! -f "$SD/r.healed-72-a1" ] && ok "a re-run that does not take is retried (3 tries) and the run is NOT marked healed (G47)" || no "unverified rerun marked or not retried ($(grep -c '^run rerun 72 ' "$RERUN_LOG"))"
+run >/dev/null; run >/dev/null
+grep -qx 72 "$SD/r.rerun-failed" && ok "after 3 cycles the failure is reported once (RERUN-FAILED) and left to a human" || no "no RERUN-FAILED record"
+n=$(grep -c '^run rerun 72 ' "$RERUN_LOG"); run >/dev/null; [ "$(grep -c '^run rerun 72 ' "$RERUN_LOG")" = "$n" ] && ok "a run given up on is not retried forever" || no "kept retrying a given-up run"
+reset; on; prs "$(cpr 7 h7 CI CANCELLED)"; wr h7 "$(rr 72 CI cancelled)"; unset REFUSE_RERUN
+run >/dev/null; [ -f "$SD/r.healed-72-a1" ] && ok "a confirmed re-run is marked healed" || no "confirmed re-run not marked"
+reset; on; prs; echo "5 hs5" > "$T/fixes-list.txt"; wr hs5 "$(qr 55 2026-11-17T05:14:00Z)"; REFUSE_RERUN="55"; export REFUSE_RERUN
+run >/dev/null; run >/dev/null
+[ ! -f "$SD/r.starved-55-a1" ] && [ "$(grep -c '^run rerun 55 ' "$RERUN_LOG")" = 6 ] && [ "$(grep -c '^run cancel 55 ' "$RERUN_LOG")" = 1 ] && ok "starve: cancelled once, then the re-run is retried on later cycles until it takes (never left cancelled)" || no "starve left a run cancelled ($(grep -c '^run cancel 55 ' "$RERUN_LOG") cancels, $(grep -c '^run rerun 55 ' "$RERUN_LOG") reruns)"
+unset REFUSE_RERUN
+if command -v jq >/dev/null 2>&1; then
+  out="$(printf '%s' '[{"number":1,"headRefOid":"aa","labels":[{"name":"fixes-main"},{"name":"hold"}]},{"number":2,"headRefOid":"bb","labels":[{"name":"fixes-main"}]}]' | jq -r '.[]|select(all(.labels[]; .name != "hold"))|"\(.number) \(.headRefOid)"')"
+  grep -qF 'select(all(.labels[]; .name != "hold"))' "$DRAIN" && [ "$out" = "2 bb" ] && ok "starve never touches a PR labelled hold (the filter the drain passes to gh keeps only #2)" || no "hold filter wrong ($out)"
+fi
 
 reset; on; run --bogus >/dev/null 2>&1; [ $? = 2 ] && ok "unknown flag exits 2" || no "unknown flag accepted"
 echo "drain: $p passed, $f failed"; [ "$f" = 0 ]
