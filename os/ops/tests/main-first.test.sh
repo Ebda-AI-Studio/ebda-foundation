@@ -51,7 +51,7 @@ prq() { local a="" s i br sha n; for s in "$@"; do IFS=: read -r i br sha n <<<"
   echo "{\"workflow_runs\":[${a%,}]}" > "$FK/prq.json"; }
 run() { FAKE_DIR="$FK" PATH="$BIN:$PATH" HOME="$T/home" MAIN_FIRST_REPOS="o/r" MAIN_FIRST_STATE="$T/state" MAIN_FIRST_LOG="$T/log" MAIN_FIRST_NOW="$NOW" MAIN_FIRST_VERIFY_WAIT=0 MAIN_FIRST_ALLOW_BRANCHES="${ALLOW:-}" bash "$OPS/main-first.sh" "$@" >"$T/out" 2>&1; }
 posts() { cat "$FK/posts.log" 2>/dev/null; }
-has() { posts | grep -q -F "$1"; }
+has() { grep -q -F "$1" < <(posts); }
 # ledger runs are completed+cancelled unless a test says otherwise
 canc() { for i in "$@"; do echo "{\"status\":\"completed\",\"conclusion\":\"cancelled\",\"run_attempt\":1}" > "$FK/run_$i.json"; done; }
 

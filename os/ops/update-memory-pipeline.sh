@@ -613,7 +613,7 @@ vault_secret_gate() {
 
   # `detect` is deprecated and ABSENT from 8.30.1; `dir` is the subcommand. Pin the
   # check itself so a future rename cannot silently turn this into exit 0 / no output.
-  if ! gitleaks --help 2>&1 | grep -qE '^\s+dir\s'; then
+  if ! grep -qE '^\s+dir\s' < <(gitleaks --help 2>&1); then
     echo "  [vault] SECRET GATE: FAIL — this gitleaks has no 'dir' subcommand ($(gitleaks version 2>&1))."
     return 4
   fi

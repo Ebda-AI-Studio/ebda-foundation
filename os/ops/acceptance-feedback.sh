@@ -67,7 +67,7 @@ if [ "$HAVE_GH" = "1" ] && [ -n "$WORK" ]; then
   while IFS= read -r url; do
     [ -n "$url" ] || continue
     TOTAL=$((TOTAL+1))
-    kind="issue"; printf '%s' "$url" | grep -q '/pull/' && kind="pr"
+    kind="issue"; grep -q '/pull/' < <(printf '%s' "$url") && kind="pr"
     # state + reason + updatedAt + the repo/title for suppression keys
     meta="$(gh "$kind" view "$url" --json state,stateReason,updatedAt,title 2>/dev/null || true)"
     [ -n "$meta" ] || { OPEN_FRESH=$((OPEN_FRESH+1)); continue; }

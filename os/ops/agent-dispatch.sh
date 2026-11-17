@@ -138,7 +138,7 @@ LOWER=$(echo "$TEXT" | tr '[:upper:]' '[:lower:]')
 # "ebda-store" is not shadowed by "ebda" by a looser match.
 while IFS='|' read -r alias rel; do
   [[ -z "$alias" ]] && continue
-  if echo "$LOWER" | grep -qE "(^|[^a-z0-9])${alias}([^a-z0-9]|$)"; then
+  if grep -qE "(^|[^a-z0-9])${alias}([^a-z0-9]|$)" < <(echo "$LOWER"); then
     for _d in "$PROJECTS"/$rel; do [[ -d "$_d" ]] && { INFERRED="$_d"; break 2; }; done
   fi
 done <<ALIASES

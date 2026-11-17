@@ -5,6 +5,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 rc=0
 echo "== no-force-strings =="; bash "$ROOT/os/tests/no-force-strings.test.sh" || rc=1
+echo "== no-pipe-grep-q =="; bash "$ROOT/os/tests/no-pipe-grep-q.test.sh" || rc=1
 echo "== no-literal-config =="; bash "$ROOT/os/tests/no-literal-config.test.sh" || rc=1
 echo "== standard-links =="; node "$ROOT/os/tests/standard-links.test.mjs" || rc=1
 echo "== os-local-list =="; bash "$ROOT/os/tests/os-local-list.test.sh" || rc=1

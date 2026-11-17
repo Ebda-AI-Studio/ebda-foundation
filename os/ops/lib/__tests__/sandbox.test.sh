@@ -26,7 +26,7 @@ out="$(sandbox_run "$H" -- /bin/echo hi 2>&1)"; rc=$?
 grep -q "REFUSING to run unconfined" <<<"$out" && ok "says why it refused" || no "says why it refused"
 # anchored: a bare grep for "hi" also matches "this" in the refusal message,
 # which made this assertion fail while the code was correct
-printf '%s\n' "$out" | grep -qx "hi" && no "did NOT run the command" || ok "did NOT run the command"
+grep -qx "hi" < <(printf '%s\n' "$out") && no "did NOT run the command" || ok "did NOT run the command"
 
 # the deliberate override runs it AND announces itself
 out="$(SANDBOX_ALLOW_UNCONFINED=1 sandbox_run "$H" -- /bin/echo hi 2>&1)"; rc=$?

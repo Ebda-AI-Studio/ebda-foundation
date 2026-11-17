@@ -7,7 +7,7 @@ ok() { echo "PASS: $1"; }; bad() { echo "FAIL: $1"; _fail=1; }
 out="$(env PATH="/usr/bin:/bin" OS_HOME="$ROOT" OS_LOOP_AUDITS_DIR=/nonexistent bash os/ops/loop-status.sh --no-net 2>&1)"; rc=$?
 [ "$rc" = 0 ] && ok "exit 0" || bad "exit $rc"
 for s in "open PRs" "STILL-OPEN / FOUND" "deploy:" "alerts last 24h" "drains" "exit-check"; do
-  printf '%s' "$out" | grep -qF -- "---- $s" && ok "section $s" || bad "missing section $s"
+  grep -qF -- "---- $s" < <(printf '%s' "$out") && ok "section $s" || bad "missing section $s"
 done
 grep -q 'skipped' <<<"$out" && ok "net sections skipped" || bad "net not skipped"
 f=os/skills/ebda-loop/SKILL.md

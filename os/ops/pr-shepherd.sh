@@ -80,7 +80,7 @@ for repo in $repos; do
       run_id=$(_ut "$OS_UT_FAST" gh run list -R "$ORG/$repo" --branch "$branch" --json databaseId,conclusion --jq '.[] | select(.conclusion=="failure" or .conclusion=="cancelled") | .databaseId' 2>/dev/null | head -1)
       infra=0
       if [ -n "$run_id" ]; then
-        _ut "$OS_UT_FAST" gh run view -R "$ORG/$repo" "$run_id" --log-failed 2>/dev/null | tail -80 | grep -qiE "$INFRA_RE" && infra=1
+        grep -qiE "$INFRA_RE" < <(_ut "$OS_UT_FAST" gh run view -R "$ORG/$repo" "$run_id" --log-failed 2>/dev/null | tail -80) && infra=1
       fi
       if [ "$infra" = "1" ]; then
         n=$(led_get "rerun:$key")

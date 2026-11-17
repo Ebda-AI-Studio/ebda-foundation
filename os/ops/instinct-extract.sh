@@ -112,7 +112,7 @@ print(next(iter(g)) if len(g) == 1 else "")' 2>/dev/null || echo "")
 
 # guard: if the traces carried no real content (broken logger wrote blank fields),
 # skip the LLM call entirely — reviewing 400 blank lines burns a round-trip on nothing.
-if ! printf '%s' "$digest" | tr -d ' |\n\t' | grep -q .; then
+if ! grep -q . < <(printf '%s' "$digest" | tr -d ' |\n\t'); then
   echo "$ts traces present but digest is blank (logger fields empty) — skip LLM, archiving traces" >> "$LOG"
   for t in $traces; do mv "$t" "$ADIR/" 2>/dev/null; done
   exit 0

@@ -47,7 +47,7 @@ for f in "$MEMDIR"/*.md; do
   b="$(basename "$f")"
   case "$b" in MEMORY.md|MEMORY-*.md|CLAUDE.md) continue;; esac
   total=$((total+1))
-  printf '%s\n' "$covered" | grep -qxF "$b" || { echo "$MEMDIR/$b" >> /tmp/graph-ungraphed.txt; ung=$((ung+1)); }
+  grep -qxF "$b" < <(printf '%s\n' "$covered") || { echo "$MEMDIR/$b" >> /tmp/graph-ungraphed.txt; ung=$((ung+1)); }
 done
 graphed=$((total-ung))
 pct=$(( total>0 ? graphed*100/total : 100 ))

@@ -125,7 +125,7 @@ fi
 # Collect matching source files (bash 3.2-safe glob expansion)
 SOURCE_FILES=""
 # Use find with glob patterns — supports both exact paths and patterns
-if echo "$PATH_GLOB" | grep -q '[*?[]'; then
+if grep -q '[*?[]' < <(echo "$PATH_GLOB"); then
   # It's a real glob — use find
   SOURCE_FILES="$(find "$SOURCE_LOCAL" -maxdepth 4 -path "$SOURCE_LOCAL/$PATH_GLOB" 2>/dev/null | sort)"
 else
@@ -485,7 +485,7 @@ print('\n'.join(out))
     --title "$PR_TITLE" \
     --body "$PR_BODY" 2>&1)" || true
 
-  if echo "$PR_URL" | grep -q "https://github.com"; then
+  if grep -q "https://github.com" < <(echo "$PR_URL"); then
     echo "  PR opened: $PR_URL"
     OPENED_PRS="${OPENED_PRS}${target_slug}: ${PR_URL}\n"
   else

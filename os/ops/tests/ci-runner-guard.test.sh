@@ -121,7 +121,7 @@ got="$(printf 'hello\n' | _ut 5 cat)"
 _ut 5 sh -c 'exit 3'; [ $? = 3 ] && pass "_ut returns the command's exit code" || fail "_ut exit code"
 
 # ── 11. no Umbra machinery left in the guard ─────────────────────────────────────────────
-if ! grep -vE '^[[:space:]]*#' "$OPS/ci-runner-guard.sh" | grep -qiE 'umbra|fleet_parked|USE_SELF_HOSTED|OS_VM'; then
+if ! grep -qiE 'umbra|fleet_parked|USE_SELF_HOSTED|OS_VM' < <(grep -vE '^[[:space:]]*#' "$OPS/ci-runner-guard.sh"); then
   pass "guard code has no umbra / park / USE_SELF_HOSTED logic"
 else fail "umbra-era logic crept back into the guard"; fi
 

@@ -58,7 +58,7 @@ ok=0; skipped=0; failed=()
 for label in ${AGENTS[@]+"${AGENTS[@]}"}; do
   plist="$LA/$label.plist"
   [ -f "$plist" ] || { echo "  no plist for $label" >>"$LOG"; failed+=("$label:noplist"); continue; }
-  if ! printf '%s\n' "$LOADED_NOW" | grep -qxF "$label"; then
+  if ! grep -qxF "$label" < <(printf '%s\n' "$LOADED_NOW"); then
     skipped=$((skipped+1)); echo "  skipped (was not loaded) $label" >>"$LOG"; continue
   fi
   launchctl unload "$plist" 2>/dev/null
@@ -70,7 +70,7 @@ for label in ${AGENTS[@]+"${AGENTS[@]}"}; do
     # wolf gets ignored, which is worse than not having one.
     listed=no
     for _try in 1 2 3 4 5; do
-      if launchctl list | grep -qF "$label"; then listed=yes; break; fi
+      if grep -qF "$label" < <(launchctl list); then listed=yes; break; fi
       sleep 1
     done
     if [ "$listed" = yes ]; then

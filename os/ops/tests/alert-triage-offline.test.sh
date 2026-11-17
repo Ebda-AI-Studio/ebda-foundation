@@ -47,11 +47,11 @@ run_at "$D" offline 1
 grep -q "workflow renamed" <<<"$OUT" && fail "offline run blamed a workflow rename" || pass "offline: no bogus 'workflow renamed' claim"
 
 run_at "$D" offline 0
-echo "$OUT" | grep -q "gh run list FAILED for Ebda-AI-Studio/ebda-store (exit 1): error connecting" \
+grep -q "gh run list FAILED for Ebda-AI-Studio/ebda-store (exit 1): error connecting" < <(echo "$OUT") \
   && pass "online + gh error: real reason + exit code logged (not 'no runs found')" || fail "gh failure not surfaced: $OUT"
 
 run_at "$D" empty 0
-grep -q "no 'CI' runs found for Ebda-AI-Studio/ebda-store" <<<"$OUT" && ! echo "$OUT" | grep -q "FAILED for" \
+grep -q "no 'CI' runs found for Ebda-AI-Studio/ebda-store" <<<"$OUT" && ! grep -q "FAILED for" < <(echo "$OUT") \
   && pass "gh ok + zero runs: still reports 'no runs found' (a genuine rename is still visible)" || fail "empty-runs message: $OUT"
 
 run_at "$D" red 0

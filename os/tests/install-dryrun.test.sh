@@ -42,7 +42,7 @@ OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H2" >/dev/null 2>&1; rc=$?
 [ "$rc" = 0 ] && ok "real install into temp HOME exits 0" || no "real install rc=$rc"
 cnt="$(ls "$H2/Library/LaunchAgents"/com.ebda.os.*.plist 2>/dev/null | wc -l | tr -d ' ')"
 [ "$cnt" = "$want" ] && ok "installed plist count $cnt = Mac-local set" || no "plist count $cnt != $want"
-grep -rl '__HOME__\|__PATH__\|__OS_HOME__' "$H2/Library/LaunchAgents" 2>/dev/null | grep -q . && no "unrendered tokens left" || ok "all plist tokens rendered"
+grep -q . < <(grep -rl '__HOME__\|__PATH__\|__OS_HOME__' "$H2/Library/LaunchAgents" 2>/dev/null) && no "unrendered tokens left" || ok "all plist tokens rendered"
 bad=0; for l in "$H2"/.claude/agents/*.md "$H2"/.claude/skills/*; do [ -L "$l" ] || continue; case "$(readlink "$l")" in "$ROOT"/*) ;; *) bad=1 ;; esac; done
 [ "$bad" = 0 ] && ok "installed symlinks all point into the repo" || no "installed symlink outside repo"
 snap() { (cd "$H2" && find . -type f -exec cksum {} + | sort; find . -type l -exec sh -c 'echo "$1 $(readlink "$1")"' _ {} \; | sort; cat .gitconfig 2>/dev/null); }
@@ -93,7 +93,7 @@ FAKE_BOOTOUT_ERR="Boot-out failed: 3: No such process" OS_LINK_ANY_CHECKOUT=1 ba
 # INSTALL-1: an opt-in job (hands-mac-local) is skipped by default, installed with its flag, and removed again when the flag goes
 grep -q $'^hands-mac-local\t.*\toptin=OS_HANDS_LOCAL$' "$ROOT/os/launchd/mac-local.list" && ok "hands-mac-local is opt-in (optin=OS_HANDS_LOCAL)" || no "hands-mac-local is not opt-in"
 for j in claude-bundle-sync pr-shepherd sentry-stale-watch; do
-  cut -f1 "$ROOT/os/launchd/mac-local.list" | grep -qxF "$j" && ok "$j is in the Mac-local set (not removed)" || no "$j missing from the Mac-local set"
+  grep -qxF "$j" < <(cut -f1 "$ROOT/os/launchd/mac-local.list") && ok "$j is in the Mac-local set (not removed)" || no "$j missing from the Mac-local set"
 done
 H8="$T/h8"; mkdir -p "$H8" "$T/loaded8"
 out8="$(LOADED_DIR="$T/loaded8" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H8" 2>&1)"

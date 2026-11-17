@@ -95,7 +95,7 @@ PY
   untested="$(cd "$path" && find src lib app -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' \) \
       ! -name '*.d.ts' ! -name '*.test.*' ! -name '*.spec.*' ! -name 'index.*' ! -path '*/node_modules/*' ! -path '*/.next/*' ! -path '*/dist/*' 2>/dev/null \
     | while IFS= read -r f; do b="$(basename "$f")"; b="${b%.*}"
-        if ! find . \( -path ./node_modules -o -path ./.git -o -path ./dist -o -path ./.next \) -prune -o -type f \( -name "$b.test.*" -o -name "$b.spec.*" -o -name "$b-*.test.*" \) -print 2>/dev/null | grep -q .; then
+        if ! grep -q . < <(find . \( -path ./node_modules -o -path ./.git -o -path ./dist -o -path ./.next \) -prune -o -type f \( -name "$b.test.*" -o -name "$b.spec.*" -o -name "$b-*.test.*" \) -print 2>/dev/null); then
           printf '%s\t%s\n' "$(wc -c < "$f" | tr -d ' ')" "$f"; fi; done | sort -rn | head -5 | cut -f2)"
   while IFS= read -r f; do [ -n "$f" ] || continue
     emit "$name" test P3 "untested:$f" "no test file for $f" "$f" 1 "$f:1 has no *.test.* / *.spec.* named after it" "add a unit test" false

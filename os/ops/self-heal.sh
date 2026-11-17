@@ -177,7 +177,7 @@ if probe; then
   python3 -c "import json;json.dump({'last':$now,'attempts':0},open('$SF','w'))" 2>/dev/null  # reset — service is up
   if [ "$rec_rc" = 0 ]; then
     log "HEALED ok (recovery=$REC, attempt $att)"
-  elif printf '%s' "$rec_out" | grep -qiE 'dns error|failed to lookup address|client error \(Connect\)|Temporary failure in name resolution|Connection refused|Network is unreachable'; then
+  elif grep -qiE 'dns error|failed to lookup address|client error \(Connect\)|Temporary failure in name resolution|Connection refused|Network is unreachable' < <(printf '%s' "$rec_out"); then
     # The recovery command failed with a HOST-NETWORK error (DNS/connect) — i.e. THIS monitor
     # couldn't even reach the platform's API. That means the earlier "down" was monitor-side
     # too: the same local-network blip the confirm guard exists to catch, just surfacing one

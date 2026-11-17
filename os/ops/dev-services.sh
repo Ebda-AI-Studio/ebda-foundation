@@ -45,8 +45,8 @@ case "$PROFILE" in
   *) echo "error: unknown profile '$PROFILE' (expected: ebda)" >&2; exit 1 ;;
 esac
 
-running(){ container list 2>/dev/null | awk -v n="$1" '$1==n{print}' | grep -q .; }
-exists(){  container list --all 2>/dev/null | awk -v n="$1" '$1==n{print}' | grep -q .; }
+running(){ grep -q . < <(container list 2>/dev/null | awk -v n="$1" '$1==n{print}'); }
+exists(){ grep -q . < <( container list --all 2>/dev/null | awk -v n="$1" '$1==n{print}'); }
 gone(){    exists "$1" && container delete -f "$1" >/dev/null 2>&1; return 0; }
 
 wait_port(){ # $1=port $2=label

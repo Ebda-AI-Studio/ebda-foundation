@@ -56,7 +56,7 @@ while [ "$_try" -le "$_cf_tries" ]; do
     auth_unreach=1
   else
     auth_unreach=0
-    printf '%s' "$NET_BODY" | grep -qE '"success":[[:space:]]*true' && { auth_ok=1; break; }
+    grep -qE '"success":[[:space:]]*true' < <(printf '%s' "$NET_BODY") && { auth_ok=1; break; }
   fi
   _try=$((_try + 1))
   [ "$_try" -le "$_cf_tries" ] && sleep "$_cf_sleep"
@@ -140,7 +140,7 @@ for entry in "${TARGETS[@]}"; do
     j=$(api "accounts/$ACC/pages/projects/$proj/deployments?per_page=1")
     # The CF_API_TOKEN may lack Pages:Read (it has Workers:Read). Don't false-alarm
     # on that — skip Pages targets quietly until Pages:Read is added to the token.
-    if printf '%s' "$j" | grep -q '"code":10000'; then
+    if grep -q '"code":10000' < <(printf '%s' "$j"); then
       echo "[cf-workers-watch] $name: Pages read needs 'Cloudflare Pages:Read' on CF_API_TOKEN — skipping"; continue
     fi
     read -r did when meta <<<"$(printf '%s' "$j" | python3 -c "import sys,json
