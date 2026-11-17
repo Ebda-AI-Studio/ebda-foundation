@@ -100,7 +100,7 @@ Main lease (Ruling MAIN-LEASE-1, 2026-11-17): GitHub gives queued jobs to runner
 ticks starved main CI twice in one day (61 min). While a repo's newest main run has a QUEUED job (older than 30 s) main holds a lease: after the
 normal pass a 30 s loop (270 s budget) cancels each newly queued non-protected PR run on arrival (all jobs still queued, heavy label; protected:
 drain batch PRs, fixes-main PRs, allow-listed branches, runs already started) into `<slug>.lease.tsv`, and the moment main has no queued job left
-it releases the lease and re-runs them (cap 10, phase-3 checks; runs held by a fresh batch go to the normal ledger). Never held without a queued
+it releases the lease (main completed, or 2 steps in a row with no queued job) and re-runs them, each re-run confirmed and retried until it takes (cap 10, phase-3 checks; runs held by a fresh batch go to the normal ledger). Both pools count: a queued main job on ebda-mac OR ebda-mac-light holds the lease. Never held without a queued
 main job; `MAIN_FIRST_LEASE=0` turns it off. All reads happen before any cancel; a 5xx/504 or unparsable response skips the repo for that tick. Tests:
 `ops/tests/main-first.test.sh` (fake `gh`).
 The guard only REPORTS; it never starts, stops or rebuilds anything. The runners are launchd services on the Mac

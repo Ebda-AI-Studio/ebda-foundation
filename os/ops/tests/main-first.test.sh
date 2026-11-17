@@ -18,7 +18,10 @@ while [ $# -gt 0 ]; do
   case "$1" in -X) method="$2"; shift ;; -f) shift ;; *) [ -z "$path" ] && path="$1" ;; esac
   shift
 done
-if [ "$method" = POST ]; then echo "$path" >> "$FK/posts.log"; if [ -f "$FK/postfail" ] && grep -q -F -f "$FK/postfail" <<<"$path"; then exit 1; fi; echo '{}'; exit 0; fi
+if [ "$method" = POST ]; then echo "$path" >> "$FK/posts.log"; if [ -f "$FK/postfail" ] && grep -q -F -f "$FK/postfail" <<<"$path"; then exit 1; fi
+  # a rerun that takes: the run reads back queued on attempt 2 (unless the run is listed in $FK/norerun, the re-run that silently does not take)
+  case "$path" in */actions/runs/*/rerun) rid="${path#*/actions/runs/}"; rid="${rid%%/*}"; { [ -f "$FK/norerun" ] && grep -qx "$rid" "$FK/norerun"; } || echo '{"status":"queued","conclusion":null,"run_attempt":2,"head_sha":"'"$(sed -n 's/.*"head_sha": *"\([^"]*\)".*/\1/p' "$FK/run_$rid.json" 2>/dev/null | head -1)"'"}' > "$FK/run_$rid.json" ;; esac
+  echo '{}'; exit 0; fi
 echo "$path" >> "$FK/gets.log"
 if [ -f "$FK/fail" ] && grep -q -F -f "$FK/fail" <<<"$path"; then echo "HTTP 504" >&2; exit 1; fi
 f=""
@@ -277,6 +280,56 @@ LV="MAIN_FIRST_LEASE=1 MAIN_FIRST_LEASE_TICK=0 MAIN_FIRST_LEASE_BUDGET=6 MAIN_FI
 run --dry-run; [ -z "$(posts)" ] && [ ! -e "$T/state/o__r.lease" ] && grep -q "DRYRUN would lease: cancel PR run 21" "$T/log" && pass "lease: dry-run logs the cancel and mutates nothing (one step, no wait)" || fail "lease dry-run ($(posts | tr '\n' ' '))"
 reset; main 90:aaa:queued:; qjob jobs_90.json "$OLD"; runs_json 21:feat-a:pa:201 > "$FK/prq.json"; qjob jobs_21.json "$NEW"; echo "actions/runs/21/jobs" > "$FK/fail"
 run; [ -z "$(posts)" ] && grep -q "lease: API failure reading jobs of 21" "$T/log" && pass "lease: an API failure reading a PR run's jobs skips the step, cancels nothing" || fail "lease acted on partial data ($(posts | tr '\n' ' '))"
+unset LV
+
+# ---- review fixes for #105 (2026-11-17)
+LV="MAIN_FIRST_LEASE=1 MAIN_FIRST_LEASE_TICK=0 MAIN_FIRST_LEASE_BUDGET=12 MAIN_FIRST_LEASE_MIN_QUEUED_S=0 MAIN_FIRST_MIN=9999"
+qjobl() { echo "{\"jobs\":[{\"status\":\"queued\",\"created_at\":\"$2\",\"labels\":$3}]}" > "$FK/$1"; }
+cnt() { posts | grep -c "$1"; }
+cancelled21() { echo '{"status":"completed","conclusion":"cancelled","run_attempt":1,"head_sha":"pa"}' > "$FK/run_21.json"; echo '{"state":"open","head":{"sha":"pa"}}' > "$FK/pull_201.json"; echo '[]' > "$FK/reviews_201.json"; }
+echo '{"workflow_runs":[]}' > "$FK/prq_0.json"
+
+# (A) main queues in WAVES: queued, nothing queued for ONE step, queued again: the lease is kept (no release, no re-run, no second cancel); it is
+#     released only after 2 empty steps in a row, and the run is re-run ONCE
+reset; main 90:aaa:in_progress:
+qjob jobs_90_q.json "$OLD"; sjob jobs_90_s.json "$OLD"
+# reads of main's jobs: 1 normal pass, 2 step1 queued, 3 step2 empty, 4 step3 queued (next wave), 5 step4 empty, 6 step5 empty -> released
+printf 'jobs_90_q.json\njobs_90_q.json\njobs_90_s.json\njobs_90_q.json\njobs_90_s.json\njobs_90_s.json\n' > "$FK/jobs_90.json.seq"; : > "$FK/jobs_90.json"
+runs_json 21:feat-a:pa:201 > "$FK/prq_1.json"; printf 'prq_1.json\n' > "$FK/prq.json.seq"; : > "$FK/prq.json"
+qjob jobs_21.json "$NEW"; cancelled21
+run
+[ "$(cnt 'runs/21/cancel')" = 1 ] && [ "$(cnt 'runs/21/rerun')" = 1 ] && grep -q "no queued job (1/2)" "$T/log" && grep -q "lease released" "$T/log" && pass "lease hysteresis: a wave with no queued job for ONE step keeps the lease; released after 2 empty steps; one cancel, one re-run, no churn" || fail "hysteresis ($(posts | tr '\n' ' '))"
+# (B) main's run COMPLETES: released at once (no 2-step wait)
+reset; main 90:aaa:completed:success; echo '{"jobs":[]}' > "$FK/jobs_90.json"; mkdir -p "$T/state"; printf '21\t201\tpa\t%s\n' "$NOW" > "$T/state/o__r.lease.tsv"; printf '90\t%s\n' "$NOW" > "$T/state/o__r.lease"; echo '{"workflow_runs":[]}' > "$FK/prq.json"; cancelled21
+run; has "actions/runs/21/rerun" && [ ! -e "$T/state/o__r.lease" ] && pass "lease: main completed -> released immediately and the cancelled run re-run" || fail "no immediate release ($(posts | tr '\n' ' '))"
+# (C) a run still CANCELLING at release is kept and re-run on a later step (not dropped)
+reset; main 90:aaa:completed:success; echo '{"jobs":[]}' > "$FK/jobs_90.json"; mkdir -p "$T/state"; printf '21\t201\tpa\t%s\n' "$NOW" > "$T/state/o__r.lease.tsv"; printf '90\t%s\n' "$NOW" > "$T/state/o__r.lease"; echo '{"workflow_runs":[]}' > "$FK/prq.json"
+echo '{"status":"in_progress","conclusion":null,"run_attempt":1,"head_sha":"pa"}' > "$FK/run_21_a.json"; cancelled21; printf 'run_21_a.json\nrun_21.json\n' > "$FK/run_21.json.seq"
+echo '{"state":"open","head":{"sha":"pa"}}' > "$FK/pull_201.json"; echo '[]' > "$FK/reviews_201.json"
+run
+[ "$(cnt 'runs/21/rerun')" = 1 ] && grep -q "still in_progress (cancelling)" "$T/log" && [ ! -s "$T/state/o__r.lease.tsv" ] && pass "lease: a run still cancelling at release is kept, then re-run on the next step (not dropped)" || fail "mid-cancel run dropped ($(posts | tr '\n' ' '); $(grep -c cancelling "$T/log"))"
+# (D) a re-run that does not take is retried, then reported (LEASE-RERUN-FAILED) after 5 steps and dropped
+reset; main 90:aaa:completed:success; echo '{"jobs":[]}' > "$FK/jobs_90.json"; mkdir -p "$T/state"; printf '21\t201\tpa\t%s\n' "$NOW" > "$T/state/o__r.lease.tsv"; echo '{"workflow_runs":[]}' > "$FK/prq.json"; cancelled21; echo 21 > "$FK/norerun"
+run
+grep -q "LEASE-RERUN-FAILED run 21" "$T/log" && [ "$(cnt 'runs/21/rerun')" = 5 ] && [ ! -s "$T/state/o__r.lease.tsv" ] && pass "lease: a re-run that never takes is retried 5 steps, then LEASE-RERUN-FAILED and dropped" || fail "unverified rerun ($(cnt 'runs/21/rerun') reruns)"
+# (E) a run the lease already re-ran for this main run is never cancelled again (a later wave of the same main run)
+reset; main 90:aaa:in_progress:
+qjob jobs_90_q.json "$OLD"; sjob jobs_90_s.json "$OLD"
+# 1 normal, 2 step1 queued (cancel), 3-4 two empty steps (release + re-run), 5 queued again (a new wave of main run 90): 21 is listed queued again
+printf 'jobs_90_q.json\njobs_90_q.json\njobs_90_s.json\njobs_90_s.json\njobs_90_q.json\n' > "$FK/jobs_90.json.seq"; : > "$FK/jobs_90.json"
+runs_json 21:feat-a:pa:201 > "$FK/prq_1.json"; printf 'prq_1.json\n' > "$FK/prq.json.seq"; : > "$FK/prq.json"
+qjob jobs_21.json "$NEW"; cancelled21
+run
+[ "$(cnt 'runs/21/cancel')" = 1 ] && [ "$(cnt 'runs/21/rerun')" = 1 ] && pass "lease: a run already re-run under main run 90 is NOT cancelled again by a later wave of the same main run" || fail "re-cancelled ($(posts | tr '\n' ' '))"
+# (F) the LIGHT pool: main's only queued job asks for ebda-mac-light; PR runs queued on the light label are cancelled too, other labels untouched
+reset; main 90:aaa:in_progress:
+qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac-light"]'
+runs_json 31:feat-l:pl:301 32:feat-u:pu:302 > "$FK/prq.json"
+qjobl jobs_31.json "$NEW" '["ebda-mac-light"]'; qjobl jobs_32.json "$NEW" '["ubuntu-latest"]'
+run; has "actions/runs/31/cancel" && ! has "actions/runs/32/cancel" && pass "lease: main's queued LIGHT job takes the lease and a PR run queued on ebda-mac-light is cancelled; a run on another label is not" || fail "light pool ($(posts | tr '\n' ' '))"
+reset; main 90:aaa:in_progress:; qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac"]'
+runs_json 31:feat-l:pl:301 > "$FK/prq.json"; qjobl jobs_31.json "$NEW" '["ebda-mac-light"]'
+run; has "actions/runs/31/cancel" && pass "lease: a queued HEAVY main job also covers PR runs queued on the light pool (main wins both pools)" || fail "heavy main did not cover light PR runs"
 unset LV
 
 echo "$_pass passed, $_fail failed"; [ "$_fail" = 0 ]
