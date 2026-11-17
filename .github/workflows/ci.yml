@@ -81,12 +81,16 @@ jobs:
   os:
     name: OS layer (shellcheck, guards, suites, Linux smoke)
     runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
-    timeout-minutes: 25
+    # 45, not 25 (2026-11-17): on a loaded Mac runner this job ran 25:19 twice on #105 and GitHub reported the timeout as `cancelled`
+    # (all of it inside the one `OS suites` step: no lock, no queue). ~13 min uncontested; 45 is the backstop, the `slow` lines say where time goes.
+    timeout-minutes: 45
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: Record the job start (for the timeout report)
+        run: echo "OS_JOB_T0=$(date +%s)" >> "$GITHUB_ENV"
       - name: Did os/ change?
         id: chg
         env:
@@ -111,6 +115,11 @@ jobs:
       - name: OS suites (string + literal guards, config parity, ops suites, Linux smoke)
         if: steps.chg.outputs.changed == 'true'
         run: bash os/tests/run-all.sh --quiet
+      - name: Say so when the job was cancelled (a timeout is reported as `cancelled`, not as a test failure)
+        if: cancelled()
+        run: |
+          mins=$(( ($(date +%s) - ${OS_JOB_T0:-$(date +%s)}) / 60 ))
+          echo "::error::OS layer CANCELLED after ${mins} min. If that is the job limit (45 min) this is a TIMEOUT, not a test failure: read the 'slow' lines of the OS suites step for where the time went. A person or a newer push also cancels a run."
 
   # OS brain Worker (os/cloud/brain): typecheck, vitest on workerd, npm audit. Affected-only like `os`: on a PR it does nothing
   # unless os/cloud/ or this workflow changed. Its own lockfile; ~/.npm persists on the Mac runners, the remote cache is for hosted runners.
