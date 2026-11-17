@@ -157,7 +157,7 @@ run >/dev/null; [ "$(calls)" = 0 ] && ok "an empty statuses list is refused" || 
 reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; echo 'not json' > "$T/status-a1.json"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "an unparsable body is refused" || no "garbage merged"
 
-# creator allow-list (MONEY_STATUS_CREATORS, default voidengineer-911): a PR's own workflow (github-actions[bot]) must not approve itself
+# creator allow-list (OS_MONEY_STATUS_CREATORS from os.env, default the personal owner): a PR's own workflow (github-actions[bot]) must not approve itself
 reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; money_ok a1 success 2026-11-16T10:00:00Z "github-actions[bot]"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "a bot-created money-review success is refused (workflow self-approval)" || no "bot status approved"
 money_ok a1 success 2026-11-16T10:00:00Z voidengineer-911; run >/dev/null; [ "$(calls)" = 1 ] && ok "an allowed creator's success is accepted" || no "allowed creator refused"
@@ -168,9 +168,14 @@ reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"
 echo '[{"context":"controller/money-review","state":"success","created_at":"2026-11-16T10:00:00Z","creator":{"login":"voidengineer-911"}},{"context":"controller/money-review","state":"failure","created_at":"2026-11-16T11:00:00Z","creator":{"login":"github-actions[bot]"}}]' > "$T/status-a1.json"
 run >/dev/null; [ "$(calls)" = 1 ] && ok "a newer failure by a non-allowed creator does not revoke the controller's success either (only the controller's own rows count)" || no "non-allowed failure revoked"
 reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; money_ok a1
-MONEY_STATUS_CREATORS="" run >/dev/null; [ "$(calls)" = 0 ] && ok "an EMPTY creator allow-list refuses every risky PR" || no "empty allow-list merged"
+o="$(OS_MONEY_STATUS_CREATORS="" run)"; [ "$(calls)" = 0 ] && grep -q "money creators not configured" <<<"$o" && ok "an EMPTY OS_MONEY_STATUS_CREATORS refuses every risky PR and says why (no literal fallback)" || no "empty allow-list merged or silent"
+# UNSET after config load (os-config.sh unavailable / does not define the key): the same refusal, never a literal fallback
+X="$T/opsx"; rm -rf "$X"; mkdir -p "$X"; cp -R "$ROOT/os/ops/." "$X/"; grep -v 'OS_MONEY_STATUS_CREATORS' "$ROOT/os/ops/lib/os-config.sh" > "$X/lib/os-config.sh"   # a config that does not define the key (no os.env next to the copy either)
+reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; money_ok a1
+o="$(DRAIN="$X/drain.sh" run)"
+[ "$(calls)" = 0 ] && grep -q "money creators not configured" <<<"$o" && ok "OS_MONEY_STATUS_CREATORS UNSET after config load: every risky PR refused with 'money creators not configured' (no literal fallback)" || no "unset creators merged or silent ($(calls) gates)"
 reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; money_ok a1 success 2026-11-16T10:00:00Z someone-else
-MONEY_STATUS_CREATORS="someone-else,voidengineer-911" run >/dev/null; [ "$(calls)" = 1 ] && ok "MONEY_STATUS_CREATORS can list several accounts" || no "allow-list override ignored"
+OS_MONEY_STATUS_CREATORS="someone-else,voidengineer-911" run >/dev/null; [ "$(calls)" = 1 ] && ok "OS_MONEY_STATUS_CREATORS can list several accounts" || no "allow-list override ignored"
 reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; echo '[{"context":"controller/money-review","state":"success","created_at":"2026-11-16T10:00:00Z"}]' > "$T/status-a1.json"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "a status row with no creator is refused" || no "creator-less row approved"
 
