@@ -19,6 +19,8 @@ import re, sys
 sink = re.compile(r"\|\s*(?:/usr/bin/|/bin/)?grep\s+(?:-[A-Za-z]+\s+)*(?:-[A-Za-z]*q[A-Za-z]*|--quiet|--silent)\b")
 pipefail = re.compile(r"set\s+(?:-[A-Za-z]+\s+)*-[A-Za-z]*o\s+pipefail|set\s+-[A-Za-z]*o\s+pipefail|set\s+-o\s+pipefail|set -euo pipefail|set -uo pipefail")
 for path in sys.argv[1:]:
+    if path.endswith("os/tests/no-pipe-grep-q.test.sh"):
+        continue  # this file carries the bad shapes as negative-control fixtures
     try:
         text = open(path, encoding="utf-8").read()
     except OSError:
