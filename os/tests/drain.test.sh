@@ -22,8 +22,10 @@ cat > "$T/bin/gh" <<'STUB'
 case "$1 $2" in
   "pr list") case "$*" in *headRefName,headRefOid*) cat "$T/open-pairs.txt" 2>/dev/null ;; *--label*headRefName*) cat "$T/fixes-branches.txt" 2>/dev/null ;; *--label*) cat "$T/fixes-list.txt" 2>/dev/null ;; *number,headRefName*) cat "$T/pr-order.txt" 2>/dev/null ;; *) cat "$PRS_FILE" ;; esac ;;
   "run cancel") case " ${GHOST_IDS:-} " in *" $3 "*) echo "HTTP 409: Cannot cancel a workflow run that is completed" >&2; exit 1 ;; esac; case " ${FLAKY_IDS:-} " in *" $3 "*) echo "HTTP 502: Bad Gateway" >&2; exit 1 ;; esac; echo "$*" >> "$RERUN_LOG"; echo "completed $(cut -d' ' -f2 "$T/rs-$3" 2>/dev/null || echo 1)" > "$T/rs-$3" ;;
-  "run view") rs="$(cat "$T/rs-$3" 2>/dev/null || echo "completed 1")"; case "$*" in *status,attempt*) echo "$rs" ;; *"json status"*) echo "${rs% *}" ;; *"json attempt"*) [ -n "${RUNVIEW_FAIL_ATTEMPT:-}" ] && exit 1; echo "${rs#* }" ;; esac ;;
+  "run view") case "$*" in *"--json jobs"*) cat "$T/mgjob-$3.txt" 2>/dev/null; exit 0 ;; esac
+    rs="$(cat "$T/rs-$3" 2>/dev/null || echo "completed 1")"; case "$*" in *status,attempt*) echo "$rs" ;; *"json status"*) echo "${rs% *}" ;; *"json attempt"*) [ -n "${RUNVIEW_FAIL_ATTEMPT:-}" ] && exit 1; echo "${rs#* }" ;; esac ;;
   "run list") [ -n "${MAIN_FAIL:-}" ] && exit 1
+    case "$*" in *"--event merge_group"*) [ -n "${MG_FAIL:-}" ] && exit 1; cat "$T/mg-runs.json" 2>/dev/null || echo '[]'; exit 0 ;; esac
     case "$*" in *--status*queued*) cat "$T/queued.json" 2>/dev/null || echo '[]'; exit 0 ;; esac
     sha=""; while [ $# -gt 0 ]; do [ "$1" = --commit ] && sha="$2"; shift; done
     if [ -n "$sha" ]; then cat "$T/runs-$sha.json" 2>/dev/null || echo '[]'; else cat "$MAIN_RUNS"; fi ;;
@@ -32,6 +34,8 @@ case "$1 $2" in
   "api repos"*|"api "*)
     case "$2" in
       */compare/*) echo "{\"ahead_by\": ${AHEAD:-0}}" ;;
+      */commits/main) [ -n "${TIP_FAIL:-}" ] && exit 1; echo "${TIP:-}" ;;
+      */git/commits/*) [ -n "${TREE_FAIL:-}" ] && exit 1; cat "$T/tree-${2##*/}.txt" 2>/dev/null ;;
       */statuses) [ -n "${STATUS_FAIL:-}" ] && exit 1; n="${2#*/commits/}"; cat "$T/status-${n%/statuses}.json" 2>/dev/null || echo '[]' ;;
       *) echo '{}' ;;
     esac ;;
@@ -72,7 +76,7 @@ REPO_SLUG="drain-test-$$/r"
 run() { bash "$DRAIN" --repo "$REPO_SLUG" --dir "$T/checkout" --gate "$T/gate.sh" --name r --once "$@" 2>&1; }
 main_runs() { echo "$1" > "$MAIN_RUNS"; }   # newest first: id sha status conclusion attempt
 mr() { printf '{"databaseId":%s,"headSha":"%s","status":"%s","conclusion":"%s","attempt":%s}' "$1" "$2" "$3" "$4" "${5:-1}"; }
-reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$RERUN_LOG" "$T/locks" "$HOME/.claude/handoff/drain.stop" "$T"/status-*.json "$T"/runs-*.json "$T/fixes-list.txt" "$T/fixes-branches.txt" "$T/pr-order.txt" "$T/queued.json" "$T/open-pairs.txt" "$T"/rs-*; : > "$GATE_LOG"; mkdir -p "$SD"; GATE_RC=0; unset GH_FAIL MAIN_FAIL GHOST_IDS FLAKY_IDS REFUSE_RERUN STATUS_FAIL; AHEAD=0; export AHEAD
+reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$RERUN_LOG" "$T/locks" "$HOME/.claude/handoff/drain.stop" "$T"/status-*.json "$T"/runs-*.json "$T/fixes-list.txt" "$T/fixes-branches.txt" "$T/pr-order.txt" "$T/queued.json" "$T/open-pairs.txt" "$T"/rs-* "$T"/mg-runs.json "$T"/mgjob-*.txt "$T"/tree-*.txt; : > "$GATE_LOG"; mkdir -p "$SD"; GATE_RC=0; unset GH_FAIL MAIN_FAIL GHOST_IDS FLAKY_IDS REFUSE_RERUN STATUS_FAIL MG_FAIL TIP_FAIL TREE_FAIL TIP; AHEAD=0; export AHEAD
   main_runs "[$(mr 900 m000000aa completed success)]"; }
 on() { touch "$SD/r.enabled"; }
 # money fixtures (Ruling MONEY-SHA-1): the controller's commit status on a head sha. money_ok SHA [state] [created_at]
@@ -307,6 +311,34 @@ reset; on; prs "$(cpr 7 h7 CI CANCELLED)"; wr h7 "$(rr 72 CI cancelled)"; echo "
 run >/dev/null; [ ! -f "$SD/r.healed-72-a1" ] && ok "an unreadable attempt number is a failed try, never a confirmation" || no "confirmed on a failed first read"
 unset RUNVIEW_FAIL_ATTEMPT REFUSE_RERUN
 
+# MERGE-QUEUE-1: a green merge_group run of the SAME TREE counts as main's green (upgrades pending / unverified / full only), fail closed
+mgr() { printf '{"databaseId":%s,"headSha":"%s","status":"%s","conclusion":"%s"}' "$1" "$2" "$3" "$4"; }
+mgq() { echo "[$1]" > "$T/mg-runs.json"; }          # merge_group runs, newest first
+tree() { echo "$2" > "$T/tree-$1.txt"; }            # commit sha -> tree id
+gatejob() { echo "$2" > "$T/mgjob-$1.txt"; }        # merge_group run id -> its `Merge queue gate` conclusion
+pending_main() { main_runs "[$(mr 902 m2 in_progress ''),$(mr 901 m1 completed success)]"; TIP=tip0002; export TIP; }
+reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0001; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 1 ] && ok "main pending but a green merge_group run of the SAME TREE covers it: the PR merges" || no "same-tree merge_group green ignored ($(calls))"
+reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0002; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a merge_group run of a DIFFERENT tree does not count (trees, not commit shas)" || no "different tree counted as green"
+reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0001; gatejob 700 failure
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a merge_group run whose Merge queue gate job did not succeed does not count" || no "gate job failure counted"
+reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success),$(mgr 699 gg0000 completed failure)"; tree gg1000 TREE0001; tree gg0000 TREE0001; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 0 ] && ok "ambiguity (another completed merge_group run of the same tree failed): fail closed" || no "ambiguous evidence counted"
+reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 in_progress '')"; tree gg1000 TREE0001; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a merge_group run still in progress is not green" || no "in-progress merge_group run counted"
+reset; on; prs "$(pr 1 a1 green)"; pending_main; mgq "[]"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "no merge_group run at all: main stays pending" || no "pending main merged with no evidence"
+for fail in TIP_FAIL TREE_FAIL MG_FAIL; do
+  reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0001; gatejob 700 success
+  env "$fail=1" bash -c 'true'; export "$fail=1"; run >/dev/null; unset "$fail"
+  [ "$(calls)" = 0 ] && ok "$fail: an API error while reading the evidence fails closed" || no "$fail did not fail closed"
+done
+reset; on; prs "$(pr 1 a1 green)"; main_runs "[$(mr 902 m2 completed failure),$(mr 901 m1 completed success)]"; TIP=tip0002; export TIP; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0001; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a RED newest main run is never overridden by merge_group evidence" || no "red main upgraded to green"
+reset; on; prs "$(pr 1 a1 green)"; main_runs "[$(mr 901 m1 completed success)]"; AHEAD=9; export AHEAD; TIP=tip0009; export TIP; tree tip0009 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0001; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 1 ] && ok "more merges ahead than --max-ahead (queue batch) but the head tree is covered by a green merge_group run: merges" || no "covered batch blocked ($(calls))"
+unset TIP AHEAD; AHEAD=0; export AHEAD
 # freeze: only a 409 is a ghost; any other cancel failure is retried next cycle
 reset; on; prs; : > "$T/fixes-branches.txt"; main_runs "[$(mr 902 m2 completed failure)]"; FLAKY_IDS="61"; export FLAKY_IDS
 echo "[$(qd 61 feat-f ffff 'CI')]" > "$T/queued.json"
