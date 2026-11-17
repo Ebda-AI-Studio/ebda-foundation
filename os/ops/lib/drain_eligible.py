@@ -25,6 +25,11 @@ CLI: python3 drain_eligible.py --mode drain|stall [--hold-risky]   (gh pr list -
              red | pending (a main run is queued/in progress) | unverified (the newest main run was cancelled: needs a re-run, G74) | unknown
     runs   (stdin: gh run list --commit <sha> --json databaseId,workflowName,status,conclusion,attempt) prints "<id> <attempt>" for the latest
            run of every workflow on that head that ended cancelled/timed_out, provided every workflow on the head is completed
+    freeze --keep B1,B2 [--default-branch main]  (stdin: gh run list --status queued --json databaseId,headBranch,headSha,workflowName,attempt)
+           prints "id<TAB>branch<TAB>sha<TAB>workflow<TAB>attempt" for every queued run to cancel while main is red: not on the default branch,
+           not a --keep branch (the fixes-main PR heads). MAIN-RED-FREEZE-1
+    thaw --branches B1,B2,... --top N  (stdin: the frozen TSV above) prints the first N branches' lines in the given (priority) order, branches
+           not listed after them; inside a branch the AI review runs come first
     starved --min N  (stdin: gh run list --commit <sha> --json databaseId,status,createdAt,attempt) prints "<id> <attempt>" for every run
            still queued after N minutes (DRAIN-STARVE-1: runners take the newest queued job first, so an old one can wait for hours)
     status-ok --context C --creators a,b --file F  (gh api repos/R/commits/<head sha>/statuses --paginate output) exit 0 ONLY when the newest status of that context on
@@ -184,12 +189,49 @@ def starved_runs(runs, min_minutes, now=None):
     return out
 
 
+def freeze_list(runs, keep, default_branch="main"):
+    keep = set(keep)
+    out = []
+    for r in runs:
+        b = r.get("headBranch") or ""
+        if not b or b == default_branch or b in keep:
+            continue
+        out.append("\t".join(str(x) for x in (r["databaseId"], b, (r.get("headSha") or "")[:9], r.get("workflowName") or "", r.get("attempt") or 1)))
+    return out
+
+
+def thaw_order(lines, branches, top):
+    rows = [l.split("\t") for l in lines if l.strip()]
+    rank = {b: i for i, b in enumerate(branches)}
+    seen = []
+    for r in rows:
+        if r[1] not in seen:
+            seen.append(r[1])
+    ordered = sorted(seen, key=lambda b: (rank.get(b, len(rank)), seen.index(b)))[:top]
+    out = []
+    for b in ordered:
+        mine = [r for r in rows if r[1] == b]
+        mine.sort(key=lambda r: (0 if r[3].startswith("AI review") else 1))
+        out.extend("\t".join(r) for r in mine)
+    return out
+
+
 def main(argv):
     mode = argv[argv.index("--mode") + 1] if "--mode" in argv else ""
     hold = "--hold-risky" in argv
     if mode == "main":
         n = int(argv[argv.index("--max-ahead") + 1]); a = int(argv[argv.index("--ahead") + 1])
         print(*main_verdict(json.load(sys.stdin), n, a))
+        return
+    if mode == "freeze":
+        keep = [b for b in (argv[argv.index("--keep") + 1] if "--keep" in argv else "").split(",") if b]
+        db = argv[argv.index("--default-branch") + 1] if "--default-branch" in argv else "main"
+        print(*freeze_list(json.load(sys.stdin), keep, db), sep="\n")
+        return
+    if mode == "thaw":
+        br = [b for b in (argv[argv.index("--branches") + 1] if "--branches" in argv else "").split(",") if b]
+        top = int(argv[argv.index("--top") + 1]) if "--top" in argv else 10
+        print(*thaw_order(sys.stdin.read().split("\n"), br, top), sep="\n")
         return
     if mode == "starved":
         for rid, att in starved_runs(json.load(sys.stdin), float(argv[argv.index("--min") + 1])):
