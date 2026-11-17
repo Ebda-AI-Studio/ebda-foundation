@@ -19,7 +19,7 @@ run() { bash "$SCRIPT" --settings "$1" --schema "$SCHEMA" >/dev/null 2>&1; }
 # matched, and the assertion fails for the wrong reason. Capture, then grep.
 # (feedback-pipefail-grep-q-sigpipe-flips-negated-test)
 runout() { bash "$SCRIPT" --settings "$1" --schema "$SCHEMA" 2>&1 || true; }
-saw()    { printf '%s' "$2" | grep -q "$1"; }
+saw()    { grep -q "$1" <<<"$2"; }
 write() { python3 -c "import json,sys;open(sys.argv[1],'w').write(sys.argv[2])" "$1" "$2"; }
 
 S="$H/s.json"

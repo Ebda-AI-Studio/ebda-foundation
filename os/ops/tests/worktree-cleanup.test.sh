@@ -11,8 +11,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$HERE/../worktree-cleanup.sh"
 pass=0; fail=0
 ok(){ if [ "$2" = "$3" ]; then echo "PASS: $1"; pass=$((pass+1)); else echo "FAIL: $1 — got '$2' want '$3'"; fail=$((fail+1)); fi; }
-has(){ if printf '%s' "$2" | grep -q "$3"; then echo "PASS: $1"; pass=$((pass+1)); else echo "FAIL: $1 — output lacked '$3'"; fail=$((fail+1)); fi; }
-hasnt(){ if printf '%s' "$2" | grep -q "$3"; then echo "FAIL: $1 — output contained '$3'"; fail=$((fail+1)); else echo "PASS: $1"; pass=$((pass+1)); fi; }
+has(){ if grep -q "$3" <<<"$2"; then echo "PASS: $1"; pass=$((pass+1)); else echo "FAIL: $1 — output lacked '$3'"; fail=$((fail+1)); fi; }
+hasnt(){ if grep -q "$3" <<<"$2"; then echo "FAIL: $1 — output contained '$3'"; fail=$((fail+1)); else echo "PASS: $1"; pass=$((pass+1)); fi; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export PROJECTS_DIR="$TMP/projects" WORKTREES_DIR="$TMP/projects/_worktrees"

@@ -10,8 +10,8 @@ HOME="$(mktemp -d)" bash "$B/scripts/deploy.sh" --dry-run >/dev/null 2>&1; rc=$?
 rm -f "$B/wrangler.deploy.jsonc"
 # AIOS-6: the brain watches the org its GitHub token is scoped to (brain-watchers.json OS_ORGS); OS_BRAIN_ORGS still overrides
 out="$(HOME="$(mktemp -d)" env -u OS_BRAIN_ORGS bash "$B/scripts/deploy.sh" --dry-run 2>&1)"
-printf '%s' "$out" | grep -q 'env.OS_ORGS ("Ebda-AI-Studio")' && ok "committed OS_ORGS is rendered (Ebda-AI-Studio only)" || no "OS_ORGS not rendered from brain-watchers.json"
+grep -q 'env.OS_ORGS ("Ebda-AI-Studio")' <<<"$out" && ok "committed OS_ORGS is rendered (Ebda-AI-Studio only)" || no "OS_ORGS not rendered from brain-watchers.json"
 out="$(HOME="$(mktemp -d)" OS_BRAIN_ORGS="o1 o2" bash "$B/scripts/deploy.sh" --dry-run 2>&1)"
-printf '%s' "$out" | grep -q 'env.OS_ORGS ("o1 o2")' && ok "OS_BRAIN_ORGS overrides the committed orgs" || no "OS_BRAIN_ORGS override ignored"
+grep -q 'env.OS_ORGS ("o1 o2")' <<<"$out" && ok "OS_BRAIN_ORGS overrides the committed orgs" || no "OS_BRAIN_ORGS override ignored"
 rm -f "$B/wrangler.deploy.jsonc"
 [ "$fail" = 0 ] && echo "brain-deploy-dry: PASS" || echo "brain-deploy-dry: FAIL"; exit "$fail"

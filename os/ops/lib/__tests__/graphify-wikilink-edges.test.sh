@@ -33,10 +33,10 @@ out="$(cd "$TMP" && python3 "$LIB" . 2>&1)"
 fails=0
 
 # The prose link resolves and becomes an edge.
-echo "$out" | grep -q "+1 references edges" || { echo "FAIL: real [[other-note]] link not turned into an edge"; echo "$out"; fails=1; }
+grep -q "+1 references edges" <<<"$out" || { echo "FAIL: real [[other-note]] link not turned into an edge"; echo "$out"; fails=1; }
 
 # The quoted ones must not be reported as unresolved at all.
-if echo "$out" | grep -q "unresolved"; then
+if grep -q "unresolved" <<<"$out"; then
   echo "FAIL: inline-code [[path]] / [[CLIENT_AR]] / [[DATE]] counted as unresolved links"
   echo "$out"
   fails=1

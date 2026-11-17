@@ -80,7 +80,7 @@ R="$T/t3"; mkdir -p "$R"
 run_audit "$R"
 okflag=$(python3 -c "import json;print(json.load(open('$ST'))['ok'])" 2>/dev/null)
 [ "$RC" = 1 ] && [ "$okflag" = "false" ] && pass "empty tree: exit 1 + status ok=false" || fail "empty tree: rc=$RC ok=$okflag out=$OUT"
-echo "$OUT" | grep -q "OK" && fail "empty tree must not print OK: $OUT" || pass "empty tree never prints OK"
+grep -q "OK" <<<"$OUT" && fail "empty tree must not print OK: $OUT" || pass "empty tree never prints OK"
 [ -s "$T/notify.log" ] && pass "empty tree alerts" || fail "empty tree did not alert"
 R="$T/t3b"; mkrepo "$R/Personal/projects/nolock"; echo '{}' > "$R/Personal/projects/nolock/package.json"
 run_audit "$R"
@@ -97,7 +97,7 @@ PNPM_JSON_FILE="$T/pn.json" run_audit "$R"
 grep -q "pnpm audit --prod --json @ .*/pn$" "$T/shim.log" && pass "pnpm-lock.yaml repo audited with pnpm audit --prod --json" || fail "pnpm not audited: $(cat "$T/shim.log")"
 [ "$(grep -c '^npm audit' "$T/shim.log")" = 2 ] && grep -q "msg/backend" "$T/shim.log" && grep -q "msg/frontend" "$T/shim.log" \
   && pass "sub-dir lockfiles (backend + frontend) each audited" || fail "sub-dir lockfiles: $(cat "$T/shim.log")"
-echo "$OUT" | grep -q "lodash (critical)" && [ "$RC" = 0 ] && [ "$(field "d['ok']")" = warn ] \
+grep -q "lodash (critical)" <<<"$OUT" && [ "$RC" = 0 ] && [ "$(field "d['ok']")" = warn ] \
   && [ "$(field "d['detail']['vuln_repos']")" = 1 ] && pass "pnpm critical reported (status warn, vuln_repos=1, status keys kept)" || fail "pnpm vuln: rc=$RC out=$OUT"
 [ -s "$T/notify.log" ] && pass "vulns alert" || fail "vulns did not alert"
 
@@ -105,7 +105,7 @@ echo "$OUT" | grep -q "lodash (critical)" && [ "$RC" = 0 ] && [ "$(field "d['ok'
 R="$T/t5"; mkrepo "$R/Personal/projects/x"; lock "$R/Personal/projects/x/package-lock.json"
 echo '{"error":{"code":"ENOTFOUND","summary":"registry unreachable"}}' > "$T/err.json"
 NPM_JSON_FILE="$T/err.json" run_audit "$R"
-[ "$RC" = 1 ] && echo "$OUT" | grep -q "FAILED" && pass "all audits erroring = failure (never a false clean)" || fail "audit errors: rc=$RC out=$OUT"
+[ "$RC" = 1 ] && grep -q "FAILED" <<<"$OUT" && pass "all audits erroring = failure (never a false clean)" || fail "audit errors: rc=$RC out=$OUT"
 
 # --- 6. mutation: the old maxdepth-3 discovery must turn case 1 red ------------
 MUT="$T/mutant.sh"; sed 's/-maxdepth 8/-maxdepth 3/' "$OPS/fleet-dep-audit.sh" > "$MUT"
