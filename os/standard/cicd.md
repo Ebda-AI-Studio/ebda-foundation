@@ -96,7 +96,12 @@ started, push and schedule runs are left alone) and ledgered; re-runs go batch P
 batch goes stale. Missing/stale file = off (today's behaviour). main-first only reads the file; header of `ops/main-first.sh` has the contract.
 A cancel on a QUEUED self-hosted run often does nothing: after ~20 s (`MAIN_FIRST_VERIFY_WAIT`) the run is re-read and, if still
 `queued`, `POST .../force-cancel` is called (both logged). Runs older than 24 h whose branch has no open PR are logged and skipped.
-All reads happen before any cancel; a 5xx/504 or unparsable response skips the repo for that tick. Tests:
+Main lease (Ruling MAIN-LEASE-1, 2026-11-17): GitHub gives queued jobs to runners newest-first, so a PR queue that refills between 5-minute
+ticks starved main CI twice in one day (61 min). While a repo's newest main run has a QUEUED job (older than 30 s) main holds a lease: after the
+normal pass a 30 s loop (270 s budget) cancels each newly queued non-protected PR run on arrival (all jobs still queued, heavy label; protected:
+drain batch PRs, fixes-main PRs, allow-listed branches, runs already started) into `<slug>.lease.tsv`, and the moment main has no queued job left
+it releases the lease (main completed, or 2 steps in a row with no queued job) and re-runs them, each re-run confirmed and retried until it takes (cap 10, phase-3 checks; runs held by a fresh batch go to the normal ledger). Both pools count: a queued main job on ebda-mac OR ebda-mac-light holds the lease. Never held without a queued
+main job; `MAIN_FIRST_LEASE=0` turns it off. All reads happen before any cancel; a 5xx/504 or unparsable response skips the repo for that tick. Tests:
 `ops/tests/main-first.test.sh` (fake `gh`).
 The guard only REPORTS; it never starts, stops or rebuilds anything. The runners are launchd services on the Mac
 (`actions.runner.<org>.<name>`): restart one with `launchctl kickstart -k gui/$(id -u)/actions.runner.<org>.<name>`.
