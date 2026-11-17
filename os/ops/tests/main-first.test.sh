@@ -33,6 +33,11 @@ case "$path" in
   */pulls/*/reviews*) id="${path#*/pulls/}"; f="reviews_${id%%/*}.json" ;;
   */pulls/*) id="${path#*/pulls/}"; f="pull_${id%%\?*}.json" ;;
 esac
+# `<fixture>.seq` = one fixture file name per line, served in call order (the last one repeats): state that changes while a lease loop runs
+if [ -n "$f" ] && [ -f "$FK/$f.seq" ]; then
+  n=$(cat "$FK/$f.n" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$FK/$f.n"
+  g="$(sed -n "${n}p" "$FK/$f.seq")"; [ -n "$g" ] || g="$(tail -1 "$FK/$f.seq")"; f="$g"
+fi
 [ -f "$FK/$f" ] && cat "$FK/$f" || { [ "${f#labels_}" != "$f" ] && echo '[]' || exit 1; }
 FAKE
 chmod +x "$BIN/gh"
@@ -49,7 +54,7 @@ main() { local a="" s i sh st c; for s in "$@"; do IFS=: read -r i sh st c <<<"$
 jobs() { echo "{\"jobs\":[{\"status\":\"queued\",\"created_at\":\"$2\",\"labels\":[\"self-hosted\",\"ebda-mac\"]}]}" > "$FK/jobs_$1.json"; }
 prq() { local a="" s i br sha n; for s in "$@"; do IFS=: read -r i br sha n <<<"$s"; a="$a{\"id\":$i,\"status\":\"queued\",\"head_branch\":\"$br\",\"head_sha\":\"$sha\",\"pull_requests\":[{\"number\":$n}]},"; done
   echo "{\"workflow_runs\":[${a%,}]}" > "$FK/prq.json"; }
-run() { FAKE_DIR="$FK" PATH="$BIN:$PATH" HOME="$T/home" MAIN_FIRST_REPOS="o/r" MAIN_FIRST_STATE="$T/state" MAIN_FIRST_LOG="$T/log" MAIN_FIRST_NOW="$NOW" MAIN_FIRST_VERIFY_WAIT=0 MAIN_FIRST_ALLOW_BRANCHES="${ALLOW:-}" bash "$OPS/main-first.sh" "$@" >"$T/out" 2>&1; }
+run() { env FAKE_DIR="$FK" PATH="$BIN:$PATH" HOME="$T/home" MAIN_FIRST_REPOS="o/r" MAIN_FIRST_STATE="$T/state" MAIN_FIRST_LOG="$T/log" MAIN_FIRST_NOW="$NOW" MAIN_FIRST_VERIFY_WAIT=0 MAIN_FIRST_ALLOW_BRANCHES="${ALLOW:-}" ${LV:-MAIN_FIRST_LEASE=0} bash "$OPS/main-first.sh" "$@" >"$T/out" 2>&1; }
 posts() { cat "$FK/posts.log" 2>/dev/null; }
 has() { posts | grep -q -F "$1"; }
 # ledger runs are completed+cancelled unless a test says otherwise
@@ -218,5 +223,60 @@ run; [ "$(posts | wc -l | tr -d ' ')" = 1 ] && pass "dropped failing id not retr
 rs_world 11 101; canc 11; printf '11\t101\tp1\t%s\n' "$NOW" >> "$T/state/o__r.cancelled.tsv"
 run; [ "$(posts | wc -l | tr -d ' ')" = 1 ] && [ ! -s "$T/state/o__r.cancelled.tsv" ] && pass "duplicate ledger id requested once per tick" || fail "duplicate ($(posts | tr '\n' ' '))"
 rs_world 11 101; run; [ -z "$(posts)" ] && [ -s "$T/state/o__r.cancelled.tsv" ] && pass "run read fails -> kept in ledger, no request" || fail "run read failure"
+
+# ---- 9. MAIN LEASE (MAIN-LEASE-1): a refill during the lease is cancelled on arrival, protected runs are untouched,
+#         the lease is released and the frozen runs re-run when main's last job starts, never held without a queued main job
+LV="MAIN_FIRST_LEASE=1 MAIN_FIRST_LEASE_TICK=0 MAIN_FIRST_LEASE_BUDGET=6 MAIN_FIRST_LEASE_MIN_QUEUED_S=0 MAIN_FIRST_MIN=9999"
+qjob() { echo "{\"jobs\":[{\"status\":\"queued\",\"created_at\":\"$2\",\"labels\":[\"self-hosted\",\"ebda-mac\"]}]}" > "$FK/$1"; }
+sjob() { echo '{"jobs":[{"status":"in_progress","created_at":"'"$2"'","labels":["self-hosted","ebda-mac"]}]}' > "$FK/$1"; }
+runs_json() { local a="" s i br sha n; for s in "$@"; do IFS=: read -r i br sha n <<<"$s"; a="$a{\"id\":$i,\"status\":\"queued\",\"head_branch\":\"$br\",\"head_sha\":\"$sha\",\"pull_requests\":[{\"number\":$n}]},"; done; echo "{\"workflow_runs\":[${a%,}]}"; }
+reset; main 90:aaa:queued:
+# main jobs read, in call order: 1 = the normal pass, 2 = lease step 1, 3 = step 2 (refill arrives), 4 = step 3 (last job started)
+qjob jobs_90_q.json "$OLD"; sjob jobs_90_s.json "$OLD"; printf 'jobs_90_q.json\njobs_90_q.json\njobs_90_q.json\njobs_90_s.json\n' > "$FK/jobs_90.json.seq"; : > "$FK/jobs_90.json"
+echo '{"workflow_runs":[]}' > "$FK/prq_0.json"
+# arrivals: 21 plain (cancelled), 22 batch PR (protected), 23 fixes-main label (protected), 24 allow-listed branch (protected), 25 already started (left alone)
+runs_json 21:feat-a:pa:201 22:feat-b:pb:202 23:feat-c:pc:203 24:fix/main-red:pd:204 25:feat-e:pe:205 > "$FK/prq_1.json"
+printf 'prq_0.json\nprq_1.json\n' > "$FK/prq.json.seq"; : > "$FK/prq.json"
+for n in 21 22 23 24; do qjob "jobs_$n.json" "$NEW"; done
+echo '{"jobs":[{"status":"queued","created_at":"'"$NEW"'","labels":["self-hosted","ebda-mac"]},{"status":"in_progress","created_at":"'"$NEW"'","labels":["self-hosted","ebda-mac"]}]}' > "$FK/jobs_25.json"
+echo '[{"name":"fixes-main"}]' > "$FK/labels_203.json"
+mkdir -p "$T/state"; echo 202 > "$T/state/drain-batch-o__r"
+# the cancelled run is completed+cancelled afterwards, its PR open on the same head, approved
+echo '{"status":"completed","conclusion":"cancelled","run_attempt":1,"head_sha":"pa"}' > "$FK/run_21.json"
+echo '{"state":"open","head":{"sha":"pa"}}' > "$FK/pull_201.json"; echo '[]' > "$FK/reviews_201.json"
+ALLOW="fix/main-red" run
+cancels="$(posts | grep -c '/cancel$')"
+has "actions/runs/21/cancel" && [ "$cancels" = 1 ] && pass "lease: the refill (run 21) is cancelled on arrival; batch PR, fixes-main PR, allow-listed branch and a started run are untouched" || fail "lease cancel set ($(posts | tr '\n' ' '))"
+grep -q "lease ACQUIRED" "$T/log" && pass "lease: acquired when main has a queued job" || fail "no lease acquired"
+[ ! -e "$T/state/o__r.lease" ] && [ ! -s "$T/state/o__r.lease.tsv" ] && grep -q "lease released" "$T/log" && pass "lease: lease file and lease ledger cleared on release" || fail "lease state left behind"
+# a fresh drain batch is listed: the non-batch run is HELD (re-running it would only be re-cancelled), so it moves to the normal ledger, not re-run now
+! has "actions/runs/21/rerun" && grep -q "^21	201	pa	" "$T/state/o__r.cancelled.tsv" && pass "lease: with a fresh drain batch the cancelled non-batch run is held and handed to the normal ledger" || fail "held run not handed over ($(posts | tr '\n' ' '))"
+
+# no batch file: the lease release re-runs the cancelled run at once (after its cancel), nothing else is touched
+reset; main 90:aaa:queued:
+qjob jobs_90_q.json "$OLD"; sjob jobs_90_s.json "$OLD"; printf 'jobs_90_q.json\njobs_90_q.json\njobs_90_q.json\njobs_90_s.json\n' > "$FK/jobs_90.json.seq"; : > "$FK/jobs_90.json"
+echo '{"workflow_runs":[]}' > "$FK/prq_0.json"; runs_json 21:feat-a:pa:201 23:feat-c:pc:203 > "$FK/prq_1.json"
+printf 'prq_0.json\nprq_1.json\n' > "$FK/prq.json.seq"; : > "$FK/prq.json"
+qjob jobs_21.json "$NEW"; qjob jobs_23.json "$NEW"; echo '[{"name":"fixes-main"}]' > "$FK/labels_203.json"
+echo '{"status":"completed","conclusion":"cancelled","run_attempt":1,"head_sha":"pa"}' > "$FK/run_21.json"
+echo '{"state":"open","head":{"sha":"pa"}}' > "$FK/pull_201.json"; echo '[]' > "$FK/reviews_201.json"
+run
+has "actions/runs/21/rerun" && ! has "actions/runs/23/" && [ "$(posts | grep -n 'runs/21/cancel' | cut -d: -f1)" -lt "$(posts | grep -n 'runs/21/rerun' | cut -d: -f1)" ] && grep -q "lease released" "$T/log" && pass "lease: released when main's last job starts, the cancelled run is re-run at once (after its cancel), the fixes-main run never touched" || fail "no release re-run ($(posts | tr '\n' ' '))"
+
+# never held while main has no queued job (all its jobs already running): nothing cancelled, no lease file
+reset; main 90:aaa:in_progress:; sjob jobs_90.json "$OLD"; runs_json 21:feat-a:pa:201 > "$FK/prq.json"; qjob jobs_21.json "$NEW"
+run; [ -z "$(posts)" ] && [ ! -e "$T/state/o__r.lease" ] && ! grep -q "lease ACQUIRED" "$T/log" && pass "lease: never held while main has no queued job" || fail "lease held with no queued main job ($(posts | tr '\n' ' '))"
+# a queued main job younger than the grace does not take a lease (a job that starts at once costs nothing)
+reset; main 90:aaa:queued:; qjob jobs_90.json "$NEW"; runs_json 21:feat-a:pa:201 > "$FK/prq.json"; qjob jobs_21.json "$NEW"
+LV="MAIN_FIRST_LEASE=1 MAIN_FIRST_LEASE_TICK=0 MAIN_FIRST_LEASE_BUDGET=3 MAIN_FIRST_LEASE_MIN_QUEUED_S=600 MAIN_FIRST_MIN=9999" run
+[ -z "$(posts)" ] && pass "lease: a main job queued under the grace (600 s) takes no lease" || fail "lease taken inside the grace"
+# off switch, dry run, API failure
+LV="MAIN_FIRST_LEASE=0 MAIN_FIRST_MIN=9999"; reset; main 90:aaa:queued:; qjob jobs_90.json "$OLD"; runs_json 21:feat-a:pa:201 > "$FK/prq.json"; qjob jobs_21.json "$NEW"
+run; [ -z "$(posts)" ] && pass "lease: MAIN_FIRST_LEASE=0 turns it off" || fail "lease ran while off"
+LV="MAIN_FIRST_LEASE=1 MAIN_FIRST_LEASE_TICK=0 MAIN_FIRST_LEASE_BUDGET=6 MAIN_FIRST_LEASE_MIN_QUEUED_S=0 MAIN_FIRST_MIN=9999"; reset; main 90:aaa:queued:; qjob jobs_90.json "$OLD"; runs_json 21:feat-a:pa:201 > "$FK/prq.json"; qjob jobs_21.json "$NEW"
+run --dry-run; [ -z "$(posts)" ] && [ ! -e "$T/state/o__r.lease" ] && grep -q "DRYRUN would lease: cancel PR run 21" "$T/log" && pass "lease: dry-run logs the cancel and mutates nothing (one step, no wait)" || fail "lease dry-run ($(posts | tr '\n' ' '))"
+reset; main 90:aaa:queued:; qjob jobs_90.json "$OLD"; runs_json 21:feat-a:pa:201 > "$FK/prq.json"; qjob jobs_21.json "$NEW"; echo "actions/runs/21/jobs" > "$FK/fail"
+run; [ -z "$(posts)" ] && grep -q "lease: API failure reading jobs of 21" "$T/log" && pass "lease: an API failure reading a PR run's jobs skips the step, cancels nothing" || fail "lease acted on partial data ($(posts | tr '\n' ' '))"
+unset LV
 
 echo "$_pass passed, $_fail failed"; [ "$_fail" = 0 ]
