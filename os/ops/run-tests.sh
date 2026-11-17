@@ -116,7 +116,7 @@ done
 echo
 if [ "${#slow_names[@]}" -gt 0 ]; then
   echo "ops tests: slowest suites (>= ${SLOW_S}s):"
-  printf '%s\n' "${slow_names[@]}" | sort -rn | head -5 | sed 's/^/             /'
+  printf '%s\n' ${slow_names[@]+"${slow_names[@]}"} | sort -rn | head -5 | sed 's/^/             /'
 fi
 # Finding NOTHING is a failure, not a pass. The installed runtime copy at
 # ~/.claude/scripts/ has no lib/__tests__/ (install.sh copies lib/*.sh, *.py,

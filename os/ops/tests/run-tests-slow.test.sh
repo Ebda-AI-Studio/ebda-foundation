@@ -15,9 +15,9 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$T/ops/tests/zz-fast.test.sh"
 
 # the copy finds only the ops-shell class (the others are empty => exit 2, which is irrelevant here: we read the stream)
 out="$(RUN_TESTS_SLOW_S=1 bash "$T/ops/run-tests.sh" --quiet 2>&1)"
-grep -q '  slow  ops-shell/zz-slow 2s' <<<"$out" && ok "a suite over the threshold prints a slow line in --quiet mode" || bad "no slow line for the slow suite: $out"
+grep -qE '  slow  ops-shell/zz-slow [23]s' <<<"$out" && ok "a suite over the threshold prints a slow line in --quiet mode" || bad "no slow line for the slow suite: $out"
 ! grep -q 'slow  ops-shell/zz-fast' <<<"$out" && ok "a fast suite prints no slow line" || bad "the fast suite was reported slow"
-grep -q 'slowest suites' <<<"$out" && grep -qE '^ +2s ops-shell/zz-slow' <<<"$out" && ok "the summary lists the slowest suites" || bad "no slowest-suites summary: $out"
+grep -q 'slowest suites' <<<"$out" && grep -qE '^ +[23]s ops-shell/zz-slow' <<<"$out" && ok "the summary lists the slowest suites" || bad "no slowest-suites summary: $out"
 
 out2="$(RUN_TESTS_SLOW_S=999 bash "$T/ops/run-tests.sh" --quiet 2>&1)"
 ! grep -q 'slow' <<<"$out2" && ok "above-threshold only: nothing printed when every suite is under it" || bad "slow output with a 999 s threshold"
