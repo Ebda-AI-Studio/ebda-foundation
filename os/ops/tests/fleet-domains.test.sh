@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export FLEET_DOMAINS_CACHE="$TMP/cache.json"
 export FLEET_STORES_FILE="$TMP/fallback.json"

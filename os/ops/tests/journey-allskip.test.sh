@@ -3,7 +3,7 @@
 # env file must reach the journeys (set -a). Fake HOME, fixture journeys, offline.
 # (#197: JOURNEY_STORE_STORE_URL unset -> 0 pass / 1 skip was written ok=true.)
 set -uo pipefail
-cd "$(dirname "$0")/.."; OPS="$(pwd)"
+cd "$(dirname "$0")/.." || exit 1; OPS="$(pwd)"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 _pass=0; _fail=0
 pass() { echo "PASS: $1"; _pass=$((_pass+1)); }

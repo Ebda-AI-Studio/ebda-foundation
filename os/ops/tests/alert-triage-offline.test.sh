@@ -11,7 +11,7 @@
 # re-alerted every open issue as NEW.
 # Stubs only: gh/curl on PATH, fake HOME, notify recorder. No network.
 set -uo pipefail
-cd "$(dirname "$0")/.."; OPS="$(pwd)"
+cd "$(dirname "$0")/.." || exit 1; OPS="$(pwd)"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 _pass=0; _fail=0
 pass() { echo "PASS: $1"; _pass=$((_pass+1)); }

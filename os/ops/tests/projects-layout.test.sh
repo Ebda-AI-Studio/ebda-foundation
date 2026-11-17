@@ -11,7 +11,7 @@
 # legacy symlink of the same name exists, and the checker must flag a repo that
 # sits anywhere else (the positive control: a top-level repo and a _clients repo).
 set -uo pipefail
-cd "$(dirname "$0")/.."   # -> ops/
+cd "$(dirname "$0")/.." || exit 1   # -> ops/
 OPS="$(pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 _pass=0; _fail=0
