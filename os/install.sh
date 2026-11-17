@@ -22,6 +22,14 @@ while [ $# -gt 0 ]; do
   shift
 done
 if [ -n "$HOME_ARG" ]; then mkdir -p "$HOME_ARG"; HOME="$(cd "$HOME_ARG" && pwd)"; export HOME; fi
+# A staging / test install (--home DIR) must never drive the REAL launchd: it would boot out and re-bootstrap the real com.ebda.os.* jobs from
+# plists in DIR (2026-11-17: an unstubbed loop left every job pointing at a deleted temp HOME). Tests put a launchctl stub first on PATH.
+if [ -n "$HOME_ARG" ] && [ "$DRY" = 0 ]; then
+  case "$(command -v launchctl 2>/dev/null)" in
+    /bin/launchctl|/usr/bin/launchctl|/sbin/launchctl|/usr/sbin/launchctl)
+      echo "install: refusing: --home with the real launchctl on PATH would boot out and re-bootstrap the REAL com.ebda.os jobs from $HOME_ARG. Put a launchctl stub first on PATH (tests), or use --dry-run." >&2; exit 2 ;;
+  esac
+fi
 # shellcheck source=ops/lib/os-config.sh
 . "$OSD/ops/lib/os-config.sh"
 OS_CONFIG_FILE="$OSD/config/os.env" os_config_load

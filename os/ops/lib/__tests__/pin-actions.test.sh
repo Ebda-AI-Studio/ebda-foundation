@@ -44,7 +44,7 @@ bash "$SCRIPT" --check --repo "$H/repo" >/dev/null 2>&1 \
 
 # 2. --check names the offending file:line (a gate that fails without saying where is useless)
 out="$(bash "$SCRIPT" --check --repo "$H/repo" 2>&1)"
-echo "$out" | grep -q '.github/workflows/w.yml:4' && ok "--check names file:line" || no "--check names file:line"
+grep -q '.github/workflows/w.yml:4' <<<"$out" && ok "--check names file:line" || no "--check names file:line"
 
 # 3. --check must not modify anything
 before_check="$(md5of "$H/repo/.github/workflows/w.yml")"
@@ -111,8 +111,8 @@ bash "$SCRIPT" --check --include-nested --repo "$H/repo4" >/dev/null 2>&1 \
 # an ignore file must exclude audit fixtures, which are deliberately imperfect inputs
 printf 'fixtures/*\n' > "$H/repo4/.pin-actions-ignore"
 out4="$(bash "$SCRIPT" --check --include-nested --repo "$H/repo4" 2>&1)"
-echo "$out4" | grep -q 'template/.github/workflows/t.yml' && ok "nested finding reports a repo-relative path" || no "nested finding reports a repo-relative path"
-echo "$out4" | grep -q 'fixtures/' && no "ignore file excludes fixtures" || ok "ignore file excludes fixtures"
+grep -q 'template/.github/workflows/t.yml' <<<"$out4" && ok "nested finding reports a repo-relative path" || no "nested finding reports a repo-relative path"
+grep -q 'fixtures/' <<<"$out4" && no "ignore file excludes fixtures" || ok "ignore file excludes fixtures"
 
 rm -rf "$H"
 echo; echo "pin-actions: $_pass passed, $_fail failed"
