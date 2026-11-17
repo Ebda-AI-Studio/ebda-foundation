@@ -27,8 +27,8 @@ CLI: python3 drain_eligible.py --mode drain|stall [--hold-risky]   (gh pr list -
            run of every workflow on that head that ended cancelled/timed_out, provided every workflow on the head is completed
     starved --min N  (stdin: gh run list --commit <sha> --json databaseId,status,createdAt,attempt) prints "<id> <attempt>" for every run
            still queued after N minutes (DRAIN-STARVE-1: runners take the newest queued job first, so an old one can wait for hours)
-    status-ok --context C --file F  (gh api repos/R/commits/<head sha>/statuses --paginate output) exit 0 ONLY when the newest status of that context on
-           that exact head sha is `success` (Ruling MONEY-SHA-1). Fail closed: an empty list, an error body (a dict with `message`), anything that is
+    status-ok --context C --creators a,b --file F  (gh api repos/R/commits/<head sha>/statuses --paginate output) exit 0 ONLY when the newest status of that context on
+           that exact head sha, created by an account in --creators, is `success` (Ruling MONEY-SHA-1; creators filtered first). Fail closed: an empty list, an error body (a dict with `message`), anything that is
            not a list of status objects, or a newest status that is not success, exits 1.
 """
 import json
@@ -152,12 +152,16 @@ def _load_many(text):
     return out
 
 
-def status_ok(context, data):
-    """True only when the newest status of `context` is success. `data` is the parsed `statuses` response (a list, or several
-    pages concatenated). Anything else is False: a gate that cannot read its evidence refuses."""
-    if not isinstance(data, list) or not data:
+def status_ok(context, data, creators):
+    """True only when the newest status of `context` CREATED BY AN ALLOWED ACCOUNT is success. `data` is the parsed `statuses` response (a list, or
+    several pages concatenated). Rows are filtered by creator FIRST and the newest of what is left wins: a PR's own workflow can post any status with
+    GITHUB_TOKEN (creator github-actions[bot]), so a row from another creator neither approves nor overrides. An empty allow-list refuses. Anything
+    unreadable is False: a gate that cannot read its evidence refuses."""
+    allowed = {c for c in (creators or []) if c}
+    if not allowed or not isinstance(data, list) or not data:
         return False
-    rows = [r for r in data if isinstance(r, dict) and r.get("context") == context and isinstance(r.get("created_at"), str)]
+    rows = [r for r in data if isinstance(r, dict) and r.get("context") == context and isinstance(r.get("created_at"), str)
+            and isinstance(r.get("creator"), dict) and r["creator"].get("login") in allowed]
     if not rows:
         return False
     newest = max(rows, key=lambda r: r["created_at"])
@@ -201,7 +205,8 @@ def main(argv):
             data = _load_many(open(arg("--file")).read())
         except Exception:
             sys.exit(1)
-        sys.exit(0 if status_ok(arg("--context"), data) else 1)
+        creators = [c.strip() for c in (arg("--creators") if "--creators" in argv else "").split(",")]
+        sys.exit(0 if status_ok(arg("--context"), data, creators) else 1)
     prs = json.load(sys.stdin)
     if mode == "heal":
         for p in prs:

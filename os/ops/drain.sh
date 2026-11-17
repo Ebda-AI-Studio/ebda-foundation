@@ -27,8 +27,8 @@
 #              fixes-main heads are touched, never one labelled `hold` (old ghost runs 409). Every re-run is read back and confirmed (RERUN-VERIFIED-1).
 #   MONEY (G49, MONEY-SHA-1): a `risky` PR needs the label money-review-passed AND the commit status `controller/money-review` = success on its
 #              exact head sha (set by the controller after the independent review: `gh api repos/<repo>/statuses/<sha> -f state=success
-#              -f context=controller/money-review`). A new head has no status, so a PASS covers one head; a fetch error, an empty or
-#              non-list answer refuses.
+#              -f context=controller/money-review`) by an account in MONEY_STATUS_CREATORS (default voidengineer-911). A new head has no status,
+#              so a PASS covers one head; a fetch error, an empty or non-list answer, or a status by any other creator refuses.
 # Safety:
 #   - OFF until switched over: does nothing unless $OS_STATE_DIR/drain/<name>.enabled exists (so installing the launchd job never
 #     races a controller's own loop). Turn on: touch it. Turn off: rm it, or touch <name>.stop. A global ~/.claude/handoff/drain.stop
@@ -188,11 +188,15 @@ EOH
 # head sha (`gh api repos/<repo>/statuses/<sha> -f state=success -f context=controller/money-review`), after the independent review. A new head has no
 # such status, so a PASS covers one head by construction. Any fetch error, empty list or non-list body = refuse.
 MONEY_CONTEXT="controller/money-review"
+# Only a status created by one of these accounts counts (any workflow of a PR can post a status with GITHUB_TOKEN, creator github-actions[bot], so a PR
+# could approve itself). Default: the account the controller's gh uses. Empty = refuse every risky PR. Residual: agents share that gh account, so this
+# stops workflow self-approval, not a rogue agent; the controller-only rule stays procedural.
+MONEY_CREATORS="${MONEY_STATUS_CREATORS-voidengineer-911}"
 money_at_head() { # $1 = PR, $2 = head sha
   local st rc
   st="$(mktemp)"
   if ! gh api "repos/$REPO/commits/$2/statuses" --paginate > "$st" 2>/dev/null; then rm -f "$st"; return 1; fi
-  python3 -I "$DE" --mode status-ok --context "$MONEY_CONTEXT" --file "$st" 2>/dev/null; rc=$?
+  python3 -I "$DE" --mode status-ok --context "$MONEY_CONTEXT" --creators "$MONEY_CREATORS" --file "$st" 2>/dev/null; rc=$?
   rm -f "$st"; return $rc
 }
 

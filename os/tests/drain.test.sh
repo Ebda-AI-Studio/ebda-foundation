@@ -75,7 +75,7 @@ reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$RERUN_LOG" "$T/locks" "$HOME/.c
   main_runs "[$(mr 900 m000000aa completed success)]"; }
 on() { touch "$SD/r.enabled"; }
 # money fixtures (Ruling MONEY-SHA-1): the controller's commit status on a head sha. money_ok SHA [state] [created_at]
-money_ok() { echo "[{\"context\":\"controller/money-review\",\"state\":\"${2:-success}\",\"created_at\":\"${3:-2026-11-16T10:00:00Z}\"}]" > "$T/status-$1.json"; }
+money_ok() { echo "[{\"context\":\"controller/money-review\",\"state\":\"${2:-success}\",\"created_at\":\"${3:-2026-11-16T10:00:00Z}\",\"creator\":{\"login\":\"${4:-voidengineer-911}\"}}]" > "$T/status-$1.json"; }
 calls() { wc -l < "$GATE_LOG" | tr -d ' '; }
 
 reset; prs "$(pr 1 aaaaaaa1 green)"
@@ -141,11 +141,11 @@ run >/dev/null; [ "$(calls)" = 0 ] && ok "risky + label but NO money-review stat
 money_ok a1; run >/dev/null; [ "$(calls)" = 1 ] && ok "money-review success on the head sha: merged" || no "status success not merged"
 reset; on; prs "$(pr 1 a2 green risky,money-review-passed)"; money_ok a1
 run >/dev/null; [ "$(calls)" = 0 ] && ok "a status on an OLD head does not cover the new head (a PASS covers one head)" || no "old-head status merged a new head"
-reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; echo '[{"context":"controller/money-review","state":"success","created_at":"2026-11-16T10:00:00Z"},{"context":"controller/money-review","state":"failure","created_at":"2026-11-16T11:00:00Z"}]' > "$T/status-a1.json"
+reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; echo '[{"context":"controller/money-review","state":"success","created_at":"2026-11-16T10:00:00Z","creator":{"login":"voidengineer-911"}},{"context":"controller/money-review","state":"failure","created_at":"2026-11-16T11:00:00Z","creator":{"login":"voidengineer-911"}}]' > "$T/status-a1.json"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "the NEWEST money-review status wins: a later failure revokes an earlier success" || no "revoked status merged"
 reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; money_ok a1 pending
 run >/dev/null; [ "$(calls)" = 0 ] && ok "a pending money-review status is not a pass" || no "pending merged"
-reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; echo '[{"context":"ci/other","state":"success","created_at":"2026-11-16T10:00:00Z"}]' > "$T/status-a1.json"
+reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; echo '[{"context":"ci/other","state":"success","created_at":"2026-11-16T10:00:00Z","creator":{"login":"voidengineer-911"}}]' > "$T/status-a1.json"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "a success of ANOTHER context is not the money review" || no "other context merged"
 reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; money_ok a1; STATUS_FAIL=1; export STATUS_FAIL
 run >/dev/null; [ "$(calls)" = 0 ] && ok "statuses API error: refused (fails closed; it used to fail open)" || no "merged on a statuses API error"
@@ -156,6 +156,23 @@ reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; echo '[]' > "$T/sta
 run >/dev/null; [ "$(calls)" = 0 ] && ok "an empty statuses list is refused" || no "empty list merged"
 reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; echo 'not json' > "$T/status-a1.json"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "an unparsable body is refused" || no "garbage merged"
+
+# creator allow-list (MONEY_STATUS_CREATORS, default voidengineer-911): a PR's own workflow (github-actions[bot]) must not approve itself
+reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; money_ok a1 success 2026-11-16T10:00:00Z "github-actions[bot]"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a bot-created money-review success is refused (workflow self-approval)" || no "bot status approved"
+money_ok a1 success 2026-11-16T10:00:00Z voidengineer-911; run >/dev/null; [ "$(calls)" = 1 ] && ok "an allowed creator's success is accepted" || no "allowed creator refused"
+reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"
+echo '[{"context":"controller/money-review","state":"failure","created_at":"2026-11-16T10:00:00Z","creator":{"login":"voidengineer-911"}},{"context":"controller/money-review","state":"success","created_at":"2026-11-16T11:00:00Z","creator":{"login":"github-actions[bot]"}}]' > "$T/status-a1.json"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a NEWER success by a non-allowed creator does not override an allowed creator's failure (filter by creator first)" || no "disallowed newer success overrode a failure"
+reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"
+echo '[{"context":"controller/money-review","state":"success","created_at":"2026-11-16T10:00:00Z","creator":{"login":"voidengineer-911"}},{"context":"controller/money-review","state":"failure","created_at":"2026-11-16T11:00:00Z","creator":{"login":"github-actions[bot]"}}]' > "$T/status-a1.json"
+run >/dev/null; [ "$(calls)" = 1 ] && ok "a newer failure by a non-allowed creator does not revoke the controller's success either (only the controller's own rows count)" || no "non-allowed failure revoked"
+reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; money_ok a1
+MONEY_STATUS_CREATORS="" run >/dev/null; [ "$(calls)" = 0 ] && ok "an EMPTY creator allow-list refuses every risky PR" || no "empty allow-list merged"
+reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; money_ok a1 success 2026-11-16T10:00:00Z someone-else
+MONEY_STATUS_CREATORS="someone-else,voidengineer-911" run >/dev/null; [ "$(calls)" = 1 ] && ok "MONEY_STATUS_CREATORS can list several accounts" || no "allow-list override ignored"
+reset; on; prs "$(pr 1 a1 green risky,money-review-passed)"; echo '[{"context":"controller/money-review","state":"success","created_at":"2026-11-16T10:00:00Z"}]' > "$T/status-a1.json"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a status row with no creator is refused" || no "creator-less row approved"
 
 # ---- G74 / main gate
 reset; on; prs "$(pr 1 a1 green)"; main_runs "[$(mr 902 m2 completed failure),$(mr 901 m1 completed success)]"
