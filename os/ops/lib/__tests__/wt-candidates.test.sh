@@ -23,10 +23,10 @@ mk scratch/pkg/__mocks__
 OUT="$(wt_candidates "$R" | sed "s#^$R/##" | sort)"
 EXP="$(printf '%s\n' 'Whisky-11/clients/acme-client/acme-client-app__crashed' 'Whisky-11/clients/acme-client/acme-client-app__feat-x' | sort)"
 [ "$OUT" = "$EXP" ] && ok "only <repo>__<slug> dirs outside any repo are candidates" || { no "candidates differ"; echo "got:"; echo "$OUT"; }
-echo "$OUT" | grep -q "__tests__" && no "a __tests__ dir became a candidate" || ok "no __tests__ / __mocks__ / __snapshots__ dir is a candidate"
-echo "$OUT" | grep -q "babel__core" && no "a node_modules package dir became a candidate" || ok "a node_modules package dir (babel__core) is never a candidate"
+grep -q "__tests__" <<<"$OUT" && no "a __tests__ dir became a candidate" || ok "no __tests__ / __mocks__ / __snapshots__ dir is a candidate"
+grep -q "babel__core" <<<"$OUT" && no "a node_modules package dir became a candidate" || ok "a node_modules package dir (babel__core) is never a candidate"
 # NEGATIVE: the old glob does select them (the guard is not vacuous)
 OLD="$(find "$R" -mindepth 1 -maxdepth 6 -type d -name '*__*' -prune -print | sed "s#^$R/##" | sort)"
-echo "$OLD" | grep -q "msg-guard-1/frontend/__tests__" && ok "NEGATIVE: the old find glob selected msg-guard-1/frontend/__tests__ (the bug)" || no "the old glob did not reproduce the bug"
-echo "$OLD" | grep -q "msg-guard-1/backend/node_modules/@types/babel__core" && ok "NEGATIVE: the old glob also selected node_modules/@types/babel__core" || no "old glob missed babel__core"
+grep -q "msg-guard-1/frontend/__tests__" <<<"$OLD" && ok "NEGATIVE: the old find glob selected msg-guard-1/frontend/__tests__ (the bug)" || no "the old glob did not reproduce the bug"
+grep -q "msg-guard-1/backend/node_modules/@types/babel__core" <<<"$OLD" && ok "NEGATIVE: the old glob also selected node_modules/@types/babel__core" || no "old glob missed babel__core"
 echo "passed=$_pass failed=$_fail"; [ "$_fail" -eq 0 ]

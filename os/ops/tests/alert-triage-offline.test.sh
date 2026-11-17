@@ -41,17 +41,17 @@ seen() { cat "$HOME_USED/.whisky-os-state/alert-seen.json"; }
 
 D="$(mkrun)"
 run_at "$D" offline 1
-[ "$RC" -eq 0 ] && echo "$OUT" | grep -q "host offline" && pass "offline: one 'host offline' line, exit 0" || fail "offline output: rc=$RC $OUT"
+[ "$RC" -eq 0 ] && grep -q "host offline" <<<"$OUT" && pass "offline: one 'host offline' line, exit 0" || fail "offline output: rc=$RC $OUT"
 [ "$(seen)" = "$SEED" ] && pass "offline: alert-seen.json (dedupe memory) left byte-identical" || fail "offline run CLOBBERED the dedupe memory: $(seen)"
 [ ! -s "$NOTIFY_LOG" ] && pass "offline: nothing paged" || fail "offline run paged: $(cat "$NOTIFY_LOG")"
-echo "$OUT" | grep -q "workflow renamed" && fail "offline run blamed a workflow rename" || pass "offline: no bogus 'workflow renamed' claim"
+grep -q "workflow renamed" <<<"$OUT" && fail "offline run blamed a workflow rename" || pass "offline: no bogus 'workflow renamed' claim"
 
 run_at "$D" offline 0
 echo "$OUT" | grep -q "gh run list FAILED for Ebda-AI-Studio/ebda-store (exit 1): error connecting" \
   && pass "online + gh error: real reason + exit code logged (not 'no runs found')" || fail "gh failure not surfaced: $OUT"
 
 run_at "$D" empty 0
-echo "$OUT" | grep -q "no 'CI' runs found for Ebda-AI-Studio/ebda-store" && ! echo "$OUT" | grep -q "FAILED for" \
+grep -q "no 'CI' runs found for Ebda-AI-Studio/ebda-store" <<<"$OUT" && ! echo "$OUT" | grep -q "FAILED for" \
   && pass "gh ok + zero runs: still reports 'no runs found' (a genuine rename is still visible)" || fail "empty-runs message: $OUT"
 
 run_at "$D" red 0
@@ -72,5 +72,5 @@ old='if [ "$_ci_rc" -ne 0 ]; then'
 assert old in t; open(sys.argv[2],'w').write(t.replace(old,'if false; then',1))
 PY
 D2="$(mkrun "$M2")"; run_at "$D2" offline 0
-echo "$OUT" | grep -q "FAILED for" && fail "MUTATION 2 survived" || pass "mutation 2 (gh failure not distinguished) is caught"
+grep -q "FAILED for" <<<"$OUT" && fail "MUTATION 2 survived" || pass "mutation 2 (gh failure not distinguished) is caught"
 echo; echo "alert-triage-offline.test: $_pass passed, $_fail failed"; [ "$_fail" -eq 0 ]

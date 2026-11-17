@@ -9,7 +9,7 @@ unset FLEET_STORES_API_TOKEN
 
 . ./lib/fleet-domains.sh
 out="$(fleet_domains)"
-echo "$out" | grep -qx "$(printf 'a.example\tcustom')" || { echo "FAIL: a.example missing"; exit 1; }
-echo "$out" | grep -qx "$(printf 'b.example\tsubdomain')" || { echo "FAIL: b.example missing"; exit 1; }
+grep -qx "$(printf 'a.example\tcustom')" <<<"$out" || { echo "FAIL: a.example missing"; exit 1; }
+grep -qx "$(printf 'b.example\tsubdomain')" <<<"$out" || { echo "FAIL: b.example missing"; exit 1; }
 [ -f "$FLEET_DOMAINS_CACHE" ] || { echo "FAIL: cache not written"; exit 1; }
 echo "PASS fleet-domains fallback"

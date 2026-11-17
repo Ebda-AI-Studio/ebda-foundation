@@ -9,7 +9,7 @@ out="$(env PATH="/usr/bin:/bin" OS_HOME="$ROOT" OS_LOOP_AUDITS_DIR=/nonexistent 
 for s in "open PRs" "STILL-OPEN / FOUND" "deploy:" "alerts last 24h" "drains" "exit-check"; do
   printf '%s' "$out" | grep -qF -- "---- $s" && ok "section $s" || bad "missing section $s"
 done
-printf '%s' "$out" | grep -q 'skipped' && ok "net sections skipped" || bad "net not skipped"
+grep -q 'skipped' <<<"$out" && ok "net sections skipped" || bad "net not skipped"
 f=os/skills/ebda-loop/SKILL.md
 for p in '^name: ebda-loop$' 'run the loop' 'start the loop' 'NOT the built-in'; do grep -q -- "$p" "$f" && ok "skill has $p" || bad "skill lacks $p"; done
 exit "$_fail"

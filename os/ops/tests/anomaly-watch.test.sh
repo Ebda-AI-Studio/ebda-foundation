@@ -39,8 +39,8 @@ run_aw() {   # <run-dir> -> OUT, ERR, RC  (fresh HOME each run => no dedupe stat
 }
 
 D="$(mkrun)"; run_aw "$D"
-echo "$ERR" | grep -q "command not found" && fail "stderr has 'command not found': $ERR" || pass "no 'command not found' (nothing in a python body is shell-executed)"
-echo "$OUT" | grep -q "NEW   \[ebda-api\].*TypeError: boom" && pass "new error class is detected and reported" || fail "NEW line missing: $OUT / $ERR"
+grep -q "command not found" <<<"$ERR" && fail "stderr has 'command not found': $ERR" || pass "no 'command not found' (nothing in a python body is shell-executed)"
+grep -q "NEW   \[ebda-api\].*TypeError: boom" <<<"$OUT" && pass "new error class is detected and reported" || fail "NEW line missing: $OUT / $ERR"
 grep -q "^NOTIFY " "$NOTIFY_LOG" && grep -q "NEW \[ebda-api\] 7x" "$NOTIFY_LOG" && pass "alert path executed: notify.sh was called with the NEW class" || fail "notify not called: $(cat "$NOTIFY_LOG")"
 [ -s "$HOME_USED/.whisky-os-state/anomaly-alerted.json" ] && pass "alert-once dedupe state was written" || fail "no dedupe state"
 # second run in the SAME home: already alerted -> must not re-page
@@ -61,7 +61,7 @@ open(sys.argv[2],'w').write(t.replace(old,'python3 -c "# the `alerted` set"\n'+o
 PY
 [ $? -eq 0 ] || fail "mutation 1 setup"
 D="$(mkrun "$M1")"; run_aw "$D"
-echo "$ERR" | grep -q "alerted: command not found" && pass "mutation 1 (backticks in python -c) is caught" || fail "MUTATION 1 survived"
+grep -q "alerted: command not found" <<<"$ERR" && pass "mutation 1 (backticks in python -c) is caught" || fail "MUTATION 1 survived"
 
 M2="$T/m2.sh"; python3 - "$OPS/anomaly-watch.sh" "$M2" <<'PY'
 import sys
