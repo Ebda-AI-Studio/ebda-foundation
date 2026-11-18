@@ -283,6 +283,7 @@ ALLOW="fix/main-red" run
 cancels="$(posts | grep -c '/cancel$')"
 has "actions/runs/21/cancel" && [ "$cancels" = 1 ] && pass "lease: the refill (run 21) is cancelled on arrival; batch PR, fixes-main PR, allow-listed branch and a started run are untouched" || fail "lease cancel set ($(posts | tr '\n' ' '))"
 grep -q "lease ACQUIRED" "$T/log" && pass "lease: acquired when main has a queued job" || fail "no lease acquired"
+grep -q "lease: cancel PR run 21 on arrival .*pool=ebda-mac) so main run" "$T/log" && pass "lease: the cancel log line names the HEAVY pool (pool=ebda-mac)" || fail "heavy cancel line lacks pool=ebda-mac: $(grep 'cancel PR run 21' "$T/log" | head -1)"
 [ ! -e "$T/state/o__r.lease" ] && [ ! -s "$T/state/o__r.lease.tsv" ] && grep -q "lease released" "$T/log" && pass "lease: lease file and lease ledger cleared on release" || fail "lease state left behind"
 # a fresh drain batch is listed: the non-batch run is HELD (re-running it would only be re-cancelled), so it moves to the normal ledger, not re-run now
 ! has "actions/runs/21/rerun" && grep -q "^21	201	pa	" "$T/state/o__r.cancelled.tsv" && pass "lease: with a fresh drain batch the cancelled non-batch run is held and handed to the normal ledger" || fail "held run not handed over ($(posts | tr '\n' ' '))"
@@ -359,6 +360,7 @@ qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac-light"]'
 runs_json 31:feat-l:pl:301 32:feat-u:pu:302 > "$FK/prq.json"
 qjobl jobs_31.json "$NEW" '["ebda-mac-light"]'; qjobl jobs_32.json "$NEW" '["ubuntu-latest"]'
 run; has "actions/runs/31/cancel" && ! has "actions/runs/32/cancel" && pass "lease: main's queued LIGHT job takes the lease and a PR run queued on ebda-mac-light is cancelled; a run on another label is not" || fail "light pool ($(posts | tr '\n' ' '))"
+grep -q "lease: cancel PR run 31 on arrival .*pool=ebda-mac-light) so main run" "$T/log" && pass "lease: the cancel log line names the LIGHT pool (pool=ebda-mac-light)" || fail "light cancel line lacks pool=ebda-mac-light: $(grep 'cancel PR run 31' "$T/log" | head -1)"
 reset; main 90:aaa:in_progress:; qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac"]'
 runs_json 31:feat-l:pl:301 > "$FK/prq.json"; qjobl jobs_31.json "$NEW" '["ebda-mac-light"]'
 run; has "actions/runs/31/cancel" && pass "lease: a queued HEAVY main job also covers PR runs queued on the light pool (main wins both pools)" || fail "heavy main did not cover light PR runs"

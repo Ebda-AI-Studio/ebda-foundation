@@ -618,18 +618,22 @@ for x in d["workflow_runs"]:
     case ",$ALLOW_BRANCHES," in *",$br,"*) continue ;; esac                  # allow-listed branch: protected
     [ "$prn" != 0 ] && in_batch "$prn" && continue                           # the drain's batch: protected
     jobs="$(api "repos/$repo/actions/runs/$rid/jobs?per_page=100")" || { log "$repo: lease: API failure reading jobs of $rid; skip this step"; return; }
-    printf '%s' "$jobs" | LABELS="$LEASE_LABELS" python3 -c '
+    # prints the runner pool label(s) the queued jobs ask for (ebda-mac / ebda-mac-light) so the cancel line below proves which pool was covered
+    pool="$(printf '%s' "$jobs" | LABELS="$LEASE_LABELS" python3 -c '
 import sys,json,os
 d=json.load(sys.stdin); js=d.get("jobs",[]); want=os.environ["LABELS"].split()
 # every job still queued (a run that has started is left alone) and at least one asks for a pool main also uses: heavy OR light
-sys.exit(0 if js and all(j.get("status")=="queued" for j in js) and any(l in want for j in js for l in (j.get("labels") or [])) else 1)' 2>/dev/null || continue
+hit=sorted({l for j in js for l in (j.get("labels") or []) if l in want})
+if js and all(j.get("status")=="queued" for j in js) and hit:
+    print(",".join(hit)); sys.exit(0)
+sys.exit(1)' 2>/dev/null)" || continue
     if [ "$prn" != 0 ]; then
       labels="$(api "repos/$repo/issues/$prn/labels")" || { log "$repo: lease: API failure reading labels of #$prn; skip this step"; return; }
       if printf '%s' "$labels" | AL="$ALLOW_LABEL" python3 -c '
 import sys,json,os
 sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin)) else 1)' 2>/dev/null; then continue; fi   # fixes-main: protected
     fi
-    if cancel_run "$repo" "$rid" "lease: cancel PR run $rid on arrival ($repo PR #$prn, head $sha) so main run $nid gets a runner"; then
+    if cancel_run "$repo" "$rid" "lease: cancel PR run $rid on arrival ($repo PR #$prn, head $sha, pool=$pool) so main run $nid gets a runner"; then
       [ "$DRY" = 1 ] || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$NOW" >> "$lledger"
     fi
   done <<<"$cand"
