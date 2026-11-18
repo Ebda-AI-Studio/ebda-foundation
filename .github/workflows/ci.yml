@@ -19,7 +19,8 @@ concurrency:
 jobs:
   test:
     name: Typecheck, test, lint workflows
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 21 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 15
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -35,7 +36,8 @@ jobs:
 
   audit:
     name: Dependency audit
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 15 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -59,7 +61,8 @@ jobs:
   # PR changed, then the relative-markdown-link guard. The only `if` is the repo-wide fork guard (workflow-lint requires it; the gate treats it as always-run for same-repo PRs).
   pr-sanity:
     name: PR sanity
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 13 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 5
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -135,7 +138,8 @@ jobs:
   # unless os/cloud/ or this workflow changed. Its own lockfile; ~/.npm persists on the Mac runners, the remote cache is for hosted runners.
   brain:
     name: OS brain Worker (typecheck, workerd tests, audit)
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 20 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 15
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     defaults:
@@ -181,7 +185,8 @@ jobs:
   # npm audit. Affected-only like `brain` (os/cloud/ or this workflow). Builds no image and spends no container minutes.
   hands:
     name: OS hands (tests, dry-run, Dockerfile checks, audit)
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 22 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     defaults:

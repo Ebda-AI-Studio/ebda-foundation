@@ -25,7 +25,8 @@ concurrency:
 jobs:
   scan:
     name: Scan for leaked secrets
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 12 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:

@@ -30,3 +30,16 @@ describe('workflow-lint fork-guard exemption', () => {
   });
 });
 
+
+describe('workflow-lint short-job any-runner exception (RUNNER-ANY-1)', () => {
+  const any = "    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '[\"ebda-mac-light\"]') }}\n    timeout-minutes: 5\n";
+  it('accepts the any-runner runs-on under a # short-job: <reason> comment', () => {
+    expect(lintWorkflow('w.yml', `${head}    # short-job: median 13 s over recent main runs\n${any}`)).toEqual([]);
+  });
+  it('rejects the any-runner runs-on with no short-job comment', () => {
+    expect(lintWorkflow('w.yml', `${head}${any}`).join('\n')).toMatch(/needs a '# short-job: <measured reason>' comment/);
+  });
+  it('rejects a short-job comment with no reason', () => {
+    expect(lintWorkflow('w.yml', `${head}    # short-job:\n${any}`).join('\n')).toMatch(/needs a '# short-job/);
+  });
+});
