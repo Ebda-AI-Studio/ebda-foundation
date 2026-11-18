@@ -492,8 +492,8 @@ describe('F-15: the cron fan-out stays far under the subrequest limit', () => {
   it('the worst-case fetches of every cron group sum to <= 500 (the config limit), computed from the caps in the code', async () => {
     const { GROUPS } = await import('../src/watchers/run');
     // worst case per watcher, from its caps: services 12 targets, page-load 20 x 3 samples, journeys 20 steps, drift 20, pr-shepherd 10 orgs,
-    // cf-workers 3, sentry 10 projects, cost-guard 2, world 8 + npm 20, dr-drill 0, ci-catchup 20 repos x 2, cf-usage 5, advisories 10 orgs x pages
-    const worst: Record<string, number> = { services: 12, 'page-load': 60, 'journey-monitor': 20, 'deploy-drift': 20, 'pr-shepherd': 10, 'ci-catchup': 40, 'loop-stall': 60, 'cf-workers': 3, 'sentry-stale': 10, 'cost-guard': 2, 'cf-usage': 5, 'world-watch': 28, 'dr-drill': 0 };
+    // cf-workers 3, sentry 10 projects, cost-guard 2, world 8 + npm 20, dr-drill 0, ci-catchup 20 repos x 2, ci-pool 20 repos x 2, cf-usage 5, advisories 10 orgs x pages
+    const worst: Record<string, number> = { services: 12, 'page-load': 60, 'journey-monitor': 20, 'deploy-drift': 20, 'pr-shepherd': 10, 'ci-catchup': 40, 'loop-stall': 60, 'ci-pool': 40, 'cf-workers': 3, 'sentry-stale': 10, 'cost-guard': 2, 'cf-usage': 5, 'world-watch': 28, 'dr-drill': 0 };
     for (const [group, entries] of Object.entries(GROUPS)) {
       const sum = entries.reduce((a, e) => a + (worst[e.id] ?? 1000), 0) + 5 /* telegram / KV overhead */;
       expect(sum, `group ${group}`).toBeLessThanOrEqual(500);
