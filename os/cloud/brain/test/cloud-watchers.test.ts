@@ -591,6 +591,18 @@ describe('ci-pool (ruling NO-HOSTED-RUNNERS-1): the Cloudflare-side signal that 
     expect(h.ingested).toMatchObject([{ kind: 'watcher-error', key: `ci-pool:${R}:error` }]);
     expect(h.reconciled).toEqual([]);
   });
+  it('a GHOST run queued 7 h with nothing running does not alert (HELD-RERUN-1: runs no runner ever takes); a real 90 min one behind it still does', async () => {
+    const quiet = harness(base, [queued(420), running(0)]);
+    expect(await watchCiPool(quiet.ctx)).toEqual({ repos: 1, stalled: 0 });
+    expect(quiet.ingested).toEqual([]);
+    const both = harness(base, [queued(420, 90), running(0)]);
+    expect(await watchCiPool(both.ctx)).toEqual({ repos: 1, stalled: 1 });
+    expect(both.ingested).toMatchObject([{ kind: 'ci-pool-stall', detail: { queued: 1, oldestRun: 501 } }]);
+  });
+  it('CI_QUEUE_MAX_MIN moves the ghost cut-off', async () => {
+    const h = harness({ ...base, CI_QUEUE_MAX_MIN: '600' }, [queued(420), running(0)]);
+    expect(await watchCiPool(h.ctx)).toMatchObject({ stalled: 1 });
+  });
   it('CI_QUEUE_MIN moves the threshold', async () => {
     const h = harness({ ...base, CI_QUEUE_MIN: '10' }, [queued(20), running(0)]);
     expect(await watchCiPool(h.ctx)).toMatchObject({ stalled: 1 });

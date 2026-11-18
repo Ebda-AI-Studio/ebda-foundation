@@ -1,7 +1,9 @@
 // ci-pool watcher (cron, every 15 min): the Cloudflare-side signal for "the Mac runner pool is down or stuck" (ruling NO-HOSTED-RUNNERS-1).
 // With no GitHub-hosted fallback, a Mac outage silences every in-workflow alert (notify-failure runs on the same pool), so the brain, which runs
 // off the Macs, watches for it. Per repo in HANDS_CONFIG_JSON: a run has been QUEUED for more than CI_QUEUE_MIN (60) minutes AND no run of the
-// repo is in progress at all => `ci-pool-stall` (one deduped P1, keyed by the oldest queued run, resolved when something starts). A busy pool
+// repo is in progress at all => `ci-pool-stall` (one deduped P1, keyed by the oldest queued run, resolved when something starts). Queued runs
+// OLDER than CI_QUEUE_MAX_MIN (360) are ghosts (HELD-RERUN-1 measured runs queued for hours that no runner ever takes) and are ignored when
+// picking the oldest, so one ghost at a quiet hour cannot page every night. A busy pool
 // with a long queue (runs in progress) is saturation, not an outage, and does not alert. 2 GitHub reads per repo. An API failure is a
 // watcher-error finding, never "healthy". The runners API itself needs an org admin scope the brain's read token does not carry, so this
 // reads run state only.
@@ -23,6 +25,7 @@ export async function watchCiPool(ctx: WatchCtx): Promise<{ repos: number; stall
     return { repos: 0, stalled: 0 };
   }
   const queueMs = numVar(ctx.env.CI_QUEUE_MIN, 60) * MIN;
+  const ghostMs = numVar(ctx.env.CI_QUEUE_MAX_MIN, 360) * MIN;
   const headers = { authorization: `Bearer ${ctx.env.GITHUB_TOKEN}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' };
   const stalls = [];
   let complete = true;
@@ -32,7 +35,7 @@ export async function watchCiPool(ctx: WatchCtx): Promise<{ repos: number; stall
       const queued = (await httpJson(ctx, `${api}?status=queued&per_page=100`, { headers })) as { workflow_runs?: unknown };
       const waiting = (Array.isArray(queued?.workflow_runs) ? queued.workflow_runs.filter(isObj) : [])
         .map((r) => ({ id: r.id, at: Date.parse(String(r.created_at ?? '')) }))
-        .filter((r) => Number.isFinite(r.at))
+        .filter((r) => Number.isFinite(r.at) && ctx.now - r.at <= ghostMs)
         .sort((a, b) => a.at - b.at);
       if (waiting[0] && ctx.now - waiting[0].at > queueMs) {
         const running = (await httpJson(ctx, `${api}?status=in_progress&per_page=1`, { headers })) as { total_count?: unknown };
