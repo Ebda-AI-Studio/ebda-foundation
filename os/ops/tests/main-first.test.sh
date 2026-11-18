@@ -364,6 +364,14 @@ grep -q "lease: cancel PR run 31 on arrival .*pool=ebda-mac-light) so main run" 
 reset; main 90:aaa:in_progress:; qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac"]'
 runs_json 31:feat-l:pl:301 > "$FK/prq.json"; qjobl jobs_31.json "$NEW" '["ebda-mac-light"]'
 run; has "actions/runs/31/cancel" && pass "lease: a queued HEAVY main job also covers PR runs queued on the light pool (main wins both pools)" || fail "heavy main did not cover light PR runs"
+# (G) RUNNER-ANY-1: the shared `ebda-mac-any` label is a lease pool BY DEFAULT (no MAIN_FIRST_LEASE_LABELS override): a queued main job asking for it takes the lease, PR runs queued on it are cancelled
+reset; main 90:aaa:in_progress:; qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac-any"]'
+runs_json 31:feat-a:pa:301 32:feat-u:pu:302 > "$FK/prq.json"; qjobl jobs_31.json "$NEW" '["ebda-mac-any"]'; qjobl jobs_32.json "$NEW" '["ubuntu-latest"]'
+run; has "actions/runs/31/cancel" && ! has "actions/runs/32/cancel" && pass "lease: main's queued ANY-pool job takes the lease by default and a PR run queued on ebda-mac-any is cancelled; another label is not" || fail "any pool ($(posts | tr '\n' ' '))"
+grep -q "lease: cancel PR run 31 on arrival .*pool=ebda-mac-any) so main run" "$T/log" && pass "lease: the cancel log line names the ANY pool (pool=ebda-mac-any)" || fail "any cancel line lacks pool=ebda-mac-any: $(grep 'cancel PR run 31' "$T/log" | head -1)"
+reset; main 90:aaa:in_progress:; qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac"]'
+runs_json 31:feat-a:pa:301 > "$FK/prq.json"; qjobl jobs_31.json "$NEW" '["ebda-mac-any"]'
+run; has "actions/runs/31/cancel" && pass "lease: a queued HEAVY main job also covers PR runs queued on the ANY pool" || fail "heavy main did not cover any-pool PR runs"
 unset LV
 
 echo "$_pass passed, $_fail failed"; [ "$_fail" = 0 ]

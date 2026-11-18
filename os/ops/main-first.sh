@@ -43,7 +43,7 @@
 # no queued job left for TWO steps in a row (main queues in waves: `needs:`), or main completed, or the run is gone: the logged runs are re-run
 # and each re-run is CONFIRMED (queued / in progress / higher attempt); a run still cancelling or whose re-run did not take stays in the lease ledger
 # and is retried each step (5 steps, then LEASE-RERUN-FAILED); a run the lease already re-ran for this main run is never cancelled again. Both pools
-# count: a queued main job on EITHER ebda-mac or ebda-mac-light ($MAIN_FIRST_LEASE_LABELS) takes the lease and PR runs queued on either are cancelled.
+# count: a queued main job on ebda-mac, ebda-mac-light or ebda-mac-any ($MAIN_FIRST_LEASE_LABELS) takes the lease and PR runs queued on either are cancelled.
 # (PR open, head unchanged, still cancelled are checked before a re-run; a fresh drain batch hands non-batch runs to the normal ledger.) A repo whose main has no queued job never takes a lease. MAIN_FIRST_LEASE=0 turns it off.
 # CROSS-REPO FAIRNESS (G16, 2026-11-15): the heavy runners are an ORG pool shared by ebda-store, ebda-whatsapp and ebda-foundation, but
 # the rules above only cancel the STARVED repo's own PR runs, so one repo's PR backlog could hold the pool while another repo's main CI
@@ -95,7 +95,7 @@ GH_TIMEOUT="${GH_TIMEOUT:-45}"
 FAIR_CAP="${MAIN_FIRST_FAIR_CAP:-3}"; FAIR_TOTAL="${MAIN_FIRST_FAIR_TOTAL:-6}"
 LEASE="${MAIN_FIRST_LEASE:-1}"; LEASE_TICK="${MAIN_FIRST_LEASE_TICK:-30}"; LEASE_BUDGET="${MAIN_FIRST_LEASE_BUDGET:-270}"
 LEASE_MIN_Q="${MAIN_FIRST_LEASE_MIN_QUEUED_S:-30}"; LEASE_CAP="${MAIN_FIRST_LEASE_RERUN_CAP:-10}"
-LEASE_LABELS="${MAIN_FIRST_LEASE_LABELS:-$LABEL ${MAIN_FIRST_LIGHT_LABEL:-ebda-mac-light}}"
+LEASE_LABELS="${MAIN_FIRST_LEASE_LABELS:-$LABEL ${MAIN_FIRST_LIGHT_LABEL:-ebda-mac-light} ${MAIN_FIRST_ANY_LABEL:-ebda-mac-any}}"   # RUNNER-ANY-1: the shared pool label on all four runners
 for v in MIN CAP BATCH_MAX BATCH_AGE FAIR_CAP FAIR_TOTAL LEASE LEASE_TICK LEASE_BUDGET LEASE_MIN_Q LEASE_CAP; do case "${!v}" in ''|*[!0-9]*) echo "main-first: $v must be a whole number" >&2; exit 2 ;; esac; done
 mkdir -p "$STATE" "$(dirname "$LOG")" 2>/dev/null || true
 
