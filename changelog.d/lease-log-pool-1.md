@@ -1,0 +1,1 @@
+- LEASE-LOG-POOL-1 (`os/ops/main-first.sh`): the `lease: cancel PR run ...` log line now ends its detail with `pool=<label>` (the queued job's runner pool, `ebda-mac` and/or `ebda-mac-light`), so the log itself proves both pools are covered. Test: `main-first.test.sh` 57/57 (heavy and light assertions).
