@@ -238,6 +238,34 @@ rr_world; lfile 104 102 101; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=2 run
 rr_world; bfile $((20*60)) 101 102; run
 [ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun " ] && pass "stale batch -> old oldest-approval rerun order" || fail "stale rerun order ($(posts | tr '\n' ' '))"
 
+# 15b. MAIN-FIRST-MQ-1: no re-request of a NON-launch PR run while the merge queue has a run queued / in progress; a non-launch run is re-requested ONCE per head
+mqrun() { echo "{\"workflow_runs\":[{\"id\":70,\"name\":\"CI\",\"event\":\"merge_group\",\"head_branch\":\"gh-readonly-queue/main/pr-9-abc\",\"head_sha\":\"mmm\",\"status\":\"$1\",\"conclusion\":null,\"created_at\":\"2026-11-14T11:30:00Z\"}]}" > "$FK/mg.json"; }
+# queue busy + launch PR 104: ONLY the launch PR is re-requested; the non-launch runs 11 and 12 stay held (and stay in the ledger)
+rr_world; lfile 104; mqrun queued; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun " ] && grep -q "PR #101 run 11 held: the merge queue has a run queued or in progress" "$T/log" && grep -q "^11	101	p1	" "$T/state/o__r.cancelled.tsv" && pass "merge-queue: busy -> only the launch-list PR run is re-requested, non-launch runs held and kept in the ledger" || fail "mq busy ($(posts | tr '\n' ' '))"
+# queue busy and NO launch PR: nothing is re-requested at all
+rr_world; lfile 555; mqrun in_progress; MAIN_FIRST_RERUN_CAP=5 run
+[ -z "$(posts)" ] && [ "$(wc -l < "$T/state/o__r.cancelled.tsv" | tr -d ' ')" = 3 ] && pass "merge-queue: busy, no launch PR -> no re-request, all 3 rows kept" || fail "mq busy no launch ($(posts | tr '\n' ' '))"
+# queue idle (the only merge_group run is completed): the old order, all re-requested
+rr_world; lfile 555; echo '{"workflow_runs":[{"id":70,"name":"CI","event":"merge_group","head_branch":"gh-readonly-queue/main/pr-9-abc","status":"completed","conclusion":"success"}]}' > "$FK/mg.json"; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && pass "merge-queue: idle (a completed queue run) -> the old order, nothing held" || fail "mq idle ($(posts | tr '\n' ' '))"
+# a queued run that is NOT on a queue branch does not count as a queue run
+rr_world; lfile 555; echo '{"workflow_runs":[{"id":71,"name":"CI","event":"merge_group","head_branch":"feat-x","status":"queued"}]}' > "$FK/mg.json"; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | wc -l | tr -d ' ')" = 3 ] && pass "merge-queue: a queued run on a non-queue branch is not a queue run" || fail "mq branch filter ($(posts | tr '\n' ' '))"
+# the merge-queue runs unreadable: fail closed for non-launch runs
+rr_world; lfile 104; echo "event=merge_group" > "$FK/fail"; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun " ] && grep -q "merge-queue runs unreadable" "$T/log" && pass "merge-queue: unreadable -> non-launch re-requests held (fail closed), launch PR still re-requested" || fail "mq unreadable ($(posts | tr '\n' ' '))"
+# ONCE PER HEAD: a non-launch run re-requested once is NOT re-requested again for the same head (the cancel/revive loop); a launch run is
+rr_world; lfile 104; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | wc -l | tr -d ' ')" = 3 ] && grep -qx "11 p1" "$T/state/o__r.rerun.once" && ! grep -q "^14 " "$T/state/o__r.rerun.once" && pass "once-per-head: a non-launch re-request is recorded (run 11, head p1); the launch run is not" || fail "once mark ($(cat "$T/state/o__r.rerun.once" 2>/dev/null | tr '\n' ' '))"
+rm -f "$FK/posts.log"; printf '11\t101\tp1\t%s\n14\t104\tp4\t%s\n' "$NOW" "$NOW" > "$T/state/o__r.cancelled.tsv"; canc 11 14   # both cancelled AGAIN on the same heads
+MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun " ] && grep -q "run 11 not re-requested again: already re-requested once for head p1" "$T/log" && ! grep -q "^11	" "$T/state/o__r.cancelled.tsv" && pass "once-per-head: the same non-launch run cancelled again is dropped, not revived; the launch run is re-requested again" || fail "once guard ($(posts | tr '\n' ' '))"
+# a NEW head is a new run id and a new key: re-requested once more
+rm -f "$FK/posts.log"; printf '15\t101\tp9\t%s\n' "$NOW" > "$T/state/o__r.cancelled.tsv"; pullf 101 p9 b1; echo '{"status":"completed","conclusion":"cancelled","run_attempt":1,"head_sha":"p9"}' > "$FK/run_15.json"
+MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/15/rerun " ] && pass "once-per-head: a new head (new run) is re-requested once more" || fail "new head ($(posts | tr '\n' ' '))"
+
 # 16. state check before re-request (2026-11-15: a run another actor re-ran to SUCCESS was restarted ~10x, ~1h of CI wasted)
 rs_world() { reset; main 95:ddd:completed:success; mkdir -p "$T/state"; printf '%s\t%s\tp%s\t%s\n' "$1" "$2" "${2#10}" "$NOW" > "$T/state/o__r.cancelled.tsv"; pullf "$2" "p${2#10}" "b"; echo '[]' > "$FK/reviews_$2.json"; }
 rs_world 11 101; echo '{"status":"completed","conclusion":"success","run_attempt":3,"head_sha":"p1"}' > "$FK/run_11.json"
@@ -299,6 +327,19 @@ echo '{"status":"completed","conclusion":"cancelled","run_attempt":1,"head_sha":
 echo '{"state":"open","head":{"sha":"pa"}}' > "$FK/pull_201.json"; echo '[]' > "$FK/reviews_201.json"
 run
 has "actions/runs/21/rerun" && ! has "actions/runs/23/" && [ "$(posts | grep -n 'runs/21/cancel' | cut -d: -f1)" -lt "$(posts | grep -n 'runs/21/rerun' | cut -d: -f1)" ] && grep -q "lease released" "$T/log" && pass "lease: released when main's last job starts, the cancelled run is re-run at once (after its cancel), the fixes-main run never touched" || fail "no release re-run ($(posts | tr '\n' ' '))"
+
+# MAIN-FIRST-MQ-1 on the LEASE path: the same release, but the merge queue has a run in progress: the non-launch run is NOT re-requested, it is handed to the normal ledger
+reset; main 90:aaa:queued:
+qjob jobs_90_q.json "$OLD"; sjob jobs_90_s.json "$OLD"; printf 'jobs_90_q.json\njobs_90_q.json\njobs_90_q.json\njobs_90_s.json\n' > "$FK/jobs_90.json.seq"; : > "$FK/jobs_90.json"
+echo '{"workflow_runs":[]}' > "$FK/prq_0.json"; runs_json 21:feat-a:pa:201 > "$FK/prq_1.json"
+printf 'prq_0.json\nprq_1.json\n' > "$FK/prq.json.seq"; : > "$FK/prq.json"
+qjob jobs_21.json "$NEW"
+echo '{"status":"completed","conclusion":"cancelled","run_attempt":1,"head_sha":"pa"}' > "$FK/run_21.json"
+echo '{"state":"open","head":{"sha":"pa"}}' > "$FK/pull_201.json"; echo '[]' > "$FK/reviews_201.json"
+mqrun in_progress
+run
+has "actions/runs/21/cancel" && ! has "actions/runs/21/rerun" && grep -q "^21	201	pa	" "$T/state/o__r.cancelled.tsv" && grep -q "lease: PR #201 run 21 held: the merge queue has a run queued or in progress" "$T/log" && pass "merge-queue (lease path): a non-launch run is not re-requested while the queue is busy, it is handed to the normal ledger" || fail "lease mq hold ($(posts | tr '\n' ' '))"
+rm -f "$FK/mg.json"
 
 # never held while main has no queued job (all its jobs already running): nothing cancelled, no lease file
 reset; main 90:aaa:in_progress:; sjob jobs_90.json "$OLD"; runs_json 21:feat-a:pa:201 > "$FK/prq.json"; qjob jobs_21.json "$NEW"

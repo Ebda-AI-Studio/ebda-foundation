@@ -162,6 +162,25 @@ load_batch() { # <repo slug>
   if [ -e "$mark" ]; then rm -f "$mark"; log "$slug: drain batch file fresh again; batch-first on"; fi
 }
 in_batch() { case " $BATCH_PRS " in *" $1 "*) return 0 ;; esac; return 1; }
+
+# MAIN-FIRST-MQ-1 (2026-11-18): a re-request must not start non-launch PR work while the merge queue needs the runners, and a non-launch run is re-requested
+# at most ONCE per head. Measured: post-green re-requests revived non-launch PR runs (#735 attempt 7; journal-missing-sale-reconcile cancelled 3x by the priority
+# loop and revived 3x), their shards took both heavy runners and starved a merge_group run for 22 min (GitHub hands a freed runner to the newest queued job).
+# Launch-list PRs and the drain's batch are never held by this and are not once-limited.
+mq_busy() { # <repo>: rc 0 = a merge-queue run is queued/in progress (or unreadable: fail closed), rc 1 = the queue is idle
+  local r
+  r="$(api "repos/$1/actions/runs?event=merge_group&per_page=30")" || { log "$1: merge-queue runs unreadable; non-launch re-requests held (fail closed)"; return 0; }
+  printf '%s' "$r" | python3 -c '
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    busy=any(x.get("status") in ("queued","in_progress") and str(x.get("head_branch","")).startswith("gh-readonly-queue/") for x in d.get("workflow_runs",[]))
+except Exception:
+    busy=True
+sys.exit(0 if busy else 1)' 2>/dev/null
+}
+rerun_once_seen() { grep -qx "$2 $3" "$STATE/$1.rerun.once" 2>/dev/null; }   # <slug> <run id> <head sha>
+rerun_once_mark() { [ "$DRY" = 1 ] || echo "$2 $3" >> "$STATE/$1.rerun.once"; }
 # HELD-RERUN-1b: the LAUNCH LIST = the PRs the controller wants through first, one PR number per line in priority order, in
 # `$STATE/launch-list-<owner>__<repo>` (override MAIN_FIRST_LAUNCH_FILE; written by the drain/window script from its priority order, same contract style as the
 # drain-batch file). A missing, empty or unreadable file = NO list: the idle release then keeps the plain old order (approved first), never a hold.
@@ -433,8 +452,9 @@ sys.exit(0 if not [r for r in runs if age(r)<=recent] else 1)' 2>/dev/null
 rerun_cancelled() { # <repo> <ledger> <main run id>
   local repo="$1" ledger="$2" nid="$3"
   [ -s "$ledger" ] || return 0
-  local slugl idle="" lpend="" lpos rid prn sha ts pr st hsha ap grp tmp done_n=0 rows="" drops="" cleared="" seen="" run rst rcon rat rsha
+  local slugl idle="" lpend="" lpos rid prn sha ts pr st hsha ap grp tmp done_n=0 rows="" drops="" cleared="" seen="" run rst rcon rat rsha mq=0
   slugl="$(basename "$ledger")"; slugl="${slugl%%.*}"; load_launch "$slugl"
+  if mq_busy "$repo"; then mq=1; fi
   # HELD-RERUN-1b: a launch-list PR with a run still in this ledger counts as PENDING (it is about to be re-run): non-launch held runs wait for it
   if [ -n "$LAUNCH_PRS" ]; then
     while IFS=$'\t' read -r rid prn _; do [ -n "$rid" ] || continue; [ -n "$(launch_pos "$prn")" ] && { lpend=1; break; }; done < "$ledger"
@@ -470,6 +490,10 @@ print(t[0] if t else "")' 2>/dev/null)" || ap=""
     # held only while the batch needs the runners: with the repo idle (no recent queued run) the held run starts, in the old order (approved first), CAP per tick
     # sort key groups: 0 batch PRs, 1 launch-list PRs (in list order), 2 approved (by approval time), 3 unapproved
     lpos="$(launch_pos "$prn")"
+    if [ -z "$lpos" ] && ! in_batch "$prn"; then   # MAIN-FIRST-MQ-1: a NON-launch run
+      if rerun_once_seen "$slugl" "$rid" "$sha"; then log "$repo: PR #$prn run $rid not re-requested again: already re-requested once for head $sha (cancel/revive loop guard); dropped from ledger"; drops="$drops $rid"; continue; fi
+      if [ "$mq" = 1 ]; then log "$repo: PR #$prn run $rid held: the merge queue has a run queued or in progress (non-launch re-requests wait)"; continue; fi
+    fi
     if in_batch "$prn"; then grp=0
     elif [ -n "$BATCH_PRS" ] && { [ -n "${idle:-}" ] || { if repo_idle "$repo"; then idle=1; else idle=0; fi; }; [ "$idle" = 0 ]; }; then log "$repo: PR #$prn run $rid held: drain batch [$BATCH_PRS] goes first"; continue
     elif [ -n "$BATCH_PRS" ] && [ -n "$LAUNCH_PRS" ] && [ -z "$lpos" ] && [ -n "$lpend" ]; then log "$repo: PR #$prn run $rid held: a launch-list PR is still pending [$LAUNCH_PRS]"; continue
@@ -484,6 +508,7 @@ print(t[0] if t else "")' 2>/dev/null)" || ap=""
     if [ "$done_n" -ge "$CAP" ]; then log "$repo: rerun cap $CAP reached; run $rid waits for the next tick"; continue; fi
     if act "re-request cancelled run $rid ($repo PR #$prn, head $sha) ${RERUN_WHY:-after main run $nid went green}" -X POST "repos/$repo/actions/runs/$rid/rerun"; then
       done_n=$((done_n+1)); cleared="$cleared $rid"
+      case "$key" in 0*|1*) ;; *) [ "$prn" = 0 ] || rerun_once_mark "$slugl" "$rid" "$sha" ;; esac
     else
       # act already logged FAILED once; never retry the same id forever
       drops="$drops $rid"; log "$repo: re-request of run $rid failed; dropped from ledger"
@@ -521,7 +546,8 @@ mf_rerun() { # <repo> <run id> <description>
 lease_release_runs() { # <repo> <slug> <main run id>
   local repo="$1" slug="$2" nid="$3" lledger="$STATE/$2.lease.tsv" ledger="$STATE/$2.cancelled.tsv" tmp rid prn sha ts run rst rcon rsha pr st hsha tries
   [ -s "$lledger" ] || return 0
-  load_batch "$slug"
+  load_batch "$slug"; load_launch "$slug"
+  local mq=0; if mq_busy "$repo"; then mq=1; fi
   tmp="$lledger.tmp"; : > "$tmp"
   while IFS=$'\t' read -r rid prn sha ts; do
     [ -n "$rid" ] || continue
@@ -536,6 +562,13 @@ lease_release_runs() { # <repo> <slug> <main run id>
       pr="$(api "repos/$repo/pulls/$prn")" || { log "$repo: lease: API failure reading PR #$prn; kept for the next step"; printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$ts" >> "$tmp"; continue; }
       st="$(printf '%s' "$pr" | py 'print(d.get("state",""))')"; hsha="$(printf '%s' "$pr" | py 'print(d["head"]["sha"])')"
       if [ "$st" != open ] || [ "$hsha" != "$sha" ]; then log "$repo: lease: PR #$prn closed or head moved; run $rid dropped"; continue; fi
+      if [ -z "$(launch_pos "$prn")" ] && ! in_batch "$prn"; then   # MAIN-FIRST-MQ-1: a NON-launch run
+        if rerun_once_seen "$slug" "$rid" "$sha"; then log "$repo: lease: PR #$prn run $rid not re-requested again: already re-requested once for head $sha; dropped"; continue; fi
+        if [ "$mq" = 1 ]; then
+          log "$repo: lease: PR #$prn run $rid held: the merge queue has a run queued or in progress; handed to the normal ledger"
+          [ "$DRY" = 1 ] || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$ts" >> "$ledger"; continue
+        fi
+      fi
       if [ -n "$BATCH_PRS" ] && ! in_batch "$prn"; then
         log "$repo: lease: PR #$prn run $rid held: drain batch [$BATCH_PRS] goes first; handed to the normal ledger"
         [ "$DRY" = 1 ] || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$ts" >> "$ledger"; continue
@@ -543,6 +576,7 @@ lease_release_runs() { # <repo> <slug> <main run id>
     fi
     if mf_rerun "$repo" "$rid" "lease released: re-request cancelled run $rid ($repo PR #$prn, head $sha) after main run $nid"; then
       [ "$DRY" = 1 ] || echo "$nid $rid" >> "$STATE/$slug.lease.rerun"   # never re-cancelled under this main run
+      if [ "$prn" != 0 ] && [ -z "$(launch_pos "$prn")" ] && ! in_batch "$prn"; then rerun_once_mark "$slug" "$rid" "$sha"; fi
       rm -f "$STATE/$slug.lease.try.$rid"
     else
       tries=$(( $(cat "$STATE/$slug.lease.try.$rid" 2>/dev/null || echo 0) + 1 )); echo "$tries" > "$STATE/$slug.lease.try.$rid"
