@@ -138,6 +138,48 @@ rerun_failed_note() { # $1 = id, $2 = what
 rerun_gaveup() { grep -qxF "$1" "$SD/$NAME.rerun-failed" 2>/dev/null; }
 
 DE="$HERE/lib/drain_eligible.py"
+# Ruling MAIN-GREEN-NOTIFY-1: a main run whose ONLY unfinished job is the notify job (it does no testing: it posts the failure alert) is as good as
+# completed. The notify job is `always()` and needs every other job, so once it is queued or running EVERY other job has finished; the run is then treated
+# as completed+success only if all other jobs ended success/skipped/neutral. Fails closed: an API error, an empty or 100-job (truncated) list, a notify job
+# still `waiting` on its needs, a notify job that already failed/was cancelled, or any other job that is not a clean success keeps the run as it is.
+# (stdout is the normalized runs json, so the log line goes to stderr.)
+NOTIFY_JOB_RE="${DRAIN_NOTIFY_JOB_RE:-^Notify on failure}"
+notify_only_normalize() { # $1 = runs json (newest first); prints the json with qualifying incomplete runs marked completed+success
+  local runs="$1" ids id jobs ok=""
+  ids="$(printf '%s' "$runs" | python3 -I -c 'import json,sys
+print(*[str(x.get("databaseId")) for x in json.load(sys.stdin)[:3] if x.get("status") != "completed" and x.get("databaseId")])' 2>/dev/null)" || { printf '%s' "$runs"; return 0; }
+  [ -n "$ids" ] || { printf '%s' "$runs"; return 0; }
+  for id in $ids; do
+    jobs="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" 2>/dev/null)" || continue
+    if printf '%s' "$jobs" | NOTIFY_RE="$NOTIFY_JOB_RE" python3 -I -c 'import json,os,re,sys
+try:
+    jobs = json.load(sys.stdin).get("jobs")
+except Exception:
+    sys.exit(1)
+if not isinstance(jobs, list) or not jobs or len(jobs) >= 100:
+    sys.exit(1)
+rx = re.compile(os.environ["NOTIFY_RE"])
+notify = [j for j in jobs if rx.search(j.get("name") or "")]
+others = [j for j in jobs if not rx.search(j.get("name") or "")]
+if not notify or not others:
+    sys.exit(1)
+if any(j.get("status") != "completed" or j.get("conclusion") not in ("success", "skipped", "neutral") for j in others):
+    sys.exit(1)
+# the notify job must be the (only) unfinished piece and must be past its `needs`: queued or running, never waiting, never already failed
+if any(j.get("status") not in ("queued", "in_progress") for j in notify):
+    sys.exit(1)
+sys.exit(0)' 2>/dev/null; then ok="$ok $id"; log "main run $id: only the notify job is unfinished and every other job succeeded/skipped: counted as completed (MAIN-GREEN-NOTIFY-1)" >&2; fi
+  done
+  [ -n "$ok" ] || { printf '%s' "$runs"; return 0; }
+  printf '%s' "$runs" | IDS="$ok" python3 -I -c 'import json,os,sys
+ids = set(os.environ["IDS"].split())
+rs = json.load(sys.stdin)
+for r in rs:
+    if str(r.get("databaseId")) in ids:
+        r["status"] = "completed"; r["conclusion"] = "success"
+print(json.dumps(rs))' 2>/dev/null || printf '%s' "$runs"
+}
+
 # MERGE-QUEUE-1 (Ruling MERGE-QUEUE-1): does a green merge_group run cover main's newest commit? Compares git TREE ids (a queue squash gives a new
 # commit sha but the same tree), requires the run's `Merge queue gate` job = success, and FAILS CLOSED: an API error, no match, or ANY completed
 # non-success merge_group run on the same tree (ambiguity) = not green. Rc 0 = covered (and logs the run).
@@ -172,6 +214,7 @@ main_gate() {
   [ "$MAIN_WF" = none ] && return 0
   local runs green ahead v rid att
   runs="$(gh run list --repo "$REPO" --branch main --event push --workflow "$MAIN_WF" --limit 15 --json databaseId,headSha,status,conclusion,attempt 2>/dev/null)" || { MAIN_VERDICT=unknown; return 1; }
+  runs="$(notify_only_normalize "$runs")"
   green="$(printf '%s' "$runs" | python3 -I -c 'import json,sys
 for r in json.load(sys.stdin):
     if r.get("status") == "completed" and r.get("conclusion") == "success": print(r["headSha"]); break' 2>/dev/null)"
