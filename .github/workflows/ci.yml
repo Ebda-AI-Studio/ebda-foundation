@@ -82,6 +82,9 @@ jobs:
           node-version: 22
       - name: markdown link guard (os/standard, os/audit/lenses)
         run: node os/tests/standard-links.test.mjs
+      - name: changelog fragments (CHANGELOG-FRAGMENTS-1)
+        # Unreleased changes are one file each in changelog.d/; a hand-written bullet under `## Unreleased` or a malformed fragment fails here.
+        run: bash os/ops/changelog-assemble.sh --check
 
   # OS layer (os/): shellcheck, then os/tests/run-all.sh (string + literal guards, config parity, the ops suites, Linux smoke). Affected-only: on a PR it does nothing
   # unless os/ or this workflow changed (one checkout + one git diff, ~10 s). On push to main it always runs.
