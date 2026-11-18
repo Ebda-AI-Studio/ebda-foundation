@@ -33,6 +33,7 @@ case "$1 $2" in
     case " ${REFUSE_RERUN:-} " in *" $3 "*) ;; *) a="$(cut -d' ' -f2 "$T/rs-$3" 2>/dev/null || echo 1)"; echo "queued $((a + 1))" > "$T/rs-$3" ;; esac ;;
   "api repos"*|"api "*)
     case "$2" in
+      */actions/runs/*/jobs*) [ -n "${NJOBS_FAIL:-}" ] && exit 1; id="${2#*/runs/}"; cat "$T/njobs-${id%%/*}.json" 2>/dev/null || exit 1 ;;
       */compare/*) echo "{\"ahead_by\": ${AHEAD:-0}}" ;;
       */commits/main) [ -n "${TIP_FAIL:-}" ] && exit 1; echo "${TIP:-}" ;;
       */git/commits/*) [ -n "${TREE_FAIL:-}" ] && exit 1; cat "$T/tree-${2##*/}.txt" 2>/dev/null ;;
@@ -76,7 +77,7 @@ REPO_SLUG="drain-test-$$/r"
 run() { bash "$DRAIN" --repo "$REPO_SLUG" --dir "$T/checkout" --gate "$T/gate.sh" --name r --once "$@" 2>&1; }
 main_runs() { echo "$1" > "$MAIN_RUNS"; }   # newest first: id sha status conclusion attempt
 mr() { printf '{"databaseId":%s,"headSha":"%s","status":"%s","conclusion":"%s","attempt":%s}' "$1" "$2" "$3" "$4" "${5:-1}"; }
-reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$RERUN_LOG" "$T/locks" "$HOME/.claude/handoff/drain.stop" "$T"/status-*.json "$T"/runs-*.json "$T/fixes-list.txt" "$T/fixes-branches.txt" "$T/pr-order.txt" "$T/queued.json" "$T/open-pairs.txt" "$T"/rs-* "$T"/mg-runs.json "$T"/mgjob-*.txt "$T"/tree-*.txt; : > "$GATE_LOG"; mkdir -p "$SD"; GATE_RC=0; unset GH_FAIL MAIN_FAIL GHOST_IDS FLAKY_IDS REFUSE_RERUN STATUS_FAIL MG_FAIL TIP_FAIL TREE_FAIL TIP; AHEAD=0; export AHEAD
+reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$RERUN_LOG" "$T/locks" "$HOME/.claude/handoff/drain.stop" "$T"/status-*.json "$T"/runs-*.json "$T/fixes-list.txt" "$T/fixes-branches.txt" "$T/pr-order.txt" "$T/queued.json" "$T/open-pairs.txt" "$T"/rs-* "$T"/mg-runs.json "$T"/mgjob-*.txt "$T"/tree-*.txt "$T"/njobs-*.json; : > "$GATE_LOG"; mkdir -p "$SD"; GATE_RC=0; unset GH_FAIL MAIN_FAIL GHOST_IDS FLAKY_IDS REFUSE_RERUN STATUS_FAIL MG_FAIL TIP_FAIL TREE_FAIL TIP NJOBS_FAIL; AHEAD=0; export AHEAD
   main_runs "[$(mr 900 m000000aa completed success)]"; }
 on() { touch "$SD/r.enabled"; }
 # money fixtures (Ruling MONEY-SHA-1): the controller's commit status on a head sha. money_ok SHA [state] [created_at]
@@ -350,6 +351,47 @@ reset; on; prs; printf 'b1,b2\n' > "$T/pr-order.txt"; printf 'b2=zzzzzzzz\n' > "
 printf '%s\t%s\t%s\t%s\t%s\n' 10 b1 shaaaaa1 CI 1 >> "$SD/r.frozen"; printf '%s\t%s\t%s\t%s\t%s\n' 20 b2 shaaaaa2 CI 1 >> "$SD/r.frozen"
 run --freeze --thaw-top 5 >/dev/null
 [ ! -s "$RERUN_LOG" ] && [ ! -s "$SD/r.frozen" ] && ok "thaw: a closed PR's run (b1) and a moved head's run (b2) are dropped from the record, not re-run" || no "thawed a closed/moved PR ($(cat "$RERUN_LOG" 2>/dev/null | tr '\n' ' '))"
+
+# MAIN-GREEN-NOTIFY-1: a main run whose only unfinished job is the notify job counts as completed; fail closed for everything else
+nj() { # <run id> name:status:conclusion ...   (conclusion '-' = none)
+  local id="$1"; shift
+  python3 -I - "$id" "$@" > "$T/njobs-$id.json" <<'PY'
+import json, sys
+jobs = []
+for a in sys.argv[2:]:
+    n, st, c = a.split(":")
+    jobs.append({"name": n, "status": st, "conclusion": None if c == "-" else c})
+print(json.dumps({"total_count": len(jobs), "jobs": jobs}))
+PY
+}
+NOTIFY="Notify on failure (main and nightly)"
+inprog_main() { main_runs "[$(mr 902 m2 in_progress ''),$(mr 901 m1 completed success)]"; }
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "Unit Tests:completed:success" "Security Audit:completed:skipped" "$NOTIFY:queued:-"
+run >/dev/null; [ "$(calls)" = 1 ] && ok "MAIN-GREEN-NOTIFY-1: only the notify job is queued, every other job succeeded/skipped: main counts as green, the PR merges" || no "queued notify-only held the merge ($(calls))"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "$NOTIFY:in_progress:-"
+run >/dev/null; [ "$(calls)" = 1 ] && ok "a notify job that is already running (5 s of work) does not hold main either" || no "in-progress notify held the merge"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "Unit Tests:queued:-" "$NOTIFY:waiting:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a queued REAL job keeps main pending (notify still waiting on its needs)" || no "real queued job counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "Unit Tests:in_progress:-" "$NOTIFY:queued:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a running real job next to a queued notify job is NOT green" || no "running real job ignored"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "Unit Tests:completed:failure" "$NOTIFY:queued:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a FAILED real job is never green, notify queued or not" || no "failed real job counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "$NOTIFY:completed:failure"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a FAILED notify job still means not green" || no "failed notify counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:cancelled" "$NOTIFY:queued:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a cancelled real job is not green" || no "cancelled job counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "$NOTIFY:waiting:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a notify job still waiting on its needs does not prove the other jobs finished: not green" || no "waiting notify counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "$NOTIFY:queued:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a run whose job list holds only the notify job proves nothing: not green" || no "notify-only list counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "$NOTIFY:queued:-"; NJOBS_FAIL=1; export NJOBS_FAIL
+run >/dev/null; [ "$(calls)" = 0 ] && ok "an API error reading the jobs fails closed" || no "API error counted as green"
+unset NJOBS_FAIL
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; python3 -I -c '
+import json
+jobs=[{"name":"j%d"%i,"status":"completed","conclusion":"success"} for i in range(99)]+[{"name":"Notify on failure (main and nightly)","status":"queued","conclusion":None}]
+print(json.dumps({"total_count":len(jobs),"jobs":jobs}))' > "$T/njobs-902.json"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a 100-job (possibly truncated) list fails closed" || no "truncated job list counted as green"
 
 reset; on; run --bogus >/dev/null 2>&1; [ $? = 2 ] && ok "unknown flag exits 2" || no "unknown flag accepted"
 echo "drain: $p passed, $f failed"; [ "$f" = 0 ]
