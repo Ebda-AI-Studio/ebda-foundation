@@ -20,7 +20,7 @@ jobs:
   test:
     name: Typecheck, test, lint workflows
     # short-job: median 21 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
-    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 15
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -37,7 +37,7 @@ jobs:
   audit:
     name: Dependency audit
     # short-job: median 15 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
-    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -62,7 +62,7 @@ jobs:
   pr-sanity:
     name: PR sanity
     # short-job: median 13 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
-    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 5
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -139,7 +139,7 @@ jobs:
   brain:
     name: OS brain Worker (typecheck, workerd tests, audit)
     # short-job: median 20 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
-    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 15
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     defaults:
@@ -186,7 +186,7 @@ jobs:
   hands:
     name: OS hands (tests, dry-run, Dockerfile checks, audit)
     # short-job: median 22 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
-    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     defaults:

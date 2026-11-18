@@ -6,7 +6,7 @@
 //   - every `runs-on:` is exactly ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}, except a job whose runs-on line is
 //     `runs-on: ubuntu-latest` directly under a `# hosted-only: <reason>` comment (a job that must NOT follow EBDA_RUNS_ON onto the
 //     self-hosted runner, e.g. an outside-in production watch); it may not run on pull_request
-//     or a job whose runs-on is the any-runner form ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '"ubuntu-latest"') }} directly under a
+//     or a job whose runs-on is the any-runner form ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }} directly under a
 //     `# short-job: <measured reason>` comment (RUNNER-ANY-1: a job measured well under a minute may take ANY free runner so it never waits behind a heavy queue)
 //   - a job that can run on a pull_request carries the fork guard (or a `    # fork-guard-exempt: <reason>` comment line in the job, for a job that
 //     only inspects/labels a PR and never executes its content, e.g. the fork gate of ai-review.yml) (head.repo.full_name == github.repository), because the
@@ -18,7 +18,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const RUNS_ON = "${{ fromJSON(vars.EBDA_RUNS_ON || '\"ubuntu-latest\"') }}";
-const RUNS_ON_ANY = "${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '\"ubuntu-latest\"') }}";
+const RUNS_ON_ANY = "${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '[\"ebda-mac-light\"]') }}";
 
 export function lintWorkflow(name, text) {
   const out = [];
