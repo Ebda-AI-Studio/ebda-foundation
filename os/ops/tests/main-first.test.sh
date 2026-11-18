@@ -200,8 +200,40 @@ rr_world() {
   echo '[{"user":{"login":"a"},"state":"APPROVED","submitted_at":"2026-11-14T09:00:00Z"}]' > "$FK/reviews_104.json"
   echo '{"workflow_runs":[]}' > "$FK/prq.json"
 }
-rr_world; bfile 60 101 102; run
-[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && grep -q "PR #104 run 14 held" "$T/log" && pass "rerun: batch PRs first (approved before unapproved), non-batch held" || fail "batch rerun order ($(posts | tr '\n' ' '))"
+# HELD-RERUN-1: with a RECENT queued run in the repo the non-batch run is HELD (the batch needs the runners); batch PRs first (approved before unapproved)
+rr_world; echo "{\"workflow_runs\":[{\"id\":900,\"status\":\"queued\",\"event\":\"pull_request\",\"created_at\":\"$NEW\",\"head_branch\":\"b1\",\"head_sha\":\"p1\",\"pull_requests\":[{\"number\":101}]}]}" > "$FK/prq.json"; bfile 60 101 102; run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && grep -q "PR #104 run 14 held" "$T/log" && pass "rerun: batch PRs first (approved before unapproved), non-batch held while a run is queued" || fail "batch rerun order ($(posts | tr '\n' ' '))"
+# HELD-RERUN-1, the measured case (#811, 2026-11-17): fresh batch file, main green, NOTHING queued: the held run starts (it used to sit held for hours with idle runners)
+rr_world; bfile 60 101 102; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun repos/o/r/actions/runs/14/rerun " ] && ! grep -q "run 14 held" "$T/log" && pass "HELD-RERUN-1: batch fresh but the repo is idle (nothing queued): the non-batch run is released after the batch PRs" || fail "idle release ($(posts | tr '\n' ' '))"
+# a queued GHOST (older than the recent window, e.g. the Nov-11 runs that can never be cancelled) does not count as busy
+rr_world; echo '{"workflow_runs":[{"id":901,"status":"queued","event":"pull_request","created_at":"2026-11-10T08:00:00Z","head_branch":"old","head_sha":"x","pull_requests":[{"number":5}]}]}' > "$FK/prq.json"; bfile 60 101 102; MAIN_FIRST_RERUN_CAP=5 run
+has "actions/runs/14/rerun" && pass "HELD-RERUN-1: a days-old queued ghost run does not keep the repo 'busy'" || fail "ghost counted as busy ($(posts | tr '\n' ' '))"
+# an API error reading the queue is 'not idle': the hold stays (fail safe)
+rr_world; echo "actions/runs?status=queued" > "$FK/fail"; bfile 60 101 102; MAIN_FIRST_RERUN_CAP=5 run
+! has "actions/runs/14/rerun" && grep -q "PR #104 run 14 held" "$T/log" && pass "HELD-RERUN-1: unreadable queue -> hold stays (fail safe)" || fail "api error released the hold ($(posts | tr '\n' ' '))"
+rm -f "$FK/fail"
+# HELD-RERUN-1b: the LAUNCH LIST (drain priority, file launch-list-o__r). The idle release runs launch PRs first and keeps non-launch runs held while a launch PR is pending.
+lfile() { mkdir -p "$T/state"; printf '%s\n' "$@" > "$T/state/launch-list-o__r"; }
+# idle + launch PR 104 held + non-launch 101/102 held: ONLY the launch PR is re-run first, the others stay held ("a launch-list PR is still pending")
+rr_world; lfile 104; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun " ] && grep -q "held: a launch-list PR is still pending" "$T/log" && pass "HELD-RERUN-1b: idle + a launch PR held -> the launch PR is re-run first, non-launch runs stay held" || fail "launch first ($(posts | tr '\n' ' '))"
+# idle + NO launch PR pending in the ledger: non-launch runs are released (approved first, old order)
+rr_world; lfile 555 556; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && pass "HELD-RERUN-1b: idle and no launch-list PR pending -> non-launch runs are released (approved first)" || fail "non-launch release ($(posts | tr '\n' ' '))"
+# launch order is the launch LIST order, not approval order
+rr_world; lfile 102 101 104; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun repos/o/r/actions/runs/14/rerun " ] && pass "HELD-RERUN-1b: launch PRs re-run in launch-list order" || fail "launch order ($(posts | tr '\n' ' '))"
+# unreadable / empty / missing list -> the old order, never a hold (idle release as in HELD-RERUN-1)
+rr_world; mkdir -p "$T/state"; : > "$T/state/launch-list-o__r"; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && ! grep -q "launch-list PR is still pending" "$T/log" && pass "HELD-RERUN-1b: an empty launch list -> old order, no hold" || fail "empty list ($(posts | tr '\n' ' '))"
+rr_world; printf 'garbage\nnot a pr\n' > "$T/state/launch-list-o__r"; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && pass "HELD-RERUN-1b: an unparseable launch list -> old order, no hold" || fail "garbage list ($(posts | tr '\n' ' '))"
+rr_world; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=5 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun repos/o/r/actions/runs/11/rerun " ] && pass "HELD-RERUN-1b: no launch list file -> old order, no hold" || fail "missing list ($(posts | tr '\n' ' '))"
+# RERUN_CAP per tick stays
+rr_world; lfile 104 102 101; bfile 60 998 999; MAIN_FIRST_RERUN_CAP=2 run
+[ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun " ] && pass "HELD-RERUN-1b: the per-tick re-run cap still applies to the launch order" || fail "cap ($(posts | tr '\n' ' '))"
 rr_world; bfile $((20*60)) 101 102; run
 [ "$(posts | tr '\n' ' ')" = "repos/o/r/actions/runs/14/rerun repos/o/r/actions/runs/12/rerun " ] && pass "stale batch -> old oldest-approval rerun order" || fail "stale rerun order ($(posts | tr '\n' ' '))"
 
@@ -251,6 +283,7 @@ ALLOW="fix/main-red" run
 cancels="$(posts | grep -c '/cancel$')"
 has "actions/runs/21/cancel" && [ "$cancels" = 1 ] && pass "lease: the refill (run 21) is cancelled on arrival; batch PR, fixes-main PR, allow-listed branch and a started run are untouched" || fail "lease cancel set ($(posts | tr '\n' ' '))"
 grep -q "lease ACQUIRED" "$T/log" && pass "lease: acquired when main has a queued job" || fail "no lease acquired"
+grep -q "lease: cancel PR run 21 on arrival .*pool=ebda-mac) so main run" "$T/log" && pass "lease: the cancel log line names the HEAVY pool (pool=ebda-mac)" || fail "heavy cancel line lacks pool=ebda-mac: $(grep 'cancel PR run 21' "$T/log" | head -1)"
 [ ! -e "$T/state/o__r.lease" ] && [ ! -s "$T/state/o__r.lease.tsv" ] && grep -q "lease released" "$T/log" && pass "lease: lease file and lease ledger cleared on release" || fail "lease state left behind"
 # a fresh drain batch is listed: the non-batch run is HELD (re-running it would only be re-cancelled), so it moves to the normal ledger, not re-run now
 ! has "actions/runs/21/rerun" && grep -q "^21	201	pa	" "$T/state/o__r.cancelled.tsv" && pass "lease: with a fresh drain batch the cancelled non-batch run is held and handed to the normal ledger" || fail "held run not handed over ($(posts | tr '\n' ' '))"
@@ -327,6 +360,7 @@ qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac-light"]'
 runs_json 31:feat-l:pl:301 32:feat-u:pu:302 > "$FK/prq.json"
 qjobl jobs_31.json "$NEW" '["ebda-mac-light"]'; qjobl jobs_32.json "$NEW" '["ubuntu-latest"]'
 run; has "actions/runs/31/cancel" && ! has "actions/runs/32/cancel" && pass "lease: main's queued LIGHT job takes the lease and a PR run queued on ebda-mac-light is cancelled; a run on another label is not" || fail "light pool ($(posts | tr '\n' ' '))"
+grep -q "lease: cancel PR run 31 on arrival .*pool=ebda-mac-light) so main run" "$T/log" && pass "lease: the cancel log line names the LIGHT pool (pool=ebda-mac-light)" || fail "light cancel line lacks pool=ebda-mac-light: $(grep 'cancel PR run 31' "$T/log" | head -1)"
 reset; main 90:aaa:in_progress:; qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac"]'
 runs_json 31:feat-l:pl:301 > "$FK/prq.json"; qjobl jobs_31.json "$NEW" '["ebda-mac-light"]'
 run; has "actions/runs/31/cancel" && pass "lease: a queued HEAVY main job also covers PR runs queued on the light pool (main wins both pools)" || fail "heavy main did not cover light PR runs"

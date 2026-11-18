@@ -180,6 +180,34 @@ for r in rs:
 print(json.dumps(rs))' 2>/dev/null || printf '%s' "$runs"
 }
 
+# MERGE-QUEUE-1 (Ruling MERGE-QUEUE-1): does a green merge_group run cover main's newest commit? Compares git TREE ids (a queue squash gives a new
+# commit sha but the same tree), requires the run's `Merge queue gate` job = success, and FAILS CLOSED: an API error, no match, or ANY completed
+# non-success merge_group run on the same tree (ambiguity) = not green. Rc 0 = covered (and logs the run).
+merge_group_green() {
+  local tip tree runs line id sha t gate matched=0 bad=0 ok_id=""
+  tip="$(gh api "repos/$REPO/commits/main" --jq .sha 2>/dev/null)" || return 1
+  [ "${#tip}" -ge 7 ] || return 1
+  tree="$(gh api "repos/$REPO/git/commits/$tip" --jq .tree.sha 2>/dev/null)" || return 1
+  [ "${#tree}" -ge 7 ] || return 1
+  runs="$(gh run list --repo "$REPO" --event merge_group --workflow "$MAIN_WF" --limit 20 --json databaseId,headSha,status,conclusion 2>/dev/null)" || return 1
+  while IFS=' ' read -r id sha st conc; do
+    [ -n "$id" ] || continue
+    [ "$st" = completed ] || continue
+    t="$(gh api "repos/$REPO/git/commits/$sha" --jq .tree.sha 2>/dev/null)" || return 1
+    [ "$t" = "$tree" ] || continue
+    matched=$((matched + 1))
+    if [ "$conc" != success ]; then bad=$((bad + 1)); continue; fi
+    gate="$(gh run view "$id" --repo "$REPO" --json jobs --jq '.jobs[] | select(.name == "Merge queue gate") | .conclusion' 2>/dev/null)" || return 1
+    if [ "$gate" = success ] && [ -z "$ok_id" ]; then ok_id="$id"; elif [ "$gate" != success ]; then bad=$((bad + 1)); fi
+  done <<EOR
+$(printf '%s' "$runs" | python3 -I -c 'import json,sys
+for r in json.load(sys.stdin): print(r.get("databaseId"), r.get("headSha"), r.get("status"), r.get("conclusion") or "-")' 2>/dev/null)
+EOR
+  [ "$matched" -gt 0 ] && [ "$bad" -eq 0 ] && [ -n "$ok_id" ] || return 1
+  log "main ${tip:0:8} is covered by green merge_group run $ok_id (same tree ${tree:0:8}): counted as main's green"
+  return 0
+}
+
 # MAIN GATE. Sets MAIN_VERDICT (green|full|red|pending|unverified|unknown|off), MAIN_SHA, MAIN_AHEAD. Rc 0 = may merge ordinary PRs.
 main_gate() {
   MAIN_VERDICT=off; MAIN_SHA=-; MAIN_AHEAD=0
@@ -200,6 +228,9 @@ for r in json.load(sys.stdin):
 $(printf '%s' "$runs" | python3 -I "$DE" --mode main --max-ahead "$MAX_AHEAD" --ahead "$ahead" 2>/dev/null || echo "unknown - 0 0")
 EOV
   MAIN_VERDICT="${v:-unknown}"
+  # MERGE-QUEUE-1: a queue merge fires a push run that repeats a lane the merge group already proved. If main's newest commit has the SAME TREE as a
+  # merge_group run whose `Merge queue gate` succeeded, that run counts as main's green (only upgrades pending / unverified / full, never red).
+  case "$MAIN_VERDICT" in pending|unverified|full) merge_group_green && { MAIN_VERDICT=green; MAIN_AHEAD=0; } ;; esac
   if [ "$MAIN_VERDICT" = unverified ] && [ "${rid:-0}" -gt 0 ] && [ ! -f "$SD/$NAME.healed-main-$rid-a$att" ] && ! rerun_gaveup "$rid"; then
     # G74: the newest main commit has no completed run: ask for one, and confirm it took (marked done only once it did)
     if rerun_verified "$rid"; then : > "$SD/$NAME.healed-main-$rid-a$att"; log "main run $rid on $MAIN_SHA ended cancelled: re-run confirmed"
