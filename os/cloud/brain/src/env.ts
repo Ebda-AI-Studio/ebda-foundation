@@ -7,6 +7,8 @@ export interface Env {
   EVENTS: KVNamespace;
   ASSETS?: Fetcher;
   // vars
+  /** the git commit this build was deployed from (stamped by scripts/deploy.sh); /health returns it when it is a sha */
+  GIT_COMMIT?: string;
   OS_ORGS: string;
   /** owner/name list of repos whose code is deployed; an advisory is urgent only there */
   DEPLOYED_REPOS?: string;

@@ -23,7 +23,7 @@
 // Human routes: GET /api/state, POST /api/halt, POST /api/questions/:id/answer, and the static dashboard at /dash/ (Workers Static
 // Assets, run Worker-first so the HTML/JS/CSS are never served before the gate). All of them go through gateHuman()
 // (src/dash-auth.ts, ruling RR-dash-auth): the Cloudflare Access JWT when Access is configured, else the interim Basic Auth,
-// else 503. /health stays public and carries no data.
+// else 503. /health stays public and carries only the deploy commit.
 import type { BrainDO } from './brain-do';
 import { DASH_HEADERS, gateHuman } from './dash-auth';
 import { type Env } from './env';
@@ -345,7 +345,8 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
-      if (path === '/health') return json({ ok: true, service: 'ebda-os-brain' });
+      // the commit is not a secret (a deploy stamp, same as the store and whatsapp /health); anything that is not a sha reads 'unknown'
+      if (path === '/health') return json({ ok: true, service: 'ebda-os-brain', commit: /^[0-9a-f]{7,40}(\+dirty)?$/.test(env.GIT_COMMIT ?? '') ? env.GIT_COMMIT : 'unknown' });
       if (request.method === 'POST' && (path === '/github/webhook' || path === '/')) return await handleGitHub(request, env, ctx);
       if (request.method === 'GET' && path === '/pending') return await handlePending(request, env);
       if (path === '/telegram/webhook' && request.method === 'POST') return await handleTelegram(request, env);
