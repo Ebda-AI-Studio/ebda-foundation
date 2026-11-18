@@ -192,7 +192,7 @@ batch_cancel() { # <repo> <ledger>
 import sys,json
 d=json.load(sys.stdin)
 for x in d["workflow_runs"]:
-    if x.get("status")!="queued" or x.get("event","pull_request")!="pull_request": continue
+    if x.get("status")!="queued" or x.get("event","pull_request")!="pull_request" or x.get("head_branch","").startswith("gh-readonly-queue/"): continue   # a merge-queue run is never cancelled (MAIN-FIRST-MG-1)
     prs=x.get("pull_requests") or []
     print(x["id"], x.get("head_branch",""), x.get("head_sha",""), prs[0]["number"] if prs else 0)' 2>/dev/null)" || { log "$repo: bad PR runs JSON, no batch cancel this tick"; return 0; }
   local rid sha prn jobs labels todo=() e rest
@@ -239,7 +239,7 @@ fair_gather() {
 import sys,json
 d=json.load(sys.stdin)
 for x in sorted(d["workflow_runs"], key=lambda x: x.get("created_at",""), reverse=True):
-    if x.get("status")!="queued" or x.get("event","pull_request")!="pull_request": continue
+    if x.get("status")!="queued" or x.get("event","pull_request")!="pull_request" or x.get("head_branch","").startswith("gh-readonly-queue/"): continue   # a merge-queue run is never cancelled (MAIN-FIRST-MG-1)
     prs=x.get("pull_requests") or []
     print(x["id"], x.get("head_branch",""), x.get("head_sha",""), prs[0]["number"] if prs else 0, x.get("created_at",""))' 2>/dev/null)" || { log "$o: bad PR runs JSON (fairness), repo skipped"; continue; }
     while read -r rid br sha prn created; do
@@ -359,7 +359,7 @@ for x in d["workflow_runs"]:
 import sys,json
 d=json.load(sys.stdin)
 for x in d["workflow_runs"]:
-    if x.get("status")!="queued": continue
+    if x.get("status")!="queued" or x.get("event","pull_request")!="pull_request" or x.get("head_branch","").startswith("gh-readonly-queue/"): continue   # a merge-queue run is never cancelled (MAIN-FIRST-MG-1)
     prs=x.get("pull_requests") or []
     print(x["id"], x.get("head_branch",""), x.get("head_sha",""), prs[0]["number"] if prs else 0, x.get("created_at",""))' 2>/dev/null)" || { log "$repo: bad PR runs JSON, skip tick"; return; }
   local to_cancel_pr=() rid br sha prn created jobs labels openpr
@@ -580,6 +580,27 @@ d=json.load(sys.stdin); now=int(os.environ["NOW"]); g=int(os.environ["GRACE"])
 def ep(s): return int(datetime.datetime.strptime(s,"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp())
 print(sum(1 for j in d.get("jobs",[]) if j.get("status")=="queued" and now-ep(j["created_at"])>=g))' 2>/dev/null)" || qn=0
   fi
+  # MAIN-FIRST-MG-1: a merge-queue run (event merge_group, branch gh-readonly-queue/main/*) takes the lease EXACTLY like a queued main push run: with the
+  # queue enabled it is the run that must reach the pool first. It only ever HOLDS the lease (it is never in a cancel list). The main push run keeps
+  # priority as the holder when both have queued jobs.
+  local mgruns mgid mgsha mgst mgq
+  mgruns="$(api "repos/$repo/actions/runs?event=merge_group&per_page=30")" || { log "$repo: lease: API failure reading merge-queue runs; lease state kept"; if [ -f "$lf" ]; then LEASE_STATE=held; elif [ -s "$lledger" ]; then LEASE_STATE=releasing; fi; return; }
+  while read -r mgid mgsha mgst; do
+    [ -n "$mgid" ] || continue
+    mgq="$(api "repos/$repo/actions/runs/$mgid/jobs?per_page=100" | NOW="$NOW" GRACE="$LEASE_MIN_Q" python3 -c '
+import sys,json,os,datetime
+d=json.load(sys.stdin); now=int(os.environ["NOW"]); g=int(os.environ["GRACE"])
+def ep(s): return int(datetime.datetime.strptime(s,"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp())
+print(sum(1 for j in d.get("jobs",[]) if j.get("status")=="queued" and now-ep(j["created_at"])>=g))' 2>/dev/null)" || mgq=0
+    if [ "${qn:-0}" -le 0 ] && [ "${mgq:-0}" -gt 0 ]; then nid="$mgid"; nsha="$mgsha"; nstatus="$mgst"; qn="$mgq"
+    elif [ "${qn:-0}" -le 0 ] && [ "$nstatus" != queued ] && [ "$nstatus" != in_progress ]; then nid="$mgid"; nsha="$mgsha"; nstatus=in_progress   # active queue run between waves: hysteresis applies
+    fi
+  done < <(printf '%s' "$mgruns" | WF="$WORKFLOW" python3 -c '
+import sys,json,os
+d=json.load(sys.stdin)
+r=[x for x in d.get("workflow_runs",[]) if x.get("name","").lower()==os.environ["WF"].lower() and x.get("head_branch","").startswith("gh-readonly-queue/main/") and x.get("status") in ("queued","in_progress")]
+r.sort(key=lambda x:x.get("created_at",""),reverse=True)
+for x in r[:5]: print(x["id"], x.get("head_sha",""), x["status"])' 2>/dev/null)
   if [ "${qn:-0}" -le 0 ]; then
     if [ -f "$lf" ]; then
       # Hysteresis (review of #105): main queues its jobs in waves (`needs:`), so "no queued job" for one step is not "main is running". Release only when
@@ -608,7 +629,7 @@ print(sum(1 for j in d.get("jobs",[]) if j.get("status")=="queued" and now-ep(j[
 import sys,json
 d=json.load(sys.stdin)
 for x in d["workflow_runs"]:
-    if x.get("status")!="queued": continue
+    if x.get("status")!="queued" or x.get("event","pull_request")!="pull_request" or x.get("head_branch","").startswith("gh-readonly-queue/"): continue   # a merge-queue run is never cancelled (MAIN-FIRST-MG-1)
     prs=x.get("pull_requests") or []
     print(x["id"], x.get("head_branch",""), x.get("head_sha",""), prs[0]["number"] if prs else 0, x.get("created_at",""))' 2>/dev/null)" || { log "$repo: lease: bad PR runs JSON; skip this step"; return; }
   while read -r rid br sha prn created; do

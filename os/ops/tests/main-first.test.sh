@@ -26,6 +26,7 @@ echo "$path" >> "$FK/gets.log"
 if [ -f "$FK/fail" ] && grep -q -F -f "$FK/fail" <<<"$path"; then echo "HTTP 504" >&2; exit 1; fi
 f=""
 case "$path" in
+  */actions/runs\?event=merge_group*) if [ -f "$FK/mg.json" ]; then cat "$FK/mg.json"; else echo '{"workflow_runs":[]}'; fi; exit 0 ;;
   */actions/runs\?branch=main*) f=main.json ;;
   */actions/runs\?status=queued*) f=prq.json ;;
   */actions/runs/*/jobs*) id="${path#*/actions/runs/}"; f="jobs_${id%%/*}.json" ;;
@@ -372,6 +373,27 @@ grep -q "lease: cancel PR run 31 on arrival .*pool=ebda-mac-any) so main run" "$
 reset; main 90:aaa:in_progress:; qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac"]'
 runs_json 31:feat-a:pa:301 > "$FK/prq.json"; qjobl jobs_31.json "$NEW" '["ebda-mac-any"]'
 run; has "actions/runs/31/cancel" && pass "lease: a queued HEAVY main job also covers PR runs queued on the ANY pool" || fail "heavy main did not cover any-pool PR runs"
+# (H) MAIN-FIRST-MG-1: a merge-queue run (event merge_group, branch gh-readonly-queue/main/*) takes the lease like a queued main push run, and is never cancelled
+mgrun() { # <id> <sha> <status>: one merge_group CI run
+  echo "{\"workflow_runs\":[{\"id\":$1,\"name\":\"CI\",\"event\":\"merge_group\",\"head_branch\":\"gh-readonly-queue/main/pr-9-abc\",\"head_sha\":\"$2\",\"status\":\"$3\",\"conclusion\":null,\"created_at\":\"2026-11-14T11:30:00Z\"}]}" > "$FK/mg.json"; }
+reset; main 90:aaa:completed:success; mgrun 70 mmm in_progress; qjobl jobs_70.json "$OLD" '["self-hosted","ebda-mac"]'
+runs_json 31:feat-a:pa:301 > "$FK/prq.json"; qjobl jobs_31.json "$NEW" '["self-hosted","ebda-mac"]'
+run; has "actions/runs/31/cancel" && ! has "actions/runs/70/cancel" && pass "merge-queue: a queued merge_group job takes the lease (main push run is done) and a PR run on the pool is cancelled; the queue run is not" || fail "merge_group lease ($(posts | tr '\n' ' '))"
+grep -q "lease ACQUIRED by main run 70 (mmm)" "$T/log" && pass "merge-queue: the lease log names the merge_group run and its sha" || fail "no ACQUIRED line for the merge_group run"
+# no queued job on the queue run, run still in progress between waves: the lease is KEPT for one step (hysteresis), not released at once
+reset; main 90:aaa:completed:success; mgrun 70 mmm in_progress; echo '{"jobs":[{"status":"in_progress","created_at":"'"$OLD"'","labels":["self-hosted","ebda-mac"]}]}' > "$FK/jobs_70.json"
+mkdir -p "$T/state"; printf '70\t%s\n' "$NOW" > "$T/state/o__r.lease"
+run; grep -q "lease: main run 70 has no queued job (1/2)" "$T/log" && pass "merge-queue: between waves the lease is kept for one step" || fail "merge_group hysteresis ($(tail -3 "$T/log"))"
+# (b) a merge_group run is NEVER in a cancel list: even listed as a queued run on the pool (with and without the event field), it is not cancelled; the real PR run is
+reset; main 90:aaa:queued:; qjobl jobs_90.json "$OLD" '["self-hosted","ebda-mac"]'
+cat > "$FK/prq.json" <<EOJ
+{"workflow_runs":[
+ {"id":41,"status":"queued","event":"merge_group","head_branch":"gh-readonly-queue/main/pr-9-abc","head_sha":"qqq","pull_requests":[]},
+ {"id":42,"status":"queued","head_branch":"gh-readonly-queue/main/pr-8-def","head_sha":"rrr","pull_requests":[]},
+ {"id":43,"status":"queued","event":"pull_request","head_branch":"feat-a","head_sha":"sss","pull_requests":[{"number":303}]}]}
+EOJ
+for i in 41 42 43; do qjobl "jobs_$i.json" "$NEW" '["self-hosted","ebda-mac"]'; done
+run; has "actions/runs/43/cancel" && ! has "actions/runs/41/cancel" && ! has "actions/runs/42/cancel" && pass "merge-queue: a merge_group run (with or without the event field) is never cancelled by the lease; the PR run is" || fail "merge_group cancelled ($(posts | tr '\n' ' '))"
 unset LV
 
 echo "$_pass passed, $_fail failed"; [ "$_fail" = 0 ]
