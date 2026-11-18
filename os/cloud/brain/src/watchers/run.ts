@@ -5,6 +5,7 @@ import type { BrainDO } from '../brain-do';
 import type { Env } from '../env';
 import { due, reportError, unconfiguredIdent, type Sink, type WatchCtx } from './common';
 import * as ciCatchup from './ci-catchup';
+import * as ciPool from './ci-pool';
 import * as cfWorkers from './cf-workers';
 import * as cfUsage from './cf-usage';
 import * as costGuard from './cost-guard';
@@ -33,6 +34,7 @@ export const GROUPS: Record<WatcherGroup, Entry[]> = {
     { id: pageLoad.ID, intervalMs: pageLoad.INTERVAL_MS, run: pageLoad.watchPageLoad },
     { id: journey.ID, intervalMs: journey.INTERVAL_MS, run: journey.watchJourneys },
     { id: loopStall.ID, intervalMs: loopStall.INTERVAL_MS, run: loopStall.watchLoopStall },
+    { id: ciPool.ID, intervalMs: ciPool.INTERVAL_MS, run: ciPool.watchCiPool },
   ],
   hourly: [
     { id: deployDrift.ID, intervalMs: deployDrift.INTERVAL_MS, run: deployDrift.watchDeployDrift },
