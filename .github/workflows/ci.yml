@@ -1,6 +1,6 @@
 name: CI
 
-# Every runs-on reads repo variable EBDA_RUNS_ON (the native macOS runners when set) and falls back to ubuntu-latest when unset.
+# Every runs-on reads a repo variable (EBDA_ANY_RUNS_ON for the short jobs, EBDA_RUNS_ON otherwise) and falls back to the Mac label ebda-mac-light, NEVER a GitHub-hosted runner (Ahmad 2026-11-16).
 # setup-node's remote npm cache is for hosted runners only: on the self-hosted Mac runners ~/.npm already persists locally.
 on:
   push:
@@ -28,7 +28,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -45,7 +44,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
       - run: npm ci
       - name: Audit production dependencies (blocking)
         # Ruling AUDIT-SPLIT-1: `npm audit --omit=dev`, zero tolerance beyond .github/audit-allow.json (id, package, reason, expiry; an expired
@@ -93,7 +91,7 @@ jobs:
   # unless os/ or this workflow changed (one checkout + one git diff, ~10 s). On push to main it always runs.
   os:
     name: OS layer (shellcheck, guards, suites, Linux smoke)
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     # 45, not 25 (2026-11-17): on a loaded Mac runner this job ran 25:19 twice on #105 and GitHub reported the timeout as `cancelled`
     # (all of it inside the one `OS suites` step: no lock, no queue). ~13 min uncontested; 45 is the backstop, the `slow` lines say where time goes.
     timeout-minutes: 45
@@ -120,7 +118,7 @@ jobs:
         run: |
           command -v shellcheck >/dev/null || { [ "$(uname -s)" = Linux ] || { echo "::error::shellcheck missing on this runner (macOS: brew install shellcheck once on the host)"; exit 1; }; sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
           shellcheck -S warning os/ops/*.sh os/ops/lib/*.sh os/ops/hooks/*.sh os/ops/git-hooks/*.sh os/ops/remediation/*.sh
-      - name: Tools the suites need (present on ubuntu-latest; installed if the runner image lacks them)
+      - name: Tools the suites need (installed if the runner lacks them)
         if: steps.chg.outputs.changed == 'true'
         run: |
           for t in jq rsync python3; do command -v "$t" >/dev/null || need="$need $t"; done
@@ -165,7 +163,6 @@ jobs:
         if: steps.chg.outputs.changed == 'true'
         with:
           node-version: 22
-          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
           cache-dependency-path: os/cloud/brain/package-lock.json
       - if: steps.chg.outputs.changed == 'true'
         run: npm ci
@@ -212,7 +209,6 @@ jobs:
         if: steps.chg.outputs.changed == 'true'
         with:
           node-version: 22
-          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
           cache-dependency-path: os/cloud/hands/package-lock.json
       - if: steps.chg.outputs.changed == 'true'
         run: npm ci
