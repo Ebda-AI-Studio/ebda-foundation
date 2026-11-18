@@ -33,7 +33,10 @@ describe('brand', () => {
     for (const a of accounts) expect(new URL(a.url).protocol, a.id).toBe('https:');
     expect(accounts.find((a) => a.id === 'facebook')?.url).toBe(`https://www.facebook.com/${handle}`);
     expect(accounts.find((a) => a.id === 'youtube')?.url).toBe('https://www.youtube.com/@EbdaAIStudio');
-    for (const id of ['instagram', 'tiktok']) expect(accounts.find((a) => a.id === id)?.url, id).toContain(`/${id === 'tiktok' ? '@' : ''}${handle}`);
+    expect(accounts.find((a) => a.id === 'tiktok')?.url).toContain(`/@${handle}`);
+    // Meta closed instagram.com/ebdaaistudio; the new account is ebdaai.studio (dot). ebdaai_studio (underscore) is a third party.
+    expect(accounts.find((a) => a.id === 'instagram')?.url).toBe('https://www.instagram.com/ebdaai.studio/');
+    expect(JSON.stringify(accounts)).not.toMatch(/instagram\.com\/ebdaaistudio|ebdaai_studio/);
     expect(new Set(accounts.map((a) => a.url)).size).toBe(accounts.length);
   });
 });
