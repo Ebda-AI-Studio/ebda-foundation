@@ -14,6 +14,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # isolated HOME: the script hardcodes $HOME/Desktop/projects/_worktrees, and os-state's TCC canary
 # probes this path (see worktree-cleanup.test.sh for the full story)
 export HOME="$TMP/home"
+export OS_SSD_ROOT="$TMP/no-ssd"   # never touch the real /Volumes/Ebda (lib/wt-roots.sh)
 mkdir -p "$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-store/.git"
 P="$HOME/Desktop/projects"; WT="$P/_worktrees"
 

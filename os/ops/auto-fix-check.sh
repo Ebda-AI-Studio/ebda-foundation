@@ -30,6 +30,7 @@
 
 # shellcheck source=lib/os-config.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/wt-roots.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-roots.sh" 2>/dev/null || true
 command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 # CLAUDE_BIN lets a test point this at a stub. Without it the model call is
@@ -368,7 +369,8 @@ for REPO_ENTRY in "${REPOS[@]}"; do
   # commit that failed, so concurrent interactive sessions + this watchdog can't
   # collide on one checkout (the parallel-session-worktree-orchestration rule).
   AUTOFIX_BRANCH="auto-fix/${HEAD_SHA:0:8}"
-  WT="$OS_PROJECTS_DIR/_worktrees/${REPO_SHORT}__autofix-${HEAD_SHA:0:8}"
+  WT_BASE="$(command -v wt_worktree_root >/dev/null 2>&1 && wt_worktree_root || echo "$OS_PROJECTS_DIR/_worktrees")"
+  WT="$WT_BASE/${REPO_SHORT}__autofix-${HEAD_SHA:0:8}"
   BASE_REF="${HEAD_BRANCH:-main}"
 
   # Scrub any leftovers from a prior aborted run for this SHA.
@@ -377,7 +379,7 @@ for REPO_ENTRY in "${REPOS[@]}"; do
   git -C "$LOCAL_PATH" worktree prune 2>/dev/null || true
 
   git -C "$LOCAL_PATH" fetch origin "$BASE_REF" -q 2>/dev/null || git -C "$LOCAL_PATH" fetch origin -q 2>/dev/null || true
-  mkdir -p "$OS_PROJECTS_DIR/_worktrees"
+  mkdir -p "$WT_BASE"
   if ! git -C "$LOCAL_PATH" worktree add -b "$AUTOFIX_BRANCH" "$WT" "$HEAD_SHA" >>"$LOG_FILE" 2>&1; then
     log "  worktree create failed (sha ${HEAD_SHA:0:8}) — telegram report only"
     send_telegram "⚠️ Auto-fix couldn't create an isolated worktree for \`$REPO\` \`${HEAD_SHA:0:8}\`. Needs manual triage."

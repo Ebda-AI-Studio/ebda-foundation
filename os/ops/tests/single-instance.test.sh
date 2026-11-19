@@ -13,6 +13,7 @@ pass=0; fail=0
 ok(){ if [ "$2" = "$3" ]; then echo "PASS: $1"; pass=$((pass+1)); else echo "FAIL: $1 - got '$2' want '$3'"; fail=$((fail+1)); fi; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"; P="$HOME/Desktop/projects"
+export OS_SSD_ROOT="$TMP/no-ssd"   # never touch the real /Volumes/Ebda (lib/wt-roots.sh)
 mkdir -p "$P/Ebda-AI-Studio/internal-projects/ebda-store/.git" "$P/_worktrees" "$HOME/.whisky-os-state"
 export HYGIENE_LIVE_CWDS="" OS_LOCK_DIR="$TMP/locks" HYGIENE_QUEUE="$TMP/queue" OS_SHIM_DIR="$TMP/shim" CALLS="$TMP/calls"
 mkdir -p "$OS_SHIM_DIR" "$TMP/ops"; cp "$OPS/workspace-hygiene.sh" "$TMP/ops/"; cp -R "$OPS/lib" "$TMP/ops/lib"
