@@ -54,6 +54,7 @@ set -uo pipefail
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 # shellcheck source=lib/os-config.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/wt-roots.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-roots.sh" 2>/dev/null || true
 command -v os_config_load >/dev/null 2>&1 && os_config_load
 . "$(dirname "$0")/lib/os-state.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-state.sh" 2>/dev/null || true
 
@@ -227,7 +228,8 @@ printf '%s' "$candidates" | while IFS=$'\t' read -r slug path; do
 
   _info "  • $slug — drafting propose-only PR…"
   branch="proposal/standard-${slug}"; branch="${branch:0:60}"
-  wt="$OS_PROJECTS_DIR/_worktrees/$(basename "$FND")__$(printf '%s' "$branch" | tr '/' '-')"
+  mkdir -p "$(command -v wt_worktree_root >/dev/null 2>&1 && wt_worktree_root || echo "$OS_PROJECTS_DIR/_worktrees")" 2>/dev/null
+  wt="$(command -v wt_worktree_root >/dev/null 2>&1 && wt_worktree_root || echo "$OS_PROJECTS_DIR/_worktrees")/$(basename "$FND")__$(printf '%s' "$branch" | tr '/' '-')"
   git -C "$FND" worktree add -b "$branch" "$wt" "origin/$BASE_BRANCH" >/dev/null 2>&1 || {
     _info "    worktree create failed — falling back to issue"; _open_issue "$slug" "$path"; drafted=$((drafted+1)); continue; }
 

@@ -32,6 +32,7 @@ mkdir -p "$PROJECTS_DIR" "$WORKTREES_DIR"
 # shared guard 24 ops scripts depend on, and keeps anything os-state writes
 # (`~/.whisky-os-state/`) inside the temp dir instead of the developer's real one.
 export HOME="$TMP/home"
+export OS_SSD_ROOT="$TMP/no-ssd"   # never touch the real /Volumes/Ebda (lib/wt-roots.sh)
 mkdir -p "$HOME/Desktop/projects/Ebda-AI-Studio/internal-projects/ebda-store/.git"
 
 # mkrepo <name> <default-branch>

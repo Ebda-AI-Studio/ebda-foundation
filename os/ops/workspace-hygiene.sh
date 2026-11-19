@@ -92,7 +92,8 @@ SKIP_P=""
 fetched=0
 # every process's working dir (shells, Claude sessions, dev servers); a tree in use is never removed
 live_cwds="${HYGIENE_LIVE_CWDS-$(lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')}"
-WT_ROOT="$OS_PROJECTS_DIR/_worktrees"
+WT_ROOT="$OS_PROJECTS_DIR/_worktrees"   # internal root (kept for messages); the sweep walks EVERY existing root below
+. "$(dirname "${BASH_SOURCE[0]}")/lib/wt-roots.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-roots.sh" 2>/dev/null || true
 PROJECTS="$OS_PROJECTS_DIR"
 PROJECTS_ROOT="$PROJECTS"
 stripped=()
@@ -117,7 +118,10 @@ removed=(); dirty=(); orphans=(); stashes=(); kept=()
 # rm -rf'd it — with every live worktree inside, unpushed commits and all (2026-09-27 and 2026-09-28).
 # Now: only a dir named *__* is a worktree candidate (found at any depth, not descended into); a container
 # is never a candidate, so it is never removed.
-if [ -d "$WT_ROOT" ]; then
+# Two roots since 2026-11-19: internal $OS_PROJECTS_DIR/_worktrees AND the SSD (lib/wt-roots.sh wt_all_roots); a missing
+# root (SSD unmounted) is simply absent from the list, so it is skipped, never an error.
+while IFS= read -r WT_ROOT; do
+  [ -d "$WT_ROOT" ] || continue
   while IFS= read -r wt; do
     [ -d "$wt" ] || continue
     name="${wt#"$WT_ROOT"/}"
@@ -176,7 +180,7 @@ if [ -d "$WT_ROOT" ]; then
       dirty+=("$name [$branch] — $dirty_files uncommitted file(s), ~${age_days}d, $sz")
     fi
   done < <(wt_candidates "$WT_ROOT")
-fi
+done < <(command -v wt_all_roots >/dev/null 2>&1 && wt_all_roots || { [ -d "$WT_ROOT" ] && echo "$WT_ROOT"; })
 
 # --- 4. stashes across root repos (invisible parked work) ---
 if [ -z "$REPO_FILTER" ]; then
@@ -186,7 +190,8 @@ while IFS= read -r repo_dir; do
 done < <(list_repo_roots)
 fi
 
-wt_size=$(_du_h "$WT_ROOT")
+wt_size=""
+while IFS= read -r _r; do wt_size="${wt_size:+$wt_size + }$(_du_h "$_r")"; done < <(command -v wt_all_roots >/dev/null 2>&1 && wt_all_roots || echo "$WT_ROOT")
 bk_size=$(_du_h "$PROJECTS/_backups")
 
 # --- 5. digest ---
