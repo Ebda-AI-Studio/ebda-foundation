@@ -71,6 +71,7 @@ done < <(cd "$OSD/ops" && find . -type f \
   ! -path './tests/*' ! -path './launchd/*' ! -path '*/__tests__/*' ! -path './git-hooks/*' ! -path './cloud/*' \
   ! -name 'install.sh' ! -name 'tests-pending.list' ! -name '.DS_Store' | sed 's|^\./||' | sort)
 copy_if_changed "$OSD/config/os.env" "$HOME/.claude/os.env"
+copy_if_changed "$OSD/config/prod-watch.json" "$HOME/.claude/prod-watch.json"   # probe list for outside-watch.sh (F-OBS-1)
 for f in "$OSD"/schemas/*.json; do [ -f "$f" ] && copy_if_changed "$f" "$HOME/.claude/schemas/$(basename "$f")"; done
 for f in "$OSD/vendor/landlock-run/main.c" "$OSD/vendor/landlock-run/LICENSE"; do
   [ -f "$f" ] && copy_if_changed "$f" "$HOME/.claude/vendor/landlock-run/$(basename "$f")"

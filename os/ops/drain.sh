@@ -84,7 +84,14 @@ ENABLED="$SD/$NAME.enabled"; STOP="$SD/$NAME.stop"; GLOBAL_STOP="$HOME/.claude/h
 HB="$SD/$NAME.heartbeat"; PROG="$SD/$NAME.progress"; POSTED="$SD/$NAME.last-post"
 log() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 halted() { [ -f "$STOP" ] || [ -f "$GLOBAL_STOP" ]; }
-[ -f "$ENABLED" ] || { log "drain $NAME: not switched over ($ENABLED absent); idle"; exit 0; }
+# Off by design until switched over (F-DRAIN-1): launchd fires this every 5 min, so say it once a day, not 288 times.
+if [ ! -f "$ENABLED" ]; then
+  IDLE_MARK="$SD/$NAME.idle-logged"
+  if [ -z "$(find "$IDLE_MARK" -mmin -1440 2>/dev/null)" ]; then
+    log "drain $NAME: not switched over ($ENABLED absent); idle (logged once per 24h)"; : > "$IDLE_MARK"
+  fi
+  exit 0
+fi
 halted && { log "drain $NAME: stop file present; idle"; exit 0; }
 single_instance "drain-$NAME"
 

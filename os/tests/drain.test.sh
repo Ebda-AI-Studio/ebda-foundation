@@ -86,6 +86,12 @@ calls() { wc -l < "$GATE_LOG" | tr -d ' '; }
 
 reset; prs "$(pr 1 aaaaaaa1 green)"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "off until the enabled marker exists: no gate call" || no "ran while off"
+# F-DRAIN-1: the idle line is logged once per 24h, not on every 5-minute launchd tick.
+reset; prs "$(pr 1 aaaaaaa1 green)"
+o1="$(run)"; o2="$(run)"
+[ "$(printf '%s\n%s\n' "$o1" "$o2" | grep -c 'not switched over')" = 1 ] && ok "off-by-default idle line logged once, not per tick" || no "idle line repeated ($o1 / $o2)"
+touch -t 202001010000 "$SD/r.idle-logged"; o3="$(run)"
+printf '%s' "$o3" | grep -q 'not switched over' && ok "idle line logged again once the 24h marker is stale" || no "no re-log after 24h"
 
 reset; on; prs "$(pr 1 aaaaaaa1 green)"
 run >/dev/null; [ "$(calls)" = 1 ] && grep -q "^1 aaaaaaa1 --repo $REPO_SLUG " "$GATE_LOG" && ok "green+mergeable PR goes through the gate, head pinned, --repo passed" || no "green PR not gated ($(cat "$GATE_LOG"))"
