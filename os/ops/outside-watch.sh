@@ -89,12 +89,12 @@ mark() { # mark <name...> alerted now (only after a delivered alert)
   for n in "$@"; do n="${n%% *}"; [ -f "$SD/$n.state" ] && sed -i '' "s/^alerted=.*/alerted=$NOW/" "$SD/$n.state"; done
 }
 if [ "${#newly[@]}" -gt 0 ]; then
-  if "$NOTIFY" "PROD DOWN (outside Cloudflare, 2 checks)" "$(printf '%s\n' "${newly[@]}")"; then mark "${newly[@]}"; else log "alert delivery FAILED, will retry next tick"; fi
+  if "$NOTIFY" "PROD DOWN (outside Cloudflare, 2 checks)" "$(printf '%s\n' ${newly[@]+"${newly[@]}"})"; then mark ${newly[@]+"${newly[@]}"}; else log "alert delivery FAILED, will retry next tick"; fi
 fi
 if [ "${#reminders[@]}" -gt 0 ]; then
-  if "$NOTIFY" "still down" "$(printf '%s\n' "${reminders[@]}")"; then mark "${reminders[@]}"; else log "reminder delivery FAILED"; fi
+  if "$NOTIFY" "still down" "$(printf '%s\n' ${reminders[@]+"${reminders[@]}"})"; then mark ${reminders[@]+"${reminders[@]}"}; else log "reminder delivery FAILED"; fi
 fi
 if [ "${#recovered[@]}" -gt 0 ]; then
-  "$NOTIFY" --silent "RECOVERED" "$(printf '%s\n' "${recovered[@]}")" || log "recovery delivery FAILED"
+  "$NOTIFY" --silent "RECOVERED" "$(printf '%s\n' ${recovered[@]+"${recovered[@]}"})" || log "recovery delivery FAILED"
 fi
 exit 0
