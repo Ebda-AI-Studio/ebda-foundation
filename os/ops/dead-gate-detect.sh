@@ -121,7 +121,7 @@ for r in roots:
 # A guarded name is a FUNCTION (not a binary) only if `name()` / `function name` is defined in the
 # same file or in a file it sources (statically visible `source`/`.` paths, followed transitively).
 # Anywhere-in-the-tree was too broad, and a snake_case-name rule hid a real break (backup-all-neon.sh
-# guarded `backup_neon_entries`, which no lib defined).
+# guarded a function no sourced lib defined).
 func_re = re.compile(r'^\s*(?:function\s+)?([A-Za-z0-9_]+)\s*\(\)\s*\{?')
 src_kw = re.compile(r'(?:^\s*|[;&|(]\s*)(?:source|\.)\s+')
 sh_tok = re.compile(r'[A-Za-z0-9_./~-]+\.sh\b')
