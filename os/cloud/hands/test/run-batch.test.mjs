@@ -12,6 +12,14 @@ import { selectProvider } from '../providers/index.mjs';
 
 const HERE = join(import.meta.dirname, '..');
 
+/** Test-controlled usage state: a fresh snapshot at `pct`, in a temp dir. Tests never read host usage state (standard test-isolation). */
+async function usageEnv(pct = 10, extra = {}) {
+  const d = await mkdtemp(join(tmpdir(), 'hands-usage-'));
+  const snap = join(d, 'usage-snapshot.json');
+  await writeFile(snap, JSON.stringify({ t: Date.now() / 1000, rl: { seven_day: { used_percentage: pct } } }));
+  return { PATH: process.env.PATH, HOME: d, USAGE_STATE: join(d, 'usage'), USAGE_SNAPSHOT: snap, ...extra };
+}
+
 describe('run-batch --dry-run --fixture', () => {
   it('walks every fixture job end to end and reports one outcome each, with no network', async () => {
     const lines = [];
@@ -20,7 +28,7 @@ describe('run-batch --dry-run --fixture', () => {
       throw new Error('network used in dry-run');
     };
     try {
-      const code = await main(['--dry-run', '--fixture', join(HERE, 'fixtures', 'batch.json')], { PATH: process.env.PATH, HOME: process.env.HOME }, (s) => lines.push(s));
+      const code = await main(['--dry-run', '--fixture', join(HERE, 'fixtures', 'batch.json')], await usageEnv(), (s) => lines.push(s));
       expect(code).toBe(0);
     } finally {
       globalThis.fetch = realFetch;
@@ -32,7 +40,7 @@ describe('run-batch --dry-run --fixture', () => {
   });
   it('HANDS-COORD on the real Ebda finding (Semgrep red on ebda-store main): one PR, never merged; the auth variant is a question', async () => {
     const lines = [];
-    const code = await main(['--dry-run', '--fixture', join(HERE, 'fixtures', 'ebda-semgrep-main-red.json')], { PATH: process.env.PATH, HOME: process.env.HOME }, (s) => lines.push(s));
+    const code = await main(['--dry-run', '--fixture', join(HERE, 'fixtures', 'ebda-semgrep-main-red.json')], await usageEnv(), (s) => lines.push(s));
     expect(code).toBe(0);
     const report = JSON.parse(lines.at(-1));
     expect(report.outcomes.map((o) => o.status)).toEqual(['pr_opened', 'could_not_fix']);
@@ -42,11 +50,31 @@ describe('run-batch --dry-run --fixture', () => {
   });
   it('I-1: a malformed HANDS_USAGE_THRESHOLD_PCT refuses every job and says why', async () => {
     const lines = [];
-    const code = await main(['--dry-run', '--fixture', join(HERE, 'fixtures', 'batch.json')], { PATH: process.env.PATH, HOME: process.env.HOME, HANDS_USAGE_THRESHOLD_PCT: 'eighty' }, (s) => lines.push(s));
+    const code = await main(['--dry-run', '--fixture', join(HERE, 'fixtures', 'batch.json')], await usageEnv(10, { HANDS_USAGE_THRESHOLD_PCT: 'eighty' }), (s) => lines.push(s));
     expect(code).toBe(0);
     const report = JSON.parse(lines.at(-1));
     expect(report.outcomes.map((o) => o.status)).toEqual(['skipped_usage', 'skipped_usage', 'skipped_usage']);
     expect(lines.join('\n')).toMatch(/not a number 1\.\.100: refusing every job/);
+  });
+  it('host usage state never leaks into a fixture run (stop-file / status.json / ~/.claude snapshot at 99%)', async () => {
+    const host = await mkdtemp(join(tmpdir(), 'hands-host-'));
+    await mkdir(join(host, '.claude'), { recursive: true });
+    await mkdir(join(host, 'state', 'usage'), { recursive: true });
+    const hot = JSON.stringify({ t: Date.now() / 1000, rl: { seven_day: { used_percentage: 99 } } });
+    await writeFile(join(host, '.claude', 'usage-snapshot.json'), hot);
+    await writeFile(join(host, 'state', 'usage', 'status.json'), JSON.stringify({ stop: true, pct: 99 }));
+    await writeFile(join(host, 'state', 'usage', 'manual.json'), JSON.stringify({ pct: 99, t: Date.now() / 1000 }));
+    const base = await usageEnv(10);
+    // HOME and OS_STATE_DIR point at the hot host state; the controlled USAGE_* sources must still win
+    const lines = [];
+    const code = await main(['--dry-run', '--fixture', join(HERE, 'fixtures', 'batch.json')], { ...base, HOME: host, OS_STATE_DIR: join(host, 'state') }, (s) => lines.push(s));
+    expect(code).toBe(0);
+    expect(JSON.parse(lines.at(-1)).outcomes.map((o) => o.status)).toEqual(['pr_opened', 'pr_opened', 'could_not_fix']);
+    // and with NO explicit USAGE_* the hot host snapshot is not consulted: unknown, never the host's 99
+    const l2 = [];
+    await main(['--dry-run', '--fixture', join(HERE, 'fixtures', 'batch.json')], { PATH: process.env.PATH, HOME: host, OS_STATE_DIR: join(host, 'state') }, (s) => l2.push(s));
+    expect(l2.join('\n')).not.toMatch(/weekly usage 99/);
+    expect(l2.join('\n')).not.toMatch(/\(snapshot\)/);
   });
   it('sweepWorkdir removes only job_* dirs (crash leftovers), never anything else', async () => {
     const d = await mkdtemp(join(tmpdir(), 'hands-sweep-'));
