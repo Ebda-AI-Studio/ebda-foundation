@@ -242,8 +242,8 @@ All on the **personal** Cloudflare account. Never put an id or secret in the rep
    ```
    - `HANDS_TOKEN` is the HMAC key for the per-run container tokens (never a bearer); `HANDS_MAC_TOKEN` is the Mac's own bearer (put the same value in the Mac's `OS_SERVICES_ENV`, NOT `HANDS_TOKEN`). The hands key: `HANDS_ANTHROPIC_API_KEY` (a Console key with a hard spend limit; `HANDS_API_SPEND_LIMIT_USD` declares that limit, committed as 200), plus `OS_BRAIN_CONTAINERS=1` at deploy to merge the containers block. Never put `ANTHROPIC_API_KEY` on the Mac.
    - Dashboard (ruling RR-dash-auth): `DASH_BASIC_PASSWORD` from the Keychain without printing it:
-     `security find-generic-password -s ebda-os-brain-dash-password -a ahmad -w | npx wrangler secret put DASH_BASIC_PASSWORD --config wrangler.deploy.jsonc`.
-     Create it once with `security add-generic-password -s ebda-os-brain-dash-password -a ahmad -w "$(openssl rand -base64 32)"`. Without it (and without Access) `/dash/*` and `/api/*` answer 503.
+     `security find-generic-password -s ebda-os-brain-dash-password -w | npx wrangler secret put DASH_BASIC_PASSWORD --config wrangler.deploy.jsonc`.
+     Create it once with `security add-generic-password -s ebda-os-brain-dash-password -a "$USER" -w "$(openssl rand -base64 32)"`. Without it (and without Access) `/dash/*` and `/api/*` answer 503.
    - `RELAY_SECRET` must equal the Mac listener's relay secret (in `OS_SERVICES_ENV`). Leave it unset to run brain-only (no `/pending` copy).
    - `GITHUB_TOKEN`: fine-grained PAT per org (resource owner = the org), read-only **Dependabot alerts**. Until set, the advisory watcher records `GITHUB_TOKEN secret unset` and does nothing.
    - Telegram (ruling RR-tg-brain-owns): the brain REUSES `@EbdaAIStudiobot` and is its single consumer (a webhook, never `getUpdates`). Load the secrets from the Keychain without printing them:

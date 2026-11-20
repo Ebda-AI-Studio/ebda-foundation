@@ -30,7 +30,7 @@ while [ $# -gt 0 ]; do
 done
 [[ "$INTERVAL" =~ ^[0-9]+$ ]] && [ "$INTERVAL" -ge 1 ] || { echo "alert-wait: --interval must be a positive integer" >&2; exit 2; }
 BRAIN="${OS_BRAIN_URL:-https://os.ebda.app}"
-PW="${EBDA_OS_DASH_PASSWORD:-$(security find-generic-password -a ahmad -s ebda-os-dash -w 2>/dev/null || security find-generic-password -a "$USER" -s ebda-os-dash -w 2>/dev/null || true)}"
+PW="${EBDA_OS_DASH_PASSWORD:-$(security find-generic-password -s ebda-os-dash -w 2>/dev/null || true)}"
 [ -n "$PW" ] || { echo "alert-wait: no dashboard password (EBDA_OS_DASH_PASSWORD or Keychain item ebda-os-dash)" >&2; exit 2; }
 mkdir -p "$(dirname "$STATE")"
 AUTH="$(mktemp)"; OUT="$(mktemp)"; trap 'rm -f "$AUTH" "$OUT"' EXIT
