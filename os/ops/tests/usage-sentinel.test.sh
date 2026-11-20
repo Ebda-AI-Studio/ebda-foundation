@@ -18,7 +18,7 @@ chmod +x "$TMP/notify"
 export OS_ACTIONS_LOG="$TMP/actions.jsonl"
 S() { # S <tag> [args]: one sentinel run with a per-tag state dir; sets RC, PAGES (cumulative per tag)
   local tag="$1"; shift
-  env USAGE_STATE="$TMP/st-$tag" USAGE_SNAPSHOT="$TMP/snap-$tag.json" USAGE_NOTIFY="$TMP/notify" USAGE_NOW="${T_NOW:-$NOW}" ${S_ENV:-} \
+  env USAGE_STATE="$TMP/st-$tag" USAGE_SNAPSHOT="$TMP/snap-$tag.json" USAGE_NOTIFY="$TMP/notify" USAGE_NOW="${T_NOW:-$NOW}" ${S_ENV:+$S_ENV} \
     python3 "${PY:-$OPS/lib/usage_sentinel.py}" "$@" > "$TMP/out-$tag" 2>&1; RC=$?
   PAGES=$(wc -l < "$TMP/pages" | tr -d " ")
 }
@@ -32,7 +32,8 @@ ok "1 stale snapshot (115,616 s) -> UNKNOWN exit 3" "$RC" "3"
 ok "1 it pages exactly once, naming UNKNOWN" "$PAGES/$(grep -c 'UNKNOWN' "$TMP/pages")" "1/1"
 ok "1 the reported pct is null, never 20" "$(python3 -c "import json;d=json.load(open('$TMP/st-a/status.json'));print(d['pct'],d['status'])")" "None unknown"
 S a; ok "1b the next tick does not re-page inside the repeat window" "$PAGES" "1"
-T_NOW=$((NOW+7*3600)) S a; ok "1c after 6 h it pages again (still UNKNOWN)" "$PAGES" "2"
+T_NOW=$((NOW+7*3600)) S a; ok "1b2 not even 7 h later (once per day)" "$PAGES" "1"
+T_NOW=$((NOW+25*3600)) S a; ok "1c after 24 h it pages again (still UNKNOWN)" "$PAGES" "2"
 # 2. missing everything
 : > "$TMP/pages"; S b; ok "2 no files at all -> UNKNOWN + page" "$RC/$PAGES" "3/1"
 # 3. fresh readings
@@ -96,4 +97,13 @@ ok "11 MC with no staleness limit the 115,616 s snapshot reads as 20 % (case 1 i
 cp "$OPS/lib/usage_sentinel.py" "$TMP/mut/u2.py"; sedi 's/if pct >= STOP_PCT:/if pct > 1000:/' "$TMP/mut/u2.py"
 manual y 81; PY="$TMP/mut/u2.py" S y
 ok "11b MC without the stop rule 81 % writes nothing (case 5 is a real test)" "$([ -e "$(stopf y)" ] && echo stop || echo none)" "none"
+# 12. the PRODUCER: statusline.sh persists .rate_limits (it wrote nothing for 26 days, 2026-10-25 -> 11-20)
+rm -f "$TMP/sl.json"
+echo '{"cwd":"/tmp","rate_limits":{"five_hour":{"used_percentage":10,"resets_at":'$((NOW+3600))'},"seven_day":{"used_percentage":33,"resets_at":'$((NOW+86400))'}}}' \
+  | USAGE_SNAPSHOT="$TMP/sl.json" bash "$OPS/statusline.sh" >/dev/null 2>&1
+ok "12 statusline writes the snapshot when rate_limits is present" "$([ -s "$TMP/sl.json" ] && echo yes || echo no)" "yes"
+cp "$TMP/sl.json" "$TMP/snap-sl.json"; sedi "s/\"t\":[0-9.]*/\"t\":$((NOW-30))/" "$TMP/snap-sl.json"; S sl
+ok "12b the sentinel parses the statusline-written snapshot -> 33 %" "$(python3 -c "import json;print(json.load(open('$TMP/st-sl/status.json'))['pct'])")" "33.0"
+rm -f "$TMP/sl2.json"; echo '{"cwd":"/tmp"}' | USAGE_SNAPSHOT="$TMP/sl2.json" bash "$OPS/statusline.sh" >/dev/null 2>&1
+ok "12c no rate_limits -> no snapshot invented" "$([ -e "$TMP/sl2.json" ] && echo wrote || echo none)" "none"
 echo; echo "passed=$pass failed=$fail"; [ "$fail" = 0 ]

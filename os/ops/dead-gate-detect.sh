@@ -36,8 +36,8 @@ ts(){ date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo now; }
 
 # Scan roots: the deployed runtime + (if present) the foundation ops source.
 ROOTS=("$HERE")
-[ -d "$OS_HOME/os/ops" ] && ROOTS+=("$OS_HOME/os/ops")
-[ -d "$OS_HOME/os/ops" ] && ROOTS+=("$OS_HOME/os/ops")
+[ -n "${DEAD_GATE_ROOT:-}" ] && ROOTS=("$DEAD_GATE_ROOT")   # test seam
+[ -z "${DEAD_GATE_ROOT:-}" ] && [ -d "$OS_HOME/os/ops" ] && ROOTS+=("$OS_HOME/os/ops")
 
 IGNORE="${DEAD_GATE_IGNORE:-}"
 [ -z "$IGNORE" ] && [ -f "$OS_SERVICES_ENV" ] && IGNORE="$(grep -E '^DEAD_GATE_IGNORE=' "$OS_SERVICES_ENV" 2>/dev/null | cut -d= -f2- | tr -d '"')"
@@ -75,16 +75,47 @@ def code_part(line):
     return ''.join(out)
 
 # gather candidate (bin,file,line)
+# False-positive classes (2026-11-20), each skipped on purpose:
+#  - a `_retired*` dir: code that is deliberately dead is not a dead gate
+#  - a tests/ line that echoes/prints the guard: a fixture asserting the guard is ABSENT (e.g. no-gdate)
+#  - an elif/else branch whose earlier `if/elif command -v X` guards a tool that IS installed: the
+#    later branch is a fallback that never needed to run (host-lock: lockf, then flock)
 cands={}   # bin -> (file,lineno)
 allfiles=set()
+branch_re = re.compile(r'^(\s*)(if|elif)\b')
+def earlier_branch_installed(lines, idx):
+    """True if line idx is inside an elif whose earlier if/elif branch guards an installed binary."""
+    m = branch_re.match(lines[idx])
+    if not m or m.group(2) != 'elif':
+        return False
+    indent = m.group(1)
+    j = idx - 1
+    while j >= 0:
+        mj = branch_re.match(lines[j])
+        if mj and mj.group(1) == indent:
+            for g in guard_re.finditer(code_part(lines[j])):
+                if shutil.which(g.group(1)):
+                    return True
+            if mj.group(2) == 'if':
+                return False
+        j -= 1
+    return False
 for r in roots:
     for f in glob.glob(os.path.join(r,'**','*.sh'), recursive=True):
         allfiles.add(f)
+        parts = f.split(os.sep)
+        if any(p.startswith('_retired') for p in parts):
+            continue
+        in_tests = 'tests' in parts
         try: txt=open(f,encoding='utf-8',errors='replace').read().splitlines()
         except Exception: continue
         for n,line in enumerate(txt,1):
+            if in_tests and re.match(r'^\s*(\{\s*)?(echo|printf|cat)\b', line):
+                continue
             for m in guard_re.finditer(code_part(line)):
                 b=m.group(1)
+                if earlier_branch_installed(txt, n-1):
+                    continue
                 cands.setdefault(b,(f,n))
 
 # functions defined anywhere in the OS scripts: `name()` / `function name`
@@ -107,6 +138,9 @@ def is_builtin(b):
 for b,(f,n) in sorted(cands.items()):
     if b in ignore: continue
     if b in funcs: continue          # a sourced OS function, not an external tool
+    # snake_case name = a shell function from a sourced lib (`command -v backup_x` guards a
+    # function that the lib failed to define), never a binary: binaries are kebab/lowercase.
+    if re.fullmatch(r'[a-z][a-z0-9]*(?:_[a-z0-9]+)+', b): continue
     if shutil.which(b): continue     # installed → gate is live
     if is_builtin(b): continue       # shell builtin/keyword
     home=os.environ['HOME']
