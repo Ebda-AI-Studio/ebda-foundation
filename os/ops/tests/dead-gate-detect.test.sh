@@ -18,8 +18,10 @@ elif command -v nosuchtool-flock >/dev/null 2>&1; then
   echo b
 fi
 EOS
-# 2. function from a sourced lib
-echo 'if ! command -v backup_thing_entries >/dev/null 2>&1; then echo x; fi' > "$TMP/root/fn.sh"
+# 2. function defined in a sourced lib (and one defined in the same file)
+mkdir -p "$TMP/root/lib"; echo 'backup_thing_entries() { :; }' > "$TMP/root/lib/l.sh"
+printf '%s\n' '. "$(dirname "$0")/lib/l.sh"' 'if ! command -v backup_thing_entries >/dev/null 2>&1; then echo x; fi' \
+  'samefile_fn() { :; }' 'command -v samefile_fn >/dev/null' > "$TMP/root/fn.sh"
 # 3. tests/ fixture asserting absence
 printf '%s\n' "{ cat x; echo 'D=\$(command -v nosuchtool-gdate || echo date)'; } > m" > "$TMP/root/tests/t.sh"
 # 4. retired dir
@@ -35,4 +37,9 @@ out="$(run)"; ok "6 elif chain with NO installed branch still reported" "$(echo 
 # 7. same shape under tests/ but not an echo line is still caught
 echo 'command -v nosuchtool-intests || true' > "$TMP/root/tests/u.sh"
 out="$(run)"; ok "7 non-echo guard inside tests/ still reported" "$(echo "$out" | grep -c 'nosuchtool-intests')" "1"
+# 8. a guard on an UNDEFINED snake_case name is reported (the backup_neon_entries break), a sourced lib that does
+#    not define it does not help
+echo '. "$(dirname "$0")/lib/l.sh"; command -v backup_undefined_entries >/dev/null || exit 1' > "$TMP/root/undef.sh"
+out="$(run)"; ok "8 undefined snake_case guard reported" "$(echo "$out" | grep -c 'backup_undefined_entries')" "1"
+ok "8b defined-in-lib and defined-in-file names still skipped" "$(echo "$out" | grep -c 'backup_thing_entries\|samefile_fn')" "0"
 echo; echo "passed=$pass failed=$fail"; [ "$fail" = 0 ]
