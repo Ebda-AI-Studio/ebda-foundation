@@ -19,8 +19,8 @@ elif command -v nosuchtool-flock >/dev/null 2>&1; then
 fi
 EOS
 # 2. function defined in a sourced lib (and one defined in the same file)
-mkdir -p "$TMP/root/lib"; echo 'defined_helper_fn() { :; }' > "$TMP/root/lib/l.sh"
-printf '%s\n' '. "$(dirname "$0")/lib/l.sh"' 'if ! command -v defined_helper_fn >/dev/null 2>&1; then echo x; fi' \
+mkdir -p "$TMP/root/lib"; echo 'lib_known_fn() { :; }' > "$TMP/root/lib/l.sh"
+printf '%s\n' '. "$(dirname "$0")/lib/l.sh"' 'if ! command -v lib_known_fn >/dev/null 2>&1; then echo x; fi' \
   'samefile_fn() { :; }' 'command -v samefile_fn >/dev/null' > "$TMP/root/fn.sh"
 # 3. tests/ fixture asserting absence
 printf '%s\n' "{ cat x; echo 'D=\$(command -v nosuchtool-gdate || echo date)'; } > m" > "$TMP/root/tests/t.sh"
@@ -39,7 +39,7 @@ echo 'command -v nosuchtool-intests || true' > "$TMP/root/tests/u.sh"
 out="$(run)"; ok "7 non-echo guard inside tests/ still reported" "$(echo "$out" | grep -c 'nosuchtool-intests')" "1"
 # 8. a guard on an UNDEFINED snake_case name is reported (a function no lib defines), a sourced lib that does
 #    not define it does not help
-echo '. "$(dirname "$0")/lib/l.sh"; command -v undefined_helper_fn >/dev/null || exit 1' > "$TMP/root/undef.sh"
-out="$(run)"; ok "8 undefined snake_case guard reported" "$(echo "$out" | grep -c 'undefined_helper_fn')" "1"
-ok "8b defined-in-lib and defined-in-file names still skipped" "$(echo "$out" | grep -c 'defined_helper_fn\|samefile_fn')" "0"
+echo '. "$(dirname "$0")/lib/l.sh"; command -v absent_helper_fn >/dev/null || exit 1' > "$TMP/root/undef.sh"
+out="$(run)"; ok "8 undefined snake_case guard reported" "$(echo "$out" | grep -c 'absent_helper_fn')" "1"
+ok "8b defined-in-lib and defined-in-file names still skipped" "$(echo "$out" | grep -c 'lib_known_fn\|samefile_fn')" "0"
 echo; echo "passed=$pass failed=$fail"; [ "$fail" = 0 ]
