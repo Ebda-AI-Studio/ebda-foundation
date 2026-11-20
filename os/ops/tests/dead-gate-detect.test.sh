@@ -42,4 +42,7 @@ out="$(run)"; ok "7 non-echo guard inside tests/ still reported" "$(echo "$out" 
 echo '. "$(dirname "$0")/lib/l.sh"; command -v absent_helper_fn >/dev/null || exit 1' > "$TMP/root/undef.sh"
 out="$(run)"; ok "8 undefined snake_case guard reported" "$(echo "$out" | grep -c 'absent_helper_fn')" "1"
 ok "8b defined-in-lib and defined-in-file names still skipped" "$(echo "$out" | grep -c 'lib_known_fn\|samefile_fn')" "0"
+# 9. the detector's own test file (fixture text inside printf, mktemp-built) is not scanned: scan the real tests dir
+out="$(OS_HOME=/nonexistent DEAD_GATE_ROOT="$OPS/tests" bash "$OPS/dead-gate-detect.sh" 2>&1)"
+ok "9 scanning os/ops/tests reports no fixture of this test" "$(echo "$out" | grep -c 'samefile_fn\|missing_helper_fn\|nosuchtool')" "0"
 echo; echo "passed=$pass failed=$fail"; [ "$fail" = 0 ]

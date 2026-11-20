@@ -109,6 +109,10 @@ for r in roots:
         in_tests = 'tests' in parts
         try: txt=open(f,encoding='utf-8',errors='replace').read().splitlines()
         except Exception: continue
+        # a test that builds its fixtures in a mktemp dir carries guard text as DATA (this detector's own
+        # test too): its `command -v` lines are fixtures, not live gates
+        if in_tests and any('mktemp' in l for l in txt):
+            continue
         for n,line in enumerate(txt,1):
             if in_tests and re.match(r'^\s*(\{\s*)?(echo|printf|cat)\b', line):
                 continue
