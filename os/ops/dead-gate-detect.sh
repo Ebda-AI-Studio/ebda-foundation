@@ -36,8 +36,8 @@ ts(){ date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo now; }
 
 # Scan roots: the deployed runtime + (if present) the foundation ops source.
 ROOTS=("$HERE")
-[ -d "$OS_HOME/os/ops" ] && ROOTS+=("$OS_HOME/os/ops")
-[ -d "$OS_HOME/os/ops" ] && ROOTS+=("$OS_HOME/os/ops")
+[ -n "${DEAD_GATE_ROOT:-}" ] && ROOTS=("$DEAD_GATE_ROOT")   # test seam
+[ -z "${DEAD_GATE_ROOT:-}" ] && [ -d "$OS_HOME/os/ops" ] && ROOTS+=("$OS_HOME/os/ops")
 
 IGNORE="${DEAD_GATE_IGNORE:-}"
 [ -z "$IGNORE" ] && [ -f "$OS_SERVICES_ENV" ] && IGNORE="$(grep -E '^DEAD_GATE_IGNORE=' "$OS_SERVICES_ENV" 2>/dev/null | cut -d= -f2- | tr -d '"')"
@@ -75,27 +75,95 @@ def code_part(line):
     return ''.join(out)
 
 # gather candidate (bin,file,line)
-cands={}   # bin -> (file,lineno)
+# False-positive classes (2026-11-20), each skipped on purpose:
+#  - a `_retired*` dir: code that is deliberately dead is not a dead gate
+#  - a tests/ line that echoes/prints the guard: a fixture asserting the guard is ABSENT (e.g. no-gdate)
+#  - an elif/else branch whose earlier `if/elif command -v X` guards a tool that IS installed: the
+#    later branch is a fallback that never needed to run (host-lock: lockf, then flock)
+cands=[]   # (bin,file,lineno)
 allfiles=set()
+branch_re = re.compile(r'^(\s*)(if|elif)\b')
+def earlier_branch_installed(lines, idx):
+    """True if line idx is inside an elif whose earlier if/elif branch guards an installed binary."""
+    m = branch_re.match(lines[idx])
+    if not m or m.group(2) != 'elif':
+        return False
+    indent = m.group(1)
+    j = idx - 1
+    while j >= 0:
+        mj = branch_re.match(lines[j])
+        if mj and mj.group(1) == indent:
+            for g in guard_re.finditer(code_part(lines[j])):
+                if shutil.which(g.group(1)):
+                    return True
+            if mj.group(2) == 'if':
+                return False
+        j -= 1
+    return False
 for r in roots:
     for f in glob.glob(os.path.join(r,'**','*.sh'), recursive=True):
         allfiles.add(f)
+        parts = f.split(os.sep)
+        if any(p.startswith('_retired') for p in parts):
+            continue
+        in_tests = 'tests' in parts
         try: txt=open(f,encoding='utf-8',errors='replace').read().splitlines()
         except Exception: continue
         for n,line in enumerate(txt,1):
+            if in_tests and re.match(r'^\s*(\{\s*)?(echo|printf|cat)\b', line):
+                continue
             for m in guard_re.finditer(code_part(line)):
                 b=m.group(1)
-                cands.setdefault(b,(f,n))
+                if earlier_branch_installed(txt, n-1):
+                    continue
+                cands.append((b,f,n))
 
-# functions defined anywhere in the OS scripts: `name()` / `function name`
+# A guarded name is a FUNCTION (not a binary) only if `name()` / `function name` is defined in the
+# same file or in a file it sources (statically visible `source`/`.` paths, followed transitively).
+# Anywhere-in-the-tree was too broad, and a snake_case-name rule hid a guard on a
+# function that no sourced lib defines.
 func_re = re.compile(r'^\s*(?:function\s+)?([A-Za-z0-9_]+)\s*\(\)\s*\{?')
-funcs=set()
-for f in allfiles:
-    try: txt=open(f,encoding='utf-8',errors='replace').read().splitlines()
-    except Exception: continue
-    for line in txt:
-        mm=func_re.match(line)
-        if mm: funcs.add(mm.group(1))
+src_kw = re.compile(r'(?:^\s*|[;&|(]\s*)(?:source|\.)\s+')
+sh_tok = re.compile(r'[A-Za-z0-9_./~-]+\.sh\b')
+def sourced_paths(line):
+    """.sh paths on a `source`/`.` line, with $VAR / $(...) prefixes dropped (the visible tail is resolved)."""
+    code = code_part(line).replace('$HOME', home)
+    if not src_kw.search(code): return []
+    code = re.sub(r'\$\{[^}]*\}|\$[A-Za-z_]+|\$\([^)]*\)?', '', code)
+    return sh_tok.findall(code)
+home = os.environ['HOME']
+_fcache = {}
+def lines_of(f):
+    if f not in _fcache:
+        try: _fcache[f] = open(f, encoding='utf-8', errors='replace').read().splitlines()
+        except Exception: _fcache[f] = []
+    return _fcache[f]
+def resolve_src(frm, raw):
+    raw = raw.replace('$HOME', home)
+    if raw.startswith('~/'): raw = home + raw[1:]
+    if os.path.isabs(raw) and os.path.isfile(raw): return os.path.realpath(raw)
+    rel = raw.lstrip('/')    # `"$DIR/lib/x.sh"` leaves `/lib/x.sh`: resolve the visible tail
+    for c in [os.path.join(os.path.dirname(frm), rel)] + [os.path.join(r, rel) for r in roots] + \
+             [os.path.join(home, '.claude', 'scripts', rel)]:
+        if os.path.isfile(c): return os.path.realpath(c)
+    # variable-computed dir (`$LIB/os-state.sh`): fall back to the same basename in a lib/ dir
+    for d in [os.path.join(r, 'lib') for r in roots] + [os.path.join(home, '.claude', 'scripts', 'lib')]:
+        c = os.path.join(d, os.path.basename(rel))
+        if os.path.isfile(c): return os.path.realpath(c)
+    return None
+def defined_funcs(f, seen=None):
+    seen = seen if seen is not None else set()
+    f = os.path.realpath(f)
+    if f in seen: return set()
+    seen.add(f)
+    out = set()
+    for line in lines_of(f):
+        mm = func_re.match(line)
+        if mm: out.add(mm.group(1))
+        for sp in sourced_paths(line):
+            t = resolve_src(f, sp)
+            if t: out |= defined_funcs(t, seen)
+    return out
 
 def is_builtin(b):
     try:
@@ -104,12 +172,36 @@ def is_builtin(b):
     except Exception:
         return False
 
-for b,(f,n) in sorted(cands.items()):
-    if b in ignore: continue
-    if b in funcs: continue          # a sourced OS function, not an external tool
+# A lib guards a function its CALLER provides (`command -v write_status` inside lib/net-probe.sh): it
+# cannot see its sourcers, so a file also counts the functions of every file that sources it.
+direct = {}
+for f in allfiles:
+    t = set()
+    for line in lines_of(f):
+        for sp in sourced_paths(line):
+            r = resolve_src(f, sp)
+            if r: t.add(r)
+    direct[os.path.realpath(f)] = t
+def callers_of(f):
+    f = os.path.realpath(f); out = set(); todo = [f]
+    while todo:
+        x = todo.pop()
+        for c, t in direct.items():
+            if x in t and c not in out:
+                out.add(c); todo.append(c)
+    return out
+def known_funcs(f):
+    out = defined_funcs(f)
+    for c in callers_of(f): out |= defined_funcs(c)
+    return out
+
+reported=set()
+for b,f,n in sorted(cands):
+    if b in reported or b in ignore: continue
+    if b in known_funcs(f): continue   # defined here / in a sourced lib / by a sourcing caller: a function
     if shutil.which(b): continue     # installed → gate is live
     if is_builtin(b): continue       # shell builtin/keyword
-    home=os.environ['HOME']
+    reported.add(b)
     print(f"{b}\t{f.replace(home,'~')}:{n}")
 PY
 )
