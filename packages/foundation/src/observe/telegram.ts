@@ -104,7 +104,7 @@ export interface ThrottleStore {
 }
 
 /** Per-isolate throttle (Chat). A shared store (Redis, KV) implements `ThrottleStore` itself. */
-export function memoryThrottle(now: () => number = Date.now): { claim(key: string, ttlMs: number): { send: boolean; suppressed: number }; reset(): void } {
+export function memoryThrottle(now: () => number = () => Date.now()): { claim(key: string, ttlMs: number): { send: boolean; suppressed: number }; reset(): void } {
   const seen = new Map<string, { at: number; suppressed: number }>();
   return {
     claim(key, ttlMs) {
