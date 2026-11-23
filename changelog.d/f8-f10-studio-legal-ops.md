@@ -1,1 +1,0 @@
-- F8-F10 (packages/foundation/src/studio-pages.ts, legal/, ops/, lib/foundation.mjs): studio pages as `createStudioPages(brand, mark)`, counsel-approved legal fragments moved byte for byte (`legal/`, vendored under `<dir>/legal`), ops scripts (merge-gate, pre-push-gate, deploy-verify, cron-lint, logpush-setup) vendored with `sync --ops`

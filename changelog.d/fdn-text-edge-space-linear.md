@@ -1,1 +1,0 @@
-- text.ts (packages/foundation/src/text.ts): `foldArabic` / `indexTokens` trim edge spaces with a linear loop instead of `/^ +| +$/g` (CodeQL js/polynomial-redos, Ebda Store alert #26); behaviour identical, vendored consumers pick it up on the next re-vendor

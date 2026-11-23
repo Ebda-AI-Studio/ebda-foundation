@@ -1,1 +1,0 @@
-- FDN-IPKEY-1 (packages/foundation/src/request-guard.ts): clientKey keys IPv4-mapped/compatible IPv6 as the embedded IPv4, strips %zone, validates before folding to /64 and keys invalid input as its own raw string (was one shared bucket)
