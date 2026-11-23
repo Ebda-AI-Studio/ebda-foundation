@@ -5,8 +5,8 @@ Every PR except an all-safe one (markdown, `docs/`, newly added test files; a mo
 Files: `risky-paths.mjs` (path classifier), `prompt.md` (rules, including the slop section), `review.mjs` (parses the model output, posts findings, gates). Workflow: `.github/workflows/ai-review.yml` (reusable, `workflow_call` only). Rulings AIR-1..3 in `docs/RULINGS.md`.
 
 ## Adopt in a product repo
-1. Copy `risky-paths.mjs`, `prompt.md`, `review.mjs` to `.github/ai-review/`.
-2. Copy the workflow to the product repo with `on:` replaced by `pull_request_target: types: [opened, synchronize, reopened, ready_for_review, labeled]`. Everything under `jobs:` stays identical.
+1. Copy `risky-paths.mjs`, `label-fresh.mjs`, `prompt.md`, `review.mjs` to `.github/ai-review/`.
+2. Copy the workflow to the product repo with `on:` replaced by `pull_request_target: types: [opened, synchronize, reopened, ready_for_review, labeled, edited]`. Everything under `jobs:` stays identical.
 3. Secret `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token` as the Claude account that pays for review; `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R <owner>/<repo>`, or once for the org). Without it every risky PR fails with an error that says so.
 4. Optional repo variable `AI_REVIEW_MODEL`.
 
