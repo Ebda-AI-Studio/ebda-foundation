@@ -87,6 +87,13 @@ describe('telegramAlert', () => {
     expect(t).toContain('العميل منى على [phone]'); // free-text Arabic names cannot be detected: only structured denied keys drop them (PR body: residual)
     expect(t).not.toContain('deep'); expect(t).not.toContain('k-123'); expect(t).toContain('"ref": "r1"');
   });
+  it('a long body keeps its 3500 chars and an ellipsis; a digits-only id prefix in the scope line stays readable', () => {
+    const t = buildAlertText({ ...base, scope: 'store', scopeLine: 'Demo Shop (demo-shop · 00000000…)', body: 'X'.repeat(8000) });
+    expect(t).toContain('store=Demo Shop (demo-shop · 00000000…)');
+    expect(t.endsWith('…')).toBe(true);
+    expect(t.length).toBeGreaterThan(3500);
+    expect(t.length).toBeLessThanOrEqual(4096);
+  });
   it('platform scope has no scope line; info is blue; text is capped at 4096', () => {
     expect(buildAlertText({ ...base, level: 'info', scopeLine: 'ignored' }).split('\n').slice(0, 2)).toEqual(['🔵 Ebda Chat: instapay_confirmed_not_granted', '[INFO PLATFORM]']);
     expect(buildAlertText({ ...base, context: { big: 'z'.repeat(9000) } }).length).toBeLessThanOrEqual(4096);

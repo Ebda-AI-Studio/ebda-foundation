@@ -35,7 +35,7 @@ const SAFE_HEADERS = ['user-agent', 'content-type', 'content-length', 'cf-ray', 
 
 /** Free text out: phones, e-mails and path-borne secrets hidden. */
 export function scrubText(s: string): string {
-  return redactEmails(maskPhones(redactPathSecrets(s, { anyLongSegment: true })));
+  return redactEmails(maskPhones(redactPathSecrets(s, { anyLongSegment: true })), 8192); // 8192 = Sentry's own message limit
 }
 
 /** A request URL without query or fragment, a phone-by-position path segment masked, then every free-text mask. `undefined` if unparseable. */

@@ -253,10 +253,11 @@ export function maskPhones(s: string | undefined): string | undefined {
 
 /**
  * Every e-mail address in free text, in ANY spelling `scrubEmails` recognises (fullwidth @, %40, &#64;, =40, \\x40 ...), replaced WHOLE by `[email]`.
- * Stricter than `scrubEmails`, which keeps `x***@domain` for an unambiguous address: here nothing of the address survives. Bounded like `scrubEmails`.
+ * Stricter than `scrubEmails`, which keeps `x***@domain` for an unambiguous address: here nothing of the address survives. Bounded like `scrubEmails` (`max`, default 2000).
  */
-export function redactEmails(text: string): string {
-  let s = text.length > SCRUB_EMAILS_MAX ? text.slice(0, SCRUB_EMAILS_MAX) : text;
+export function redactEmails(text: string, max: number = SCRUB_EMAILS_MAX): string {
+  // Input beyond `max` is DROPPED before matching (bounded cost, like `scrubEmails`): callers with longer text that must survive pass a larger `max`.
+  let s = text.length > max ? text.slice(0, max) : text;
   s = s.replace(SPACED_AT, (m) => m.trim());
   s = s.replace(QUOTED_LOCAL, '"***"');
   return s.replace(/\S+/g, (tok) => (AT_FORMS.test(tok) ? '[email]' : tok));

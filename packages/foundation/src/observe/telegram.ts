@@ -46,7 +46,11 @@ export const DENIED_KEY = /^(to|from|body|text|code|email|caption|address|messag
 /** Context is product-authored JSON (a stack, an error name, queue stats): only credentials are dropped by key, every string value is masked. */
 export const CONTEXT_DENIED_KEY = /token|secret|password|authorization|api[_-]?key/i;
 
-const mask = (s: string): string => redactEmails(maskPhones(s));
+/** Alert text is masked in full (a body is cut to 3500 first; 8192 only bounds a hostile context string). */
+const MASK_MAX = 8192;
+const mask = (s: string): string => redactEmails(maskPhones(s), MASK_MAX);
+/** The scope line is built by the product from ids and names (a UUID prefix of 8 digits looks like a phone and must stay readable): e-mails only. */
+const maskScope = (s: string): string => redactEmails(s, MASK_MAX);
 
 function maskDeep(v: unknown, depth = 0): unknown {
   if (typeof v === 'string') return mask(v);
@@ -81,15 +85,15 @@ export function runbookUrl(name: string, base: string | undefined, fallback = 'd
 export function buildAlertText(a: AlertMessage): string {
   const scope = a.scope ?? 'platform';
   const lines: string[] = [`${LEVEL_EMOJI[a.level]} ${mask(a.product)}: ${mask(a.title)}`, `[${a.level.toUpperCase()} ${scope.toUpperCase()}]`];
-  if (scope !== 'platform' && a.scopeLine) lines.push(`${scope}=${mask(a.scopeLine)}`);
+  if (scope !== 'platform' && a.scopeLine) lines.push(`${scope}=${maskScope(a.scopeLine)}`);
   const meta = [`env=${a.env ?? 'production'}`];
   if (a.source) meta.push(`source=${mask(a.source)}`);
   if (a.runbook) meta.push(`runbook=${a.runbook}`);
   lines.push(meta.join(' · '));
   if (a.fields) lines.push(...renderFields(a.fields));
   if (a.body) {
-    const b = mask(a.body);
-    lines.push('', b.length > BODY_MAX_LEN ? `${b.slice(0, BODY_MAX_LEN)}…` : b);
+    const b = mask(a.body.length > BODY_MAX_LEN ? a.body.slice(0, BODY_MAX_LEN) : a.body);
+    lines.push('', a.body.length > BODY_MAX_LEN ? `${b}…` : b);
   }
   if (a.context && Object.keys(a.context).length > 0) {
     try {
