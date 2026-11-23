@@ -48,7 +48,7 @@ Why one repo: Ruling FDN-OS-1 (`docs/rulings/FDN-OS-1.md`). The OS port is in pr
 
 ## Versioning
 
-Semver. MAJOR = a breaking export or vector change: both consumer bump PRs open the same day. MINOR = additive. Every change lands with a CHANGELOG line and its vectors.
+Semver. MAJOR = a breaking export or vector change: both consumer bump PRs open the same day. MINOR = additive. Every change lands with a CHANGELOG line and its vectors. A tag push triggers the bump bot, which opens one re-vendor PR per consumer (never merges; secret `EBDA_FOUNDATION_BUMP_TOKEN`; `node ops/bump-consumers.mjs --dry-run` prints what it would open). The v1.0.0 gate is `docs/v1.0.0-readiness.md`.
 
 ## Smart Layer API
 

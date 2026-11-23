@@ -1,0 +1,74 @@
+name: Foundation bump
+
+# F11 / Ruling FDN-BUMP-1: when a foundation tag exists that a consumer is behind, open ONE re-vendor PR in each consumer (ebda-store, ebda-whatsapp)
+# via `ebda-foundation sync` (ops/bump-consumers.mjs). PR only, never a merge. Triggers: a v* tag push (the normal path), a daily catch-up
+# (idempotent: a consumer already on the latest tag, or with an open bump PR, is skipped, so drift cannot outlive a missed tag run), and a manual run.
+#
+# SECRET (create it yourself, the repo does not): EBDA_FOUNDATION_BUMP_TOKEN = a fine-grained PAT, resource owner Ebda-AI-Studio, repositories
+# ebda-store + ebda-whatsapp, permissions Contents: read/write, Pull requests: read/write, Metadata: read. GITHUB_TOKEN cannot reach other repos,
+# and a PR opened by GITHUB_TOKEN would not start the consumer's CI. A missing secret turns the run RED, never silently green.
+#
+# RUNNER: the repos are public. The any-runner variable decides: unset -> the Mac light pool; while the Macs are offline set the repo variable
+# EBDA_ANY_RUNS_ON to '["ubuntu-latest"]' on THIS repo only (public repo: hosted minutes are free; the workflow-lint forbids a hosted name in the file).
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: foundation tag to bump to (empty = latest)
+        required: false
+        default: ''
+      dry_run:
+        description: print the PRs it would open, open nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Open re-vendor PRs
+    # short-job: ~1 min (clone two consumers, sync, push, open PRs) (RUNNER-ANY-1); the free hosted path for this public repo is the EBDA_ANY_RUNS_ON switch above
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
+    timeout-minutes: 15
+    if: github.repository == 'Ebda-AI-Studio/ebda-foundation'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Check out the target tag
+        id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          PUSHED: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          if [ "$EVENT" = push ]; then tag="$PUSHED"; elif [ -n "$INPUT_TAG" ]; then tag="$INPUT_TAG"; else tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)"; fi
+          [ -n "$tag" ] || { echo "no foundation tag"; exit 1; }
+          git checkout -q --detach "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Bump consumers
+        env:
+          GH_TOKEN: ${{ secrets.EBDA_FOUNDATION_BUMP_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          DRY: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -eu
+          if [ -z "$GH_TOKEN" ]; then echo "::error::secret EBDA_FOUNDATION_BUMP_TOKEN is not set; the bump bot cannot reach the consumers"; exit 1; fi
+          gh auth setup-git
+          args="--tag $TAG"
+          if [ "$DRY" = true ]; then args="$args --dry-run"; fi
+          # shellcheck disable=SC2086
+          node ops/bump-consumers.mjs $args
