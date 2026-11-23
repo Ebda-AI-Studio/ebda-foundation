@@ -6,7 +6,8 @@ name: Foundation bump
 #
 # SECRET (create it yourself, the repo does not): EBDA_FOUNDATION_BUMP_TOKEN = a fine-grained PAT, resource owner Ebda-AI-Studio, repositories
 # ebda-store + ebda-whatsapp, permissions Contents: read/write, Pull requests: read/write, Metadata: read. GITHUB_TOKEN cannot reach other repos,
-# and a PR opened by GITHUB_TOKEN would not start the consumer's CI. A missing secret turns the run RED, never silently green.
+# and a PR opened by GITHUB_TOKEN would not start the consumer's CI. A missing secret is a loud WARNING (job summary + one Telegram alert on tag/manual runs), NOT a red run: it must not block main's merge gate (G74).
+# Once a token exists, every real error (auth, push, PR open) still fails the run red.
 #
 # RUNNER: the repos are public. The any-runner variable decides: unset -> the Mac light pool; while the Macs are offline set the repo variable
 # EBDA_ANY_RUNS_ON to '["ubuntu-latest"]' on THIS repo only (public repo: hosted minutes are free; the workflow-lint forbids a hosted name in the file).
@@ -59,14 +60,40 @@ jobs:
           [ -n "$tag" ] || { echo "no foundation tag"; exit 1; }
           git checkout -q --detach "$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Check bump token
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.EBDA_FOUNDATION_BUMP_TOKEN }}
+        run: |
+          set -eu
+          if [ -n "$GH_TOKEN" ]; then echo "has_token=true" >> "$GITHUB_OUTPUT"; else echo "has_token=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Warn, no bump token
+        if: steps.gate.outputs.has_token != 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          EVENT: ${{ github.event_name }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -eu
+          msg="secret EBDA_FOUNDATION_BUMP_TOKEN is not set; the bump bot cannot reach the consumers (no re-vendor PRs opened for $TAG)"
+          fix="Manual fallback: create the secret (fine-grained PAT, owner Ebda-AI-Studio, ebda-store + ebda-whatsapp, Contents + Pull requests read/write), or run by hand with a token that can push to the consumers: GH_TOKEN=<pat> gh auth setup-git && node ops/bump-consumers.mjs --tag $TAG (add --dry-run to preview)."
+          echo "::warning::$msg. $fix"
+          { echo "### Foundation bump skipped: no token"; echo; echo "$msg"; echo; echo "$fix"; } >> "$GITHUB_STEP_SUMMARY"
+          # one alert per tag/manual run; the daily catch-up stays quiet (the warning + summary still show) so it cannot spam
+          if [ "$EVENT" != schedule ] && [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            curl -fsS --max-time 20 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=ebda-foundation bump bot: ${msg}" > /dev/null \
+              || echo "::warning::telegram alert failed to send"
+          fi
       - name: Bump consumers
+        if: steps.gate.outputs.has_token == 'true'
         env:
           GH_TOKEN: ${{ secrets.EBDA_FOUNDATION_BUMP_TOKEN }}
           TAG: ${{ steps.tag.outputs.tag }}
           DRY: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: |
           set -eu
-          if [ -z "$GH_TOKEN" ]; then echo "::error::secret EBDA_FOUNDATION_BUMP_TOKEN is not set; the bump bot cannot reach the consumers"; exit 1; fi
           gh auth setup-git
           args="--tag $TAG"
           if [ "$DRY" = true ]; then args="$args --dry-run"; fi

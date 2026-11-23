@@ -1,0 +1,1 @@
+- FDN-BUMP-1 (.github/workflows/foundation-bump.yml, docs/rulings/FDN-BUMP-1.md): a missing EBDA_FOUNDATION_BUMP_TOKEN now warns (summary + one Telegram alert) instead of failing main red; real errors with a token still fail
