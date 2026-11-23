@@ -1,5 +1,5 @@
 {
-  "_comment": "Targets for os/ops/ebda-prod-watch.mjs (run from GitHub-hosted runners by .github/workflows/prod-watch.yml: off Cloudflare and off the Egyptian ISP). expect = HTTP status; contains = a body regex; fxMaxAgeHours + fxNoDataUntil = alert when /health fxAgeHours > the limit; null = no data yet, alerts only from fxNoDataUntil on (the worker's own FX alarm cannot fire if its cron is dead); commitRepo = owner/name whose main tip the /health commit is compared with (needs EBDA_GH_READ_TOKEN).",
+  "_comment": "Targets for os/ops/ebda-prod-watch.mjs (run from GitHub-hosted runners by .github/workflows/prod-watch.yml: off Cloudflare and off the Egyptian ISP). expect = HTTP status; contains = a body regex; fxMaxAgeHours + fxNoDataUntil = alert when /health fxAgeHours > the limit; null = no data yet, alerts only from fxNoDataUntil on (the worker's own FX alarm cannot fire if its cron is dead); everyMinutes = run this probe on its own slower cadence from the brain cron (frugal monitoring, 2026-11-14); commitRepo = owner/name whose main tip the /health commit is compared with (needs EBDA_GH_READ_TOKEN).",
   "timeoutMs": 10000,
   "probes": [
     { "name": "marketing", "url": "https://ebda.app/", "expect": 200, "contains": "ebda|ابدأ" },
@@ -11,7 +11,7 @@
     { "name": "help", "url": "https://help.ebda.app/", "expect": 200 },
     { "name": "docs", "url": "https://docs.ebda.app/", "expect": 200 },
     { "name": "status", "url": "https://status.ebda.app/healthz", "expect": 200 },
-    { "name": "demo-store-ar", "url": "https://storedemo-souq.ebda.app/ar", "expect": 200, "contains": "data-zone=" },
-    { "name": "demo-store-en", "url": "https://storedemo-souq.ebda.app/en", "expect": 200, "contains": "data-zone=" }
+    { "name": "demo-store-ar", "url": "https://storedemo-souq.ebda.app/ar", "expect": 200, "contains": "data-zone=", "everyMinutes": 60 },
+    { "name": "demo-store-en", "url": "https://storedemo-souq.ebda.app/en", "expect": 200, "contains": "data-zone=", "everyMinutes": 60 }
   ]
 }

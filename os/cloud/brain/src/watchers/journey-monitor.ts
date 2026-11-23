@@ -1,11 +1,11 @@
-// journey-monitor watcher (cron, every 15 min): synthetic guest journeys over plain HTTP, e.g. storefront home -> product
+// journey-monitor watcher (cron, HOURLY since 2026-11-14 frugal monitoring; was every 15 min): synthetic guest journeys over plain HTTP, e.g. storefront home -> product
 // page -> cart. Strictly read-only: every step is a GET, no cookies, no forms. A step whose URL path looks like checkout,
 // payment or order creation is REFUSED at parse time (the journey is dropped and reported as a config error), so a typo in
 // JOURNEY_CONFIG can never start a purchase. A step fails on non-2xx, timeout, or a missing `contains` text.
 import { finding, isHttps, isObj, parseList, reportUnconfigured, settle, WatcherError, reportError, clearError, type WatchCtx } from './common';
 
 export const ID = 'journey-monitor';
-export const INTERVAL_MS = 15 * 60 * 1000;
+export const INTERVAL_MS = 60 * 60 * 1000;
 /** Whole path SEGMENTS that mean checkout, payment, order creation or auth: /cart/checkout and /payment/x are refused, /products/order-box is not. */
 const FORBIDDEN_SEGMENTS = new Set(['checkout', 'payment', 'payments', 'pay', 'purchase', 'order', 'orders', 'place-order', 'confirm', 'confirmation', 'webhook', 'webhooks', 'login', 'signin', 'sign-in', 'register', 'signup', 'sign-up']);
 export function forbiddenPath(pathname: string): boolean {
