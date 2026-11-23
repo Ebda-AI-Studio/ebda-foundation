@@ -33,10 +33,40 @@
 #   ops/run-tests.sh --quiet    # only print failures + the summary
 # Exit: non-zero if any suite fails OR any class discovers nothing.
 set -uo pipefail
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"   # absolute: the workers re-run this script after the cd below
 cd "$(dirname "$0")" || exit 1
 
 QUIET=0
+# A suite slower than this prints a `slow` line even in --quiet mode, as it finishes (the CI job once ran 25 min with no output to say where).
+SLOW_S="${RUN_TESTS_SLOW_S:-20}"
+# OS-SUITES-PARALLEL-1: independent suites run RUN_TESTS_JOBS at a time (default 2); the suites named in tests-serial.list (they share a host lock, a
+# process table or a port) run ONE at a time AFTER the parallel set, so they never overlap anything. A missing tests-serial.list runs EVERYTHING serially.
+JOBS="${RUN_TESTS_JOBS:-2}"
+slow_names=()
 [ "${1:-}" = "--quiet" ] && QUIET=1
+
+# run_one <runner> <path>: 0 = pass. Output on stdout.
+run_one() {
+  case "$1" in
+    bash) bash "$2" 2>&1 ;;
+    node) node "$2" 2>&1 ;;
+    # Run as a package module from the class root so intra-package imports
+    # resolve as they do for the app: `python3 -m unittest tests.<name>`.
+    pyunit) ( cd "$(dirname "$(dirname "$2")")" \
+                && python3 -m unittest "tests.$(basename "$2" .py)" 2>&1 ) ;;
+    *) echo "unknown runner: $1"; return 2 ;;
+  esac
+}
+
+# worker mode (called through xargs, or directly for the serial set): run ONE suite, write <prefix>.out / .rc / .secs, print its `slow` line at once.
+if [ "${1:-}" = "--worker" ]; then
+  runner="$2"; path="$3"; prefix="$4"; wname="$5"
+  w0=$SECONDS
+  run_one "$runner" "$path" > "$prefix.out" 2>&1; echo "$?" > "$prefix.rc"
+  wdt=$(( SECONDS - w0 )); echo "$wdt" > "$prefix.secs"
+  [ "$wdt" -lt "$SLOW_S" ] || printf '  slow  %s %ss\n' "$wname" "$wdt"
+  exit 0
+fi
 
 # CLASSES — "label|glob|runner". A repo's test stack is not one shape: this one
 # is bash suites, node ESM suites and a python unittest package. bash 3.2 has no
@@ -57,19 +87,10 @@ skipped=0
 empty_classes=()
 failed_names=()
 
-# run_one <runner> <path>: 0 = pass. Output on stdout.
-run_one() {
-  case "$1" in
-    bash) bash "$2" 2>&1 ;;
-    node) node "$2" 2>&1 ;;
-    # Run as a package module from the class root so intra-package imports
-    # resolve as they do for the app: `python3 -m unittest tests.<name>`.
-    pyunit) ( cd "$(dirname "$(dirname "$2")")" \
-                && python3 -m unittest "tests.$(basename "$2" .py)" 2>&1 ) ;;
-    *) echo "unknown runner: $1"; return 2 ;;
-  esac
-}
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/run-tests.XXXXXX")"; trap 'rm -rf "$WORK"' EXIT
+plan_names=(); plan_runners=(); plan_paths=(); plan_serial=()
 
+# PLAN: discover every suite in declared order (SKIP lines and EMPTY classes are decided here, exactly as before).
 for line in $CLASSES; do
   [ -n "$line" ] || continue
   label="${line%%|*}"; rest="${line#*|}"
@@ -85,15 +106,10 @@ for line in $CLASSES; do
     if grep -qE "^${name}([[:space:]]|\$)" tests-pending.list 2>/dev/null; then
       skipped=$(( skipped + 1 )); printf '  SKIP  %s (pending Task 3 content, see tests-pending.list)\n' "$name"; continue
     fi
-    if out="$(run_one "$runner" "$t")"; then
-      [ "$QUIET" = "1" ] || printf '  ok    %s\n' "$name"
-    else
-      failed=$(( failed + 1 ))
-      failed_names+=("$name")
-      printf '  FAIL  %s\n' "$name"
-      printf '%s\n' "$out" | sed 's/^/          /' \
-        | grep -E 'FAIL|AssertionError|Traceback|passed|Error' | head -12
-    fi
+    ser=0
+    # serial unless the list exists and does NOT name the suite (fail-safe: no list = everything serial)
+    if [ ! -f tests-serial.list ] || grep -qE "^${name}([[:space:]]|\$)" tests-serial.list 2>/dev/null; then ser=1; fi
+    plan_names+=("$name"); plan_runners+=("$runner"); plan_paths+=("$t"); plan_serial+=("$ser")
   done
 
   # A class that matched nothing is a FAILURE — the original bug was a runner
@@ -104,7 +120,51 @@ for line in $CLASSES; do
   fi
 done
 
+# RUN: the parallel set first (JOBS at a time), then the serial set one by one.
+n=${#plan_names[@]}
+if [ "$n" -gt 0 ]; then
+  par_args=()
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    [ "${plan_serial[$i]}" = 1 ] || par_args+=("${plan_runners[$i]}" "${plan_paths[$i]}" "$WORK/$i" "${plan_names[$i]}")
+    i=$(( i + 1 ))
+  done
+  if [ "${#par_args[@]}" -gt 0 ]; then
+    printf '%s\0' ${par_args[@]+"${par_args[@]}"} | RUN_TESTS_SLOW_S="$SLOW_S" xargs -0 -n4 -P "$JOBS" bash "$SELF" --worker
+  fi
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    [ "${plan_serial[$i]}" = 1 ] && RUN_TESTS_SLOW_S="$SLOW_S" bash "$SELF" --worker "${plan_runners[$i]}" "${plan_paths[$i]}" "$WORK/$i" "${plan_names[$i]}"
+    i=$(( i + 1 ))
+  done
+fi
+
+# REPORT in the declared order (deterministic, whatever finished first). A suite with no .rc (its worker died) is a FAILURE.
+i=0
+while [ "$i" -lt "$n" ]; do
+  name="${plan_names[$i]}"
+  rc="$(cat "$WORK/$i.rc" 2>/dev/null || echo 99)"
+  dt="$(cat "$WORK/$i.secs" 2>/dev/null || echo 0)"
+  if [ "$rc" = 0 ]; then
+    [ "$QUIET" = "1" ] || printf '  ok    %s\n' "$name"
+  else
+    failed=$(( failed + 1 ))
+    failed_names+=("$name")
+    printf '  FAIL  %s\n' "$name"
+    sed 's/^/          /' "$WORK/$i.out" 2>/dev/null \
+      | grep -E 'FAIL|AssertionError|Traceback|passed|Error' | head -12
+  fi
+  if [ "$dt" -ge "$SLOW_S" ]; then
+    slow_names+=("${dt}s $name")
+  fi
+  i=$(( i + 1 ))
+done
+
 echo
+if [ "${#slow_names[@]}" -gt 0 ]; then
+  echo "ops tests: slowest suites (>= ${SLOW_S}s):"
+  printf '%s\n' ${slow_names[@]+"${slow_names[@]}"} | sort -rn | head -5 | sed 's/^/             /'
+fi
 # Finding NOTHING is a failure, not a pass. The installed runtime copy at
 # ~/.claude/scripts/ has no lib/__tests__/ (install.sh copies lib/*.sh, *.py,
 # *.json and *.mjs — not the test dir), so running it there printed

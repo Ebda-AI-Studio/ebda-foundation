@@ -92,7 +92,7 @@ Layering and cost-if-wrong: `docs/rulings/FDN-OS-1.md`.
 
 ## Installer and the launchd set (Task 5, Amendment A)
 
-`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (35 jobs, counted from the file; hands-mac-local is opt-in via the third column `optin=OS_HANDS_LOCAL` and skipped unless `OS_HANDS_LOCAL=1`, ruling INSTALL-1; table below). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
+`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (36 jobs, counted from the file; hands-mac-local is opt-in via the third column `optin=OS_HANDS_LOCAL` and skipped unless `OS_HANDS_LOCAL=1`, ruling INSTALL-1; table below). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
 
 
 ## Old-job dispositions (Task 5 fix round 1)
@@ -109,6 +109,7 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | cf-workers-watch | PORT-BRAIN | cf-workers | HTTP/API poll of Cloudflare Workers state; brain health.ts covers only 2 URLs |
 | ci-alert | REPLACED-BY | cloud/brain/src/relay.ts | CI failures arrive as signed webhooks into the brain relay inbox |
 | ci-runner-guard | KEEP-MAC | ci-runner-guard | reports native Mac runner fleet health from the GitHub API |
+| main-first | KEEP-MAC | main-first | cancels superseded main CI runs + queued PR runs so a starved main CI gets a heavy runner (+ batch-first: only the drain's next PRs keep their queued runs) (gh API, local ledger, every 5 min) |
 | claude-home-export | DROP | - | Ahmad 2026-11-09 turned it off: it wrote a 300 MB tgz to the Desktop every day |
 | cost-guard | PORT-BRAIN | cost-guard | billing API poll |
 | dead-gate-detect | KEEP-MAC | dead-gate-detect | inspects locally installed hooks and gates |
@@ -132,8 +133,10 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | mac-maintenance | KEEP-MAC | mac-maintenance | local disk upkeep |
 | os-selftest | KEEP-MAC | os-selftest | checks the local install |
 | os-watch | KEEP-MAC | os-watch | self-check of the local OS runtime and runner status |
+| outside-watch | KEEP-MAC | outside-watch | every 5 min curl probe of the public Ebda hosts from the Mac (off Cloudflare), 2-failure rule, alerts via notify.sh (replaces the disabled hosted prod-watch workflow, F-OBS-1) |
 | claude-bundle-sync | KEEP-MAC | claude-bundle-sync | keeps the Claude Code app bundle linked to the newest build so macOS keeps one permission identity; Mac-only by nature (ruling INSTALL-1) |
 | pr-shepherd | KEEP-MAC | pr-shepherd | the brain watcher shepherds the brain's orgs; the Mac job covers ONE other org set per machine (`OS_PR_SHEPHERD_ORG`), skips when unset or equal to the brain's org (ruling INSTALL-1) |
+| sched-fail-watch | KEEP-MAC | sched-fail-watch | every 10 min: a launchd job (2 consecutive failing runs) or a GitHub scheduled workflow that fails opens ONE review-finding fixer issue per job/day + one Telegram line via notify.sh; no tokens when nothing failed; reads launchctl + the gh API (Cloudflare cron triggers not covered, see the script header) |
 | sentry-stale-watch | KEEP-MAC | sentry-stale-watch | stays on the Mac until the brain's `sentry-stale` is configured for the same Sentry org; then a later PR may drop it (ruling INSTALL-1) |
 | services-watch | PORT-BRAIN | services | HTTP probes; brain health.ts covers only 2 URLs |
 | session-mining | KEEP-MAC | session-mining | claude CLI over local session files |

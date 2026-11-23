@@ -13,6 +13,7 @@ pass=0; fail=0
 ok(){ if [ "$2" = "$3" ]; then echo "PASS: $1"; pass=$((pass+1)); else echo "FAIL: $1 - got '$2' want '$3'"; fail=$((fail+1)); fi; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"; P="$HOME/Desktop/projects"
+export OS_SSD_ROOT="$TMP/no-ssd"   # never touch the real /Volumes/Ebda (lib/wt-roots.sh)
 mkdir -p "$P/Ebda-AI-Studio/internal-projects/ebda-store/.git" "$P/_worktrees" "$HOME/.whisky-os-state"
 export HYGIENE_LIVE_CWDS="" OS_LOCK_DIR="$TMP/locks" HYGIENE_QUEUE="$TMP/queue" OS_SHIM_DIR="$TMP/shim" CALLS="$TMP/calls"
 mkdir -p "$OS_SHIM_DIR" "$TMP/ops"; cp "$OPS/workspace-hygiene.sh" "$TMP/ops/"; cp -R "$OPS/lib" "$TMP/ops/lib"
@@ -58,7 +59,7 @@ ok "5 hung du: sweep still finishes (<40 s)" "$([ "$el" -lt 40 ] && echo fast)" 
 ok "5 hung du: the orphan is removed, size shows ?" "$(echo "$out" | grep -c 'victim__orphan (?)')/$([ -d "$P/_worktrees/victim__orphan" ] && echo kept || echo gone)" "1/gone"
 mkdir -p "$P/_worktrees/victim__orphan2"; rm -rf "$OS_LOCK_DIR"
 out="$(SHIM_DF_SLEEP=100 HYGIENE_DF_TIMEOUT=1 H 2>&1)"
-ok "5 hung df: UNKNOWN, dry run, nothing deleted" "$(echo "$out" | grep -q UNKNOWN && echo unknown)/$([ -d "$P/_worktrees/victim__orphan2" ] && echo kept)" "unknown/kept"
+ok "5 hung df: UNKNOWN, dry run, nothing deleted" "$(grep -q UNKNOWN <<<"$out" && echo unknown)/$([ -d "$P/_worktrees/victim__orphan2" ] && echo kept)" "unknown/kept"
 
 # ---- 6. held / stale lock
 sleep 30 & holder=$!

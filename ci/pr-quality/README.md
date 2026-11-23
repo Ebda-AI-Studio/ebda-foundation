@@ -9,3 +9,7 @@ Adopt in a product repo:
 4. Add the ESLint rules named in the standard (warnings that are errors in CI).
 
 `node slop-guard.mjs --list` prints every current violation.
+
+## Capability baselines (lens 192)
+
+`capability-ratchet.mjs --base <base> --pr <pr>` fails a PR whose `capabilities/baselines/*.json` holds an id the base branch's file lacks. Adopt: copy it next to `slop-guard.mjs` (it imports `readJsonRegular` from it) into `.github/pr-quality/`; the `capability-ratchet` job in `pr-quality.yml` runs it from the base checkout. A base without baselines (the adoption PR) is allowed. See `docs/standard/capability-registry.md`.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
-import { appendFileSync, cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { appendFileSync, cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 // @ts-expect-error plain .mjs without types
@@ -25,10 +25,17 @@ describe('ebda-foundation sync/check', () => {
   const lock = sync({ target, dir: 'vendor/foundation', parity: 'test/foundation-parity.test.ts', root: src });
 
   it('sync writes the lock and check passes', () => {
-    expect(lock.tag).toBe('v0.1.0');
+    expect(lock.tag).toBe(`v${JSON.parse(readFileSync(join(ROOT, 'packages/foundation/package.json'), 'utf8')).version}`);
     expect(lock.commit).toMatch(/^[0-9a-f]{40}$/);
     expect(Object.keys(lock.files)).toContain('vendor/foundation/phone.ts');
     expect(Object.keys(lock.files).some((f) => f.endsWith('.test.ts') && f.includes('vendor/foundation/'))).toBe(false);
+    expect(check(target)).toEqual([]);
+  });
+  it('sync vendors the capability module set and check passes', () => {
+    for (const m of ['capability', 'capability-registry', 'ratchet', 'capability-coverage', 'self-service-routes', 'smart-layer-bypass', 'help-article']) {
+      expect(Object.keys(lock.files)).toContain(`vendor/foundation/${m}.ts`);
+    }
+    expect(Object.keys(lock.files).some((f) => f.endsWith('capability.test.ts'))).toBe(false);
     expect(check(target)).toEqual([]);
   });
   it('editing one byte fails check, naming the file', () => {
@@ -49,5 +56,57 @@ describe('ebda-foundation sync/check', () => {
   it('a refused dirty foundation checkout', () => {
     appendFileSync(join(src, 'packages/foundation/src/phone.ts'), '\n');
     expect(() => sync({ target, dir: 'v', parity: 'p.test.ts', root: src })).toThrow(/uncommitted/);
+  });
+});
+
+describe('peer dependency check (vendored code imports zod)', () => {
+  it('check names a product whose package.json does not declare zod at the pinned version', () => {
+    const src = fixtureFoundation();
+    const t = mkdtempSync(join(tmpdir(), 'fnd-peer-'));
+    sync({ target: t, dir: 'vendor/foundation', parity: 'test/foundation-parity.test.ts', root: src });
+    writeFileSync(join(t, 'package.json'), JSON.stringify({ name: 'p', devDependencies: {} }));
+    expect(check(t).join('\n')).toMatch(/peer dependency zod@4\.6\.7 is not declared/);
+    writeFileSync(join(t, 'package.json'), JSON.stringify({ name: 'p', devDependencies: { zod: '^4.6.7' } }));
+    expect(check(t).join('\n')).toMatch(/found \^4\.6\.7/);
+    writeFileSync(join(t, 'package.json'), JSON.stringify({ name: 'p', dependencies: { zod: '4.6.7' } }));
+    expect(check(t)).toEqual([]);
+  });
+  it('the parity template carries the same check', () => {
+    expect(readFileSync(join(ROOT, 'parity/foundation-parity.test.ts'), 'utf8')).toMatch(/peer dependencies are declared/);
+  });
+});
+
+describe('ebda-foundation capabilities', () => {
+  const bin = join(ROOT, 'bin/ebda-foundation.mjs');
+  const node = (...a: string[]) => spawnSync('node', [bin, 'capabilities', ...a], { encoding: 'utf8' });
+  const cat = join(ROOT, 'test/fixtures/capability/store-mini.json');
+  it('seed writes files, exits 0 and prints the report counts', () => {
+    const out = mkdtempSync(join(tmpdir(), 'cli-cap-'));
+    const r = node('seed', '--product', 'store', '--catalogue', cat, '--out', out, '--today', '2026-11-14');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/written 8, skipped 0/);
+    expect(r.stdout).toMatch(/needsHelp \d+/);
+    expect(readdirSync(out)).toHaveLength(8);
+    expect(node('seed', '--product', 'store', '--catalogue', cat, '--out', out).stdout).toMatch(/written 0, skipped 8/);
+  });
+  it('backfill-plan prints the batches as json', () => {
+    const out = mkdtempSync(join(tmpdir(), 'cli-cap-'));
+    node('seed', '--product', 'store', '--catalogue', cat, '--out', out);
+    const cfg = join(out, '..', 'guard.config.json');
+    writeFileSync(cfg, JSON.stringify({ helpExemptAreas: ['platform'] }));
+    const r = node('backfill-plan', '--dir', out, '--config', cfg);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).batches.length).toBeGreaterThan(0);
+  });
+  it('scaffold prints an mdx skeleton for one id', () => {
+    const out = mkdtempSync(join(tmpdir(), 'cli-cap-'));
+    node('seed', '--product', 'store', '--catalogue', cat, '--out', out);
+    const r = node('scaffold', '--dir', out, '--id', 'onboarding.signup', '--lang', 'en');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('capabilities:\n  - onboarding.signup@1');
+  });
+  it('bad usage exits 2', () => {
+    expect(node('seed', '--product', 'store').status).toBe(2);
+    expect(node('nope').status).toBe(2);
   });
 });

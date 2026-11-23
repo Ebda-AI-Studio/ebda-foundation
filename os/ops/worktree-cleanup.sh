@@ -33,7 +33,10 @@ if command -v require_projects_access >/dev/null 2>&1; then require_projects_acc
 
 PROJECTS="${PROJECTS_DIR:-$OS_PROJECTS_DIR}"
 PROJECTS_ROOT="$PROJECTS"   # lib/projects-layout.sh reads this at call time
+. "$(dirname "$0")/lib/wt-roots.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-roots.sh" 2>/dev/null || true
 WT_DIR="${WORKTREES_DIR:-$PROJECTS/_worktrees}"
+# every root to scan: the explicit WORKTREES_DIR override alone (tests), else internal + SSD (missing roots skipped)
+if [ -n "${WORKTREES_DIR:-}" ] || ! command -v wt_all_roots >/dev/null 2>&1; then WT_DIRS="$WT_DIR"; else WT_DIRS="$(wt_all_roots)"; fi
 # A worktree touched more recently than this is assumed to belong to a live
 # session and is left alone even when its branch has merged.
 FRESH_MIN="${WORKTREE_FRESH_MIN:-120}"
@@ -43,11 +46,16 @@ FRESH_MIN="${WORKTREE_FRESH_MIN:-120}"
 # (b) repos named by an existing worktree dir: <repo>__<branch>
 discover_roots() {
   { list_repo_roots
-    for w in "$WT_DIR"/*/; do
-      [ -d "$w" ] || continue
-      r="${w%/}"; r="${r##*/}"; r="${r%%__*}"
-      resolve_repo_dir "$r" 2>/dev/null || true
-    done
+    while IFS= read -r _wd; do
+      [ -n "$_wd" ] || continue
+      for w in "$_wd"/*/; do
+        [ -d "$w" ] || continue
+        r="${w%/}"; r="${r##*/}"; r="${r%%__*}"
+        resolve_repo_dir "$r" 2>/dev/null || true
+      done
+    done <<EOR
+$WT_DIRS
+EOR
   } | sort -u
 }
 
@@ -116,7 +124,10 @@ for ROOT in ${roots[@]+"${roots[@]}"}; do
     local tip heads
     tip="$(git -C "$ROOT" rev-parse "$1" 2>/dev/null)" || return 1
     heads="$(cd "$ROOT" && "${HYGIENE_GH:-gh}" pr list --head "$1" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null)" || return 1
-    printf '%s\n' "$heads" | grep -qx "$tip"
+    printf '%s\n' "$heads" | grep -qx "$tip" && return 0
+    # G13: squash merge whose PR head moved after merge - content-identical to main counts as merged
+    local slug; slug="$(git -C "$ROOT" remote get-url origin 2>/dev/null | sed -E 's#.*github.com[:/]##; s#\.git$##')"
+    wt_squash_integrated "$ROOT" "$slug" "$1" "origin/$DEF" "$1"
   }
 
   # A LOCAL BRANCH (no worktree, no files) that is an ancestor of origin/<default> loses nothing when deleted, so

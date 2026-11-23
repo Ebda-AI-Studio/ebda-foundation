@@ -52,6 +52,12 @@ any git hook, only by the AGENTS.md rule. Settles with a PATH `git` wrapper if i
 the Telegram alert (6 h cooldown) and `new-task-worktree.sh` refuses new worktrees. `ci-runner-guard.sh` also reads the
 data volume every 30 min (note at 88% used, finding at 94%). `DRY_RUN=1` reports and removes nothing.
 
+### Where worktrees live (2026-11-19)
+New worktrees and the wt-deps cache are placed by `ops/lib/wt-roots.sh`: the external SSD (`/Volumes/Ebda`) when mounted and
+writable, else the internal disk; `OS_WORKTREE_ROOT` / `OS_DEPS_CACHE` override. The free-space floor is measured on the chosen
+volume. Hygiene, cleanup, report and the post-merge hook walk BOTH roots and skip a missing one. Runners stay internal (TCC).
+`ops/migrate-worktrees-to-ssd.sh` is the one-shot mover for existing idle trees. Tests: `ops/tests/wt-roots.test.sh`.
+
 ## 3. Grading (what an auditor checks)
 
 - `git config --global core.hooksPath` is `~/.claude/git-hooks` and `post-checkout` there resolves to `dispatch.sh`.

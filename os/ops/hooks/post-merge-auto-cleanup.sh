@@ -21,6 +21,7 @@
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
 command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/../lib/wt-roots.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-roots.sh" 2>/dev/null || true
 payload="$(cat 2>/dev/null || true)"
 
 parsed="$(printf '%s' "$payload" | python3 -I -c '
@@ -96,12 +97,13 @@ mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 nohup bash "$HYGIENE" --repo "$repo" --skip "$skip" >> "$LOG" 2>&1 &
 disown 2>/dev/null || true
 
-REPO="$repo" SKIP="$skip" PROJ="$OS_PROJECTS_DIR" python3 -I -c '
+WT_ROOTS="$(command -v wt_all_roots >/dev/null 2>&1 && wt_all_roots || true)" REPO="$repo" SKIP="$skip" PROJ="$OS_PROJECTS_DIR" python3 -I -c '
 import json, os
 repo, skip = os.environ["REPO"], os.environ["SKIP"]
 msg = ("post-merge cleanup started for " + repo +
        " (log: ~/Library/Logs/ebda-os-post-merge-cleanup.log).")
-if skip and os.path.realpath(skip).startswith(os.path.realpath(os.path.join(os.environ["PROJ"], "_worktrees")) + "/"):
+roots = [os.path.join(os.environ["PROJ"], "_worktrees")] + [r for r in os.environ.get("WT_ROOTS", "").split("\n") if r]
+if skip and any(os.path.realpath(skip).startswith(os.path.realpath(r) + "/") for r in roots):
     msg += (" The worktree this session is in (" + skip + ") is kept; "
             "it is removed by the hourly sweep once you leave it.")
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": msg}}))

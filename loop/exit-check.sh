@@ -13,8 +13,8 @@ case "${1:-}" in --manual-ok) MANUAL_OK=1 ;; -h|--help) sed -n 2,9p "$0" | sed '
 REPOS="${EXIT_REPOS:-Ebda-AI-Studio/ebda-store Ebda-AI-Studio/ebda-whatsapp Ebda-AI-Studio/ebda-foundation}"
 MAIN="${EXIT_MAIN_REPO:-Ebda-AI-Studio/ebda-store}"
 HEALTH="${EXIT_HEALTH:-api|https://api.ebda.app/health|apps/api packages
-web|https://ameliaaurum.com/health|apps/web packages
-admin|https://store.ebda.app/health|apps/admin packages}"
+web|https://ameliaaurum.com/health|apps/web packages/shared packages/ui
+admin|https://store.ebda.app/health|apps/admin packages/shared packages/ui}"
 BRAIN="${OS_BRAIN_URL:-https://os.ebda.app}"
 HOURS="${EXIT_ALERT_HOURS:-72}"
 fails=0
@@ -63,7 +63,7 @@ if [ "$runs" = "success,success,success" ]; then pass "4c prod-smoke-journey: la
 else fail "4c prod-smoke-journey: last 3 runs = ${runs:-none} (need success,success,success)"; fi
 
 # 6. brain: no open finding, no platform alert in the last $HOURS h (Basic auth like os/ops/alert-wait.sh)
-PW="${EBDA_OS_DASH_PASSWORD:-$(security find-generic-password -a ahmad -s ebda-os-dash -w 2>/dev/null || true)}"
+PW="${EBDA_OS_DASH_PASSWORD:-$(security find-generic-password -s ebda-os-dash -w 2>/dev/null || true)}"
 if [ -z "$PW" ]; then fail "6 brain: no dashboard password (EBDA_OS_DASH_PASSWORD or Keychain ebda-os-dash)"
 else
   AUTH="$(mktemp)"; trap 'rm -f "$AUTH"' EXIT; chmod 600 "$AUTH"; printf 'user = "ahmad:%s"\n' "$PW" > "$AUTH"; unset PW

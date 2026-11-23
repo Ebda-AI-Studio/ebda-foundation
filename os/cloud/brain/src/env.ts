@@ -7,6 +7,8 @@ export interface Env {
   EVENTS: KVNamespace;
   ASSETS?: Fetcher;
   // vars
+  /** the git commit this build was deployed from (stamped by scripts/deploy.sh); /health returns it when it is a sha */
+  GIT_COMMIT?: string;
   OS_ORGS: string;
   /** owner/name list of repos whose code is deployed; an advisory is urgent only there */
   DEPLOYED_REPOS?: string;
@@ -28,6 +30,10 @@ export interface Env {
   /** loop-stall: minutes main CI stays red (30) / minutes without a merge while approved PRs wait (60) before the one escalation */
   LOOP_RED_MIN?: string;
   LOOP_STALL_MIN?: string;
+  /** ci-pool: minutes a CI run may stay queued while nothing runs before the one `ci-pool-stall` escalation (60) */
+  CI_QUEUE_MIN?: string;
+  /** ci-pool: queued runs older than this many minutes (360) are ghosts no runner takes; they are ignored */
+  CI_QUEUE_MAX_MIN?: string;
   /** cf-workers + cost-guard: the personal Cloudflare account id; name prefixes to watch (ebda-), expected Workers, error rate (0.05) */
   CF_ACCOUNT_ID?: string;
   CF_WORKERS_PREFIXES?: string;
@@ -136,6 +142,11 @@ export interface Env {
    *  ANTHROPIC_API_KEY; no brain code path, watcher or the Mac ever sees it. */
   HANDS_ANTHROPIC_API_KEY?: string;
   INGEST_TOKEN?: string;
+  /** InstaPay bridge (src/instapay-bridge.ts): per-product HMAC secrets (>= 16 chars) and the https revert endpoints the "not received" tap calls */
+  INSTAPAY_BRIDGE_SECRET_STORE?: string;
+  INSTAPAY_BRIDGE_SECRET_CHAT?: string;
+  INSTAPAY_REVERT_URL_STORE?: string;
+  INSTAPAY_REVERT_URL_CHAT?: string;
   /** passed into the hands container at start, never baked into the image */
   CLAUDE_CODE_OAUTH_TOKEN?: string;
   HANDS_GH_TOKEN?: string;

@@ -13,6 +13,7 @@ ok(){ if [ "$2" = "$3" ]; then echo "PASS: $1"; pass=$((pass+1)); else echo "FAI
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"; mkdir -p "$HOME"
+export OS_SSD_ROOT="$TMP/no-ssd"   # never touch the real /Volumes/Ebda (lib/wt-roots.sh)
 ARGS="$TMP/args.txt"
 # stub hygiene bin: records its argv (one per line) — stands in for the detached sweep
 cat > "$TMP/hygiene-stub.sh" <<STUB

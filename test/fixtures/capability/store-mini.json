@@ -1,0 +1,302 @@
+[
+ {
+  "id": "onboarding.signup",
+  "area": "onboarding",
+  "title_en": "Sign up as a merchant",
+  "title_ar": "اعمل حساب تاجر جديد",
+  "page": "/signup (accounts app + admin /signup)",
+  "api": [
+   "POST /auth/merchant/signup",
+   "GET /auth/merchant/signup-token",
+   "POST /auth/merchant/resend-verification",
+   "POST accounts:/signup",
+   "POST accounts:/otp/verify"
+  ],
+  "mcp_tool": null,
+  "plan_gate": null,
+  "roles": "public (no account yet)",
+  "assistant_policy": "free",
+  "undo_possible": "n/a",
+  "help_article": "help/create-your-store",
+  "merchant_questions_ar": [
+   "ازاي أفتح متجر على ابدأ؟",
+   "عايز اعمل حساب تاجر",
+   "مش وصلني كود التفعيل"
+  ],
+  "merchant_questions_en": [
+   "How do I create a merchant account?"
+  ],
+  "steps": "Open /signup, enter email/phone and password, enter the OTP/verification link, then continue to onboarding.",
+  "edge_cases": [
+   "Verification email/OTP not delivered: resend (rate limited per email and IP)"
+  ],
+  "gaps": [
+   "Assistant is not available before login: the public site has no help bot"
+  ],
+  "status": "live",
+  "gap_flags": [
+   "no_mcp_tool"
+  ]
+ },
+ {
+  "id": "store.slug-redirects",
+  "area": "seo",
+  "title_en": "Slug redirects (old URL to new URL)",
+  "title_ar": "تحويلات الروابط القديمة",
+  "page": "/stores/[id]/seo/redirects",
+  "api": [
+   "GET /stores/:storeId/slug-redirects",
+   "DELETE /stores/:storeId/slug-redirects/:id"
+  ],
+  "mcp_tool": null,
+  "plan_gate": "seo",
+  "roles": "store_admin (owner) + super_admin; staff cannot",
+  "assistant_policy": "confirm",
+  "undo_possible": "no (recreate by renaming slug back)",
+  "help_article": null,
+  "merchant_questions_ar": [
+   "غيرت رابط منتج ولينك قديم بيدي 404",
+   "امسح تحويل قديم"
+  ],
+  "merchant_questions_en": [
+   "Old product link gives a 404"
+  ],
+  "steps": "Redirects are auto-created when a slug changes; list/delete here.",
+  "edge_cases": [
+   "Redirect chains/loops"
+  ],
+  "gaps": [
+   "No merchant-created manual redirect (only auto + delete; inferred)",
+   "No help article"
+  ],
+  "status": "live",
+  "gap_flags": [
+   "no_help",
+   "no_mcp_tool"
+  ]
+ },
+ {
+  "id": "inventory.overview-adjust",
+  "area": "inventory",
+  "title_en": "Stock levels, quick adjust and set exact stock",
+  "title_ar": "المخزون وتعديل الكميات",
+  "page": "/stores/[id]/stock/inventory; /stock/dashboard",
+  "api": [
+   "GET /stores/:storeId/inventory/stats",
+   "GET .../inventory/products",
+   "POST .../inventory/adjust",
+   "PUT .../inventory/products/:productId/set",
+   "GET .../inventory/history"
+  ],
+  "mcp_tool": "admin_adjust_inventory; admin_set_inventory",
+  "plan_gate": "inventory.basic",
+  "roles": "store_admin, staff (per permission) + super_admin",
+  "assistant_policy": "preview",
+  "undo_possible": "yes (inverse adjustment; history kept)",
+  "help_article": "help/barcode-scan-pick-and-count",
+  "merchant_questions_ar": [
+   "ازاي اغير كمية المخزون؟",
+   "خلص المنتج وانا معايا 5",
+   "مخزوني بيسالب"
+  ],
+  "merchant_questions_en": [
+   "How do I update stock?"
+  ],
+  "steps": "Stock > Inventory.",
+  "edge_cases": [
+   "Stale stock writes fixed in #754 (open)"
+  ],
+  "gaps": [
+   "Inventory audit fixes OPEN-PR #754"
+  ],
+  "status": "live",
+  "gap_flags": []
+ },
+ {
+  "id": "product.recommendations-auto",
+  "area": "marketing",
+  "title_en": "Automatic similar and bought-together recommendations",
+  "title_ar": "اقتراحات تلقائية للمنتجات",
+  "page": null,
+  "api": [
+   "(PR #742)"
+  ],
+  "mcp_tool": null,
+  "plan_gate": "upsell_crosssell",
+  "roles": "store_admin, staff (per permission) + super_admin",
+  "assistant_policy": "preview",
+  "undo_possible": "yes",
+  "help_article": null,
+  "merchant_questions_ar": [
+   "المنتجات المقترحة هتتحدد لوحدها؟"
+  ],
+  "merchant_questions_en": [
+   "Will recommendations be automatic?"
+  ],
+  "steps": "Assistant today: you can curate by hand; automatic is coming.",
+  "edge_cases": [
+   "Plan/feature not allowing it: API returns 403 FEATURE_DISABLED with an upgrade target when the plan is the cause; assistant must name the plan and link Billing, never imply a toggle"
+  ],
+  "gaps": [
+   "not merged"
+  ],
+  "status": "in-pr",
+  "pr_or_plan": "ebda-store#742",
+  "gap_flags": [
+   "no_ui",
+   "in_pr_unmerged"
+  ]
+ },
+ {
+  "id": "platform.manual-payment",
+  "area": "platform",
+  "title_en": "Confirm InstaPay subscription claims, manual payment, billing refunds",
+  "title_ar": "تأكيد دفع انستاباي للاشتراك",
+  "page": "/billing-events",
+  "api": [
+   "GET /admin/billing/claims",
+   "POST .../claims/:id/reject",
+   "POST /admin/stores/:id/manual-payment",
+   "POST /admin/billing/events/:id/refund|manual-refund"
+  ],
+  "mcp_tool": null,
+  "plan_gate": null,
+  "roles": "super_admin only",
+  "assistant_policy": "forbidden",
+  "undo_possible": "n/a",
+  "help_article": null,
+  "merchant_questions_ar": [
+   "حولت وماتفعلتش"
+  ],
+  "merchant_questions_en": [
+   "I paid by InstaPay but nothing activated"
+  ],
+  "steps": "Super-admin console only.",
+  "edge_cases": [
+   "Assistant must refuse and offer a handoff request with context"
+  ],
+  "gaps": [
+   "Auto-confirm NOT BUILT"
+  ],
+  "status": "live",
+  "super_admin_reason": "money (confirm payment); refunds = money dispute",
+  "reason_valid_under_self_service_rule": "Confirm: INVALID as default (AI auto-confirm when receipt matches, spec 7.4; BLOCKER #3). Refunds/disputes: VALID",
+  "gap_flags": [
+   "staff_only"
+  ]
+ },
+ {
+  "id": "marketing.loyalty",
+  "area": "marketing",
+  "title_en": "Loyalty points: settings, members, award points",
+  "title_ar": "برنامج الولاء",
+  "page": "/stores/[id]/loyalty",
+  "api": [
+   "GET/PUT .../loyalty/settings",
+   "GET .../loyalty/stats|members|transactions",
+   "POST .../loyalty/members/:customerId/award"
+  ],
+  "mcp_tool": null,
+  "plan_gate": "loyalty",
+  "roles": "store_admin (owner) + super_admin; staff cannot",
+  "assistant_policy": "confirm",
+  "undo_possible": "award: reversal via adjust (clawback #691 open)",
+  "help_article": null,
+  "merchant_questions_ar": [
+   "ازاي اعمل نقاط ولاء؟",
+   "اديله نقاط",
+   "النقاط بتنتهي امتى؟"
+  ],
+  "merchant_questions_en": [
+   "Set up loyalty points"
+  ],
+  "steps": "Loyalty page.",
+  "edge_cases": [
+   "Reversal clawback OPEN-PR #691"
+  ],
+  "gaps": [
+   "No help article"
+  ],
+  "status": "live",
+  "gap_flags": [
+   "no_help",
+   "no_mcp_tool"
+  ]
+ },
+ {
+  "id": "account.password",
+  "area": "account",
+  "title_en": "Change or reset password",
+  "title_ar": "غير الباسورد / نسيت الباسورد",
+  "page": "/account/security; /forgot-password; /reset-password",
+  "api": [
+   "POST /auth/change-password",
+   "POST /auth/forgot-password",
+   "POST /auth/reset-password",
+   "POST accounts:/password/forgot"
+  ],
+  "mcp_tool": null,
+  "plan_gate": null,
+  "roles": "mystery role text",
+  "assistant_policy": "confirm",
+  "undo_possible": "no",
+  "help_article": "help/account-security",
+  "merchant_questions_ar": [
+   "نسيت الباسورد",
+   "ازاي اغير الباسورد؟",
+   "الايميل بتاع reset مش بيوصل"
+  ],
+  "merchant_questions_en": [
+   "I forgot my password"
+  ],
+  "steps": "Use Forgot password on the login page, or Account > Security > Change password.",
+  "edge_cases": [
+   "Reset emails rate limited per address/IP"
+  ],
+  "gaps": [
+   "Assistant must never see or relay the password: deep link only"
+  ],
+  "status": "live",
+  "assistant_note": "deep-link only; never accept passwords in chat",
+  "gap_flags": [
+   "no_mcp_tool"
+  ]
+ },
+ {
+  "id": "platform.feature-overrides",
+  "area": "platform",
+  "title_en": "Per-store feature/plan overrides and add-on grants",
+  "title_ar": "تفعيل ميزات لمتجر",
+  "page": "/stores/[id]/features",
+  "api": [
+   "GET/PUT/DELETE /admin/stores/:storeId/features(/:featureKey)",
+   "PUT .../plan"
+  ],
+  "mcp_tool": null,
+  "plan_gate": null,
+  "roles": "super_admin only",
+  "assistant_policy": "forbidden",
+  "undo_possible": "n/a",
+  "help_article": null,
+  "merchant_questions_ar": [
+   "الميزة دي مقفولة",
+   "عايز افعل ..."
+  ],
+  "merchant_questions_en": [
+   "Enable this feature for me"
+  ],
+  "steps": "Super-admin console only.",
+  "edge_cases": [
+   "Assistant must refuse and offer a handoff request with context"
+  ],
+  "gaps": [
+   "No purchase flow (gap 6)"
+  ],
+  "status": "live",
+  "super_admin_reason": "commercial exception / add-on grant",
+  "reason_valid_under_self_service_rule": "PARTLY INVALID: add-on purchase and enabling plan-included hidden features should be self-service (gap 6, 18)",
+  "gap_flags": [
+   "staff_only"
+  ]
+ }
+]
