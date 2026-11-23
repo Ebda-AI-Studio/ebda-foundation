@@ -1,0 +1,1 @@
+- root-checkout-guard (os/ops/git-hooks/dispatch.sh, os/standard/worktree-process-hygiene.md): global pre-commit + pre-merge-commit refuse in a repo main checkout on main under internal-projects/clients; ff allowed; FORCEAI_ALLOW_ROOT_COMMIT=1 hatch logged; post-merge warns if root main ends ahead of origin

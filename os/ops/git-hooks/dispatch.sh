@@ -53,6 +53,59 @@ if [ "$name" = "post-checkout" ]; then
   fi
 fi
 
+# --- root-checkout guard (2026-11-23) ---
+# Defect class (twice on 2026-11-23): `cd <worktree> && git merge ...` failed at the cd, so git ran in the ROOT checkout
+# (~/Desktop/projects/<biz>/internal-projects/<repo> or <biz>/clients/<client>/<repo>), which must stay on main read-only,
+# and moved local main ahead of origin. REFUSES (exit 1) pre-commit and pre-merge-commit when ALL hold: the checkout is
+# the repo's MAIN worktree (git-dir == git-common-dir), it sits in a business-folder slot under $OS_PROJECTS_DIR, and
+# HEAD is main/master. pre-merge-commit only runs when a merge CREATES a commit; a fast-forward (`git merge origin/main`,
+# the legitimate way to keep root current) runs no pre-merge-commit and stays allowed. post-merge only WARNS afterwards
+# (it fires for ff too and cannot undo), when root main ended up not contained in origin/main.
+# Escape hatch: FORCEAI_ALLOW_ROOT_COMMIT=1 (every use is logged to ~/Library/Logs/root-commit-guard.log).
+# Never blocks on what it cannot see (not a repo, detached HEAD, path outside the slots). See standard/worktree-process-hygiene.md s5.
+root_checkout_is_guarded() {
+  local gd cdir top proj br
+  gd="$(git rev-parse --path-format=absolute --git-dir 2>/dev/null)" || return 1
+  cdir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  [ -n "$gd" ] && [ "$(cd "$gd" 2>/dev/null && pwd -P)" = "$(cd "$cdir" 2>/dev/null && pwd -P)" ] || return 1
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ -n "$top" ] || return 1
+  top="$(cd "$top" 2>/dev/null && pwd -P)" || return 1
+  proj="$(cd "${OS_PROJECTS_DIR:-$HOME/Desktop/projects}" 2>/dev/null && pwd -P)" || return 1
+  case "$top" in
+    "$proj"/*/internal-projects/*|"$proj"/*/clients/*/*) ;;
+    *) return 1 ;;
+  esac
+  br="$(git symbolic-ref --short -q HEAD 2>/dev/null)" || return 1
+  case "$br" in main|master) ;; *) return 1 ;; esac
+  ROOT_GUARD_TOP="$top"; ROOT_GUARD_BRANCH="$br"
+  return 0
+}
+case "$name" in
+  pre-commit|pre-merge-commit)
+    if root_checkout_is_guarded; then
+      if [ "${FORCEAI_ALLOW_ROOT_COMMIT:-0}" = 1 ]; then
+        mkdir -p "$HOME/Library/Logs" 2>/dev/null
+        echo "$(date -u +%FT%TZ) $name ALLOWED via FORCEAI_ALLOW_ROOT_COMMIT=1 in $ROOT_GUARD_TOP ($ROOT_GUARD_BRANCH)" >> "$HOME/Library/Logs/root-commit-guard.log" 2>/dev/null || true
+      else
+        {
+          echo "root-checkout-guard: REFUSED $name in $ROOT_GUARD_TOP (main checkout on $ROOT_GUARD_BRANCH)."
+          echo "  Root checkouts stay on main, read-only. Do the work in a worktree:"
+          echo "    ~/.claude/scripts/new-task-worktree.sh <repo> <feat|fix>/<task>"
+          echo "  (a failed \`cd <worktree> && git ...\` runs git HERE - check the cd succeeded.)"
+          echo "  Deliberate override: FORCEAI_ALLOW_ROOT_COMMIT=1 git ... (logged)."
+        } >&2
+        exit 1
+      fi
+    fi ;;
+  post-merge)
+    if root_checkout_is_guarded && [ "${FORCEAI_ALLOW_ROOT_COMMIT:-0}" != 1 ] \
+       && git rev-parse -q --verify "refs/remotes/origin/$ROOT_GUARD_BRANCH" >/dev/null 2>&1 \
+       && ! git merge-base --is-ancestor HEAD "refs/remotes/origin/$ROOT_GUARD_BRANCH" 2>/dev/null; then
+      echo "root-checkout-guard: WARNING - local $ROOT_GUARD_BRANCH in $ROOT_GUARD_TOP is now AHEAD of origin/$ROOT_GUARD_BRANCH. Root must mirror origin: undo with \`git reset --hard origin/$ROOT_GUARD_BRANCH\` after checking nothing unique is on it, and redo the work in a worktree." >&2
+    fi ;;
+esac
+
 # --- chain to the repo's own hook (exec: keeps stdin + exit status) ---
 # SECURITY (2026-10-25 review): this file runs for EVERY repo on the machine, including a freshly cloned UNTRUSTED
 # one, so it must never execute anything that arrives inside a repo checkout.
