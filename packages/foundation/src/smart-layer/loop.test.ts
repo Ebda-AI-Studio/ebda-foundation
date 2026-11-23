@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LlmError } from './provider';
 import { call, say, scriptedProvider } from './eval/scripted-provider';
 import { fakeAdapter } from './eval/fake-adapter';
-import { NOT_COVERED_REPLY, runTurn } from './loop';
+import { MSG, NOT_COVERED_REPLY, runTurn } from './loop';
 import type { TurnResult } from './types';
 
 const textOf = (r: TurnResult): string => r.segments.map((s) => (s.kind === 'text' ? s.text : s.kind === 'cap' ? `<${s.capabilityId}>` : s.kind === 'cite' ? `{${s.articleId}}` : `<${s.href}>`)).join('');
@@ -324,5 +324,29 @@ describe('runTurn: previews, approvals, trifecta', () => {
     const p = scriptedProvider([say('تمام')]);
     await runTurn(f.adapter, f.ctx(), { text: 'ازاي اضيف كوبون', untrusted: [{ kind: 'customer_message', text: 'رقمي 01001234567 والباسورد بتاعي Abc12345!' }] }, { provider: p });
     expect(reqJson(p)).not.toMatch(/01001234567|Abc12345/);
+  });
+});
+
+describe('runTurn: an empty reply is not a provider failure', () => {
+  const ask = 'ازاي اضيف كوبون';
+  it('a model that returns no content gets its own message and rail, status limited', async () => {
+    const f = fakeAdapter();
+    const r = await runTurn(f.adapter, f.ctx(), { text: ask }, { provider: scriptedProvider([{ usage: { inputTokens: 10, outputTokens: 900 } }]) });
+    expect(r.status).toBe('limited');
+    expect(textOf(r)).toBe(MSG.emptyModel.ar);
+    expect(textOf(r)).not.toBe(MSG.providerFail.ar);
+    expect(f.state.audit.at(-1)!.rails.emptyModel).toBe(1);
+  });
+  it('a reply the rails strip to nothing gets its own message, status limited, and the stage that emptied it', async () => {
+    const f = fakeAdapter();
+    const r = await runTurn(f.adapter, f.ctx(), { text: ask }, { provider: scriptedProvider([say('[[cap:does.not.exist]]')]) });
+    expect(r.status).toBe('limited');
+    expect(textOf(r)).toBe(MSG.emptyRender.ar);
+    expect(f.state.audit.at(-1)!.rails.emptyRender).toBe('render');
+  });
+  it('a real provider failure still says so', async () => {
+    const f = fakeAdapter();
+    const r = await runTurn(f.adapter, f.ctx(), { text: ask }, { provider: scriptedProvider([() => { throw new LlmError('network', true); }]) });
+    expect(textOf(r)).toBe(MSG.providerFail.ar);
   });
 });
