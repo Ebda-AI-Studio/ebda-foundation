@@ -1,0 +1,1 @@
+- LEASE-ANY-LABEL-1 (`os/ops/main-first.sh`, `os/ops/tests/main-first.test.sh`): the lease pools default to `ebda-mac`, `ebda-mac-light` and the shared `ebda-mac-any` (RUNNER-ANY-1), so the `MAIN_FIRST_LEASE_LABELS` override in `~/.ebda-os.local.env` is no longer needed; a queued main job on any of them takes the lease and PR runs on any of them are cancelled.

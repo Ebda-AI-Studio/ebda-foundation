@@ -15,13 +15,15 @@
 //   /api/telegram/webhook/{set,info,delete}  /api/telegram/send  /api/inbox  /api/inbox/ack   (Bearer INGEST_TOKEN, src/tg-inbox.ts)
 //   POST|GET /api/decisions  one-tap approval questions (Bearer INGEST_TOKEN): POST {id,question,why,default,cost_if_wrong,kind,link?}[] <= 10 ->
 //                         one Telegram message each; GET ?status=answered|pending reads the answers. Taps arrive via /telegram/webhook (src/decisions.ts).
+//   POST /api/instapay/notify  InstaPay auto-confirm digest + waiting messages from Store/Chat (HMAC-signed per product, src/instapay-bridge.ts);
+//                         its taps (`ip:<s|c>:<id>`) arrive via /telegram/webhook and call the product's signed revert endpoint.
 //   /social/*             social posting: drafts/edits/calendar (INGEST_TOKEN), decide/brands (SOCIAL_DECIDE_TOKEN), /social/d/:id signed
 //                         decision page (src/social/routes.ts)
 //   GET  /health
 // Human routes: GET /api/state, POST /api/halt, POST /api/questions/:id/answer, and the static dashboard at /dash/ (Workers Static
 // Assets, run Worker-first so the HTML/JS/CSS are never served before the gate). All of them go through gateHuman()
 // (src/dash-auth.ts, ruling RR-dash-auth): the Cloudflare Access JWT when Access is configured, else the interim Basic Auth,
-// else 503. /health stays public and carries no data.
+// else 503. /health stays public and carries only the deploy commit.
 import type { BrainDO } from './brain-do';
 import { DASH_HEADERS, gateHuman } from './dash-auth';
 import { type Env } from './env';
@@ -33,6 +35,7 @@ import { cronName } from './schedule';
 import { validateAlert, type PlatformAlert } from './alerts';
 import { answerDecision, listDecisions, noteDecision, postDecisions, MAX_PER_CALL, validateDraft } from './decisions';
 import { handleSocial } from './social/routes';
+import { handleInstapayNotify, handleInstapayTap } from './instapay-bridge';
 import { ackInbox, handleSend, handleWebhookAdmin, listInbox, recordInbox } from './tg-inbox';
 import { validateUsage } from './usage';
 import { watchAdvisories } from './watchers/advisories';
@@ -168,7 +171,10 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
   const sm = String(cb.data ?? '').match(/^s:([\w-]+):([aek])$/);
   const dm = String(cb.data ?? '').match(/^d:([\w-]+):([ynlk])$/);
   let text = 'not understood';
-  if (dm) {
+  const ipText = String(cb.data ?? '').startsWith('ip:') ? await handleInstapayTap(env, String(cb.data)) : null;
+  if (ipText !== null) {
+    text = ipText;
+  } else if (dm) {
     text = (await answerDecision(env, dm[1]!, dm[2]!, cb.from)).text;
   } else if (sm) {
     const decision = sm[2] === 'a' ? 'approve' : sm[2] === 'e' ? 'edit' : 'skip';
@@ -339,7 +345,8 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
-      if (path === '/health') return json({ ok: true, service: 'ebda-os-brain' });
+      // the commit is not a secret (a deploy stamp, same as the store and whatsapp /health); anything that is not a sha reads 'unknown'
+      if (path === '/health') return json({ ok: true, service: 'ebda-os-brain', commit: /^[0-9a-f]{7,40}(\+dirty)?$/.test(env.GIT_COMMIT ?? '') ? env.GIT_COMMIT : 'unknown' });
       if (request.method === 'POST' && (path === '/github/webhook' || path === '/')) return await handleGitHub(request, env, ctx);
       if (request.method === 'GET' && path === '/pending') return await handlePending(request, env);
       if (path === '/telegram/webhook' && request.method === 'POST') return await handleTelegram(request, env);
@@ -393,6 +400,7 @@ export default {
         }
         return json({ error: 'not found' }, 404);
       }
+      if (path === '/api/instapay/notify') return await handleInstapayNotify(request, env);
       if (path === '/api/decisions' && (request.method === 'POST' || request.method === 'GET')) {
         if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });
         if (request.method === 'GET') {

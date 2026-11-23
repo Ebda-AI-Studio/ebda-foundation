@@ -36,7 +36,7 @@ G="$(HOME="$H" AGENTS_SRC="$S/agents" OS_LINK_ANY_CHECKOUT=0 bash "$INSTALL" 2>&
 # the old `!= master` check failed every push to main, 2026-11-11)
 _br="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
 if [ "$(git -C "$ROOT" rev-parse --absolute-git-dir)" != "$(cd "$ROOT" && cd "$(git rev-parse --git-common-dir)" && pwd)" ] || { [ "$_br" != main ] && [ "$_br" != master ]; }; then
-  { printf '%s' "$G" | grep -q SKIP && [ -z "$(find "$H/.claude/agents" -type l 2>/dev/null)" ]; } && ok "refuses to link from a worktree/feature branch" || no "linked from a non-main checkout"
+  { grep -q SKIP <<<"$G" && [ -z "$(find "$H/.claude/agents" -type l 2>/dev/null)" ]; } && ok "refuses to link from a worktree/feature branch" || no "linked from a non-main checkout"
 fi
 export OS_LINK_ANY_CHECKOUT=1
 HOME="$H" AGENTS_SRC="$S/agents" bash "$INSTALL" >/dev/null 2>&1 && ok "install exits 0" || no "install exits 0"

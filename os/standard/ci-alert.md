@@ -1,7 +1,7 @@
 # ci-alert - CI failures reach Ahmad from outside the fleet
 
 tags: [BOTH]
-scope: every repo whose CI runs on the self-hosted Umbra fleet
+scope: every repo whose CI runs on the self-hosted native Mac runner fleet
 sources: incident I15 (2026-10-26)
 
 **Why a Mac-side poller.** A `notify-failure` job runs on the fleet it reports on. A dead fleet leaves required checks QUEUED forever; a
@@ -16,5 +16,5 @@ GitHub API only) is the primary path.
 Never pages: cancelled (the merge train cancels on purpose), skipped, neutral, success, in_progress.
 At most 5 pages per tick, then one summary; a failed delivery is retried next tick.
 
-Repos: `CI_ALERT_REPOS` (default ebda-store, ebda-foundation, umbra).
+Repos: `CI_ALERT_REPOS` (default ebda-store, ebda-foundation).
 **Enforcement.** `ops/tests/ci-alert.test.sh` (27 cases, 3 mutation controls: cancelled-as-red, no dedup, no queued rule).

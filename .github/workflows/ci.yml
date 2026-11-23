@@ -1,7 +1,7 @@
 name: CI
 
-# Every runs-on reads repo variable EBDA_RUNS_ON (the Umbra runner when set) and falls back to ubuntu-latest when unset.
-# setup-node's remote npm cache is for hosted runners only: on Umbra ~/.npm already persists locally.
+# Every runs-on reads a repo variable (EBDA_ANY_RUNS_ON for the short jobs, EBDA_RUNS_ON otherwise) and falls back to the Mac label ebda-mac-light, NEVER a GitHub-hosted runner (Ahmad 2026-11-16).
+# setup-node's remote npm cache is for hosted runners only: on the self-hosted Mac runners ~/.npm already persists locally.
 on:
   push:
     branches: [main]
@@ -19,7 +19,8 @@ concurrency:
 jobs:
   test:
     name: Typecheck, test, lint workflows
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 21 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 15
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -27,7 +28,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -35,7 +35,8 @@ jobs:
 
   audit:
     name: Dependency audit
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 15 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -43,16 +44,23 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
       - run: npm ci
-      - run: npm audit --audit-level=low
+      - name: Audit production dependencies (blocking)
+        # Ruling AUDIT-SPLIT-1: `npm audit --omit=dev`, zero tolerance beyond .github/audit-allow.json (id, package, reason, expiry; an expired
+        # entry fails this step). Was `npm audit --audit-level=low` over EVERY dependency: GHSA-fc5q-39xc-vjpf (picomatch ReDoS, no patched
+        # version, test tooling only) turned it red on every PR and main.
+        run: node .github/scripts/audit-gate.mjs
+      - name: Report development advisories (non-blocking)
+        continue-on-error: true
+        run: node .github/scripts/audit-gate.mjs --all
 
   # Always-run PR check (no `if`, no paths filter): the one check the merge gate can always require, so a PR that touches
   # nothing under os/ or os/cloud/ still has a guaranteed explicit SUCCESS. Cheap (~15 s): shellcheck on the shell files this
   # PR changed, then the relative-markdown-link guard. The only `if` is the repo-wide fork guard (workflow-lint requires it; the gate treats it as always-run for same-repo PRs).
   pr-sanity:
     name: PR sanity
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 13 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 5
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -75,18 +83,25 @@ jobs:
           node-version: 22
       - name: markdown link guard (os/standard, os/audit/lenses)
         run: node os/tests/standard-links.test.mjs
+      - name: changelog fragments (CHANGELOG-FRAGMENTS-1)
+        # Unreleased changes are one file each in changelog.d/; a hand-written bullet under `## Unreleased` or a malformed fragment fails here.
+        run: bash os/ops/changelog-assemble.sh --check
 
   # OS layer (os/): shellcheck, then os/tests/run-all.sh (string + literal guards, config parity, the ops suites, Linux smoke). Affected-only: on a PR it does nothing
   # unless os/ or this workflow changed (one checkout + one git diff, ~10 s). On push to main it always runs.
   os:
     name: OS layer (shellcheck, guards, suites, Linux smoke)
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
-    timeout-minutes: 25
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
+    # 45, not 25 (2026-11-17): on a loaded Mac runner this job ran 25:19 twice on #105 and GitHub reported the timeout as `cancelled`
+    # (all of it inside the one `OS suites` step: no lock, no queue). ~13 min uncontested; 45 is the backstop, the `slow` lines say where time goes.
+    timeout-minutes: 45
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: Record the job start (for the timeout report)
+        run: echo "OS_JOB_T0=$(date +%s)" >> "$GITHUB_ENV"
       - name: Did os/ change?
         id: chg
         env:
@@ -103,7 +118,7 @@ jobs:
         run: |
           command -v shellcheck >/dev/null || { [ "$(uname -s)" = Linux ] || { echo "::error::shellcheck missing on this runner (macOS: brew install shellcheck once on the host)"; exit 1; }; sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
           shellcheck -S warning os/ops/*.sh os/ops/lib/*.sh os/ops/hooks/*.sh os/ops/git-hooks/*.sh os/ops/remediation/*.sh
-      - name: Tools the suites need (present on ubuntu-latest; installed if the runner image lacks them)
+      - name: Tools the suites need (installed if the runner lacks them)
         if: steps.chg.outputs.changed == 'true'
         run: |
           for t in jq rsync python3; do command -v "$t" >/dev/null || need="$need $t"; done
@@ -111,12 +126,18 @@ jobs:
       - name: OS suites (string + literal guards, config parity, ops suites, Linux smoke)
         if: steps.chg.outputs.changed == 'true'
         run: bash os/tests/run-all.sh --quiet
+      - name: Say so when the job was cancelled (a timeout is reported as `cancelled`, not as a test failure)
+        if: cancelled()
+        run: |
+          mins=$(( ($(date +%s) - ${OS_JOB_T0:-$(date +%s)}) / 60 ))
+          echo "::error::OS layer CANCELLED after ${mins} min. If that is the job limit (45 min) this is a TIMEOUT, not a test failure: read the 'slow' lines of the OS suites step for where the time went. A person or a newer push also cancels a run."
 
   # OS brain Worker (os/cloud/brain): typecheck, vitest on workerd, npm audit. Affected-only like `os`: on a PR it does nothing
-  # unless os/cloud/ or this workflow changed. Its own lockfile; ~/.npm persists on Umbra, the remote cache is for hosted runners.
+  # unless os/cloud/ or this workflow changed. Its own lockfile; ~/.npm persists on the Mac runners, the remote cache is for hosted runners.
   brain:
     name: OS brain Worker (typecheck, workerd tests, audit)
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 20 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 15
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     defaults:
@@ -142,7 +163,6 @@ jobs:
         if: steps.chg.outputs.changed == 'true'
         with:
           node-version: 22
-          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
           cache-dependency-path: os/cloud/brain/package-lock.json
       - if: steps.chg.outputs.changed == 'true'
         run: npm ci
@@ -150,14 +170,20 @@ jobs:
         run: npm run typecheck
       - if: steps.chg.outputs.changed == 'true'
         run: npm test
-      - if: steps.chg.outputs.changed == 'true'
-        run: npm audit --audit-level=low
+      - name: Audit production dependencies (blocking, Ruling AUDIT-SPLIT-1)
+        if: steps.chg.outputs.changed == 'true'
+        run: node "$GITHUB_WORKSPACE/.github/scripts/audit-gate.mjs"
+      - name: Report development advisories (non-blocking)
+        if: steps.chg.outputs.changed == 'true'
+        continue-on-error: true
+        run: node "$GITHUB_WORKSPACE/.github/scripts/audit-gate.mjs" --all
 
   # OS hands (os/cloud/hands): vitest with every leaf mocked, the --dry-run fixture walk, engine-free Dockerfile checks,
   # npm audit. Affected-only like `brain` (os/cloud/ or this workflow). Builds no image and spends no container minutes.
   hands:
     name: OS hands (tests, dry-run, Dockerfile checks, audit)
-    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '"ubuntu-latest"') }}
+    # short-job: median 22 s over recent main runs (RUNNER-ANY-1): any free runner, never queued behind a heavy job
+    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     defaults:
@@ -183,7 +209,6 @@ jobs:
         if: steps.chg.outputs.changed == 'true'
         with:
           node-version: 22
-          cache: ${{ vars.EBDA_RUNS_ON == '' && 'npm' || '' }}
           cache-dependency-path: os/cloud/hands/package-lock.json
       - if: steps.chg.outputs.changed == 'true'
         run: npm ci
@@ -193,8 +218,13 @@ jobs:
         run: npm run dry-run
       - if: steps.chg.outputs.changed == 'true'
         run: npm run lint:dockerfile
-      - if: steps.chg.outputs.changed == 'true'
-        run: npm audit --audit-level=low
+      - name: Audit production dependencies (blocking, Ruling AUDIT-SPLIT-1)
+        if: steps.chg.outputs.changed == 'true'
+        run: node "$GITHUB_WORKSPACE/.github/scripts/audit-gate.mjs"
+      - name: Report development advisories (non-blocking)
+        if: steps.chg.outputs.changed == 'true'
+        continue-on-error: true
+        run: node "$GITHUB_WORKSPACE/.github/scripts/audit-gate.mjs" --all
       - name: Audit the pinned Claude Code CLI lockfile (image dependency)
         if: steps.chg.outputs.changed == 'true'
         working-directory: os/cloud/hands/claude-cli

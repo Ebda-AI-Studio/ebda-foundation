@@ -1,0 +1,1 @@
+- G15 (stall alert counts drain-eligible PRs): new `ops/lib/drain_eligible.py` is the single eligibility rule for `drain.sh` and `loop-watchdog.sh`; the watchdog no longer counts every `ai-review-passed` PR (ebda-store said 64). The drain now also skips PRs labelled `hold`. Tests in `tests/loop-watchdog.test.sh`.

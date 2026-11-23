@@ -3,7 +3,7 @@
 # Exempt: docs/history/, the plan that lists the strings by necessity, git-ignored scratch (.superpowers/), this test.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$ROOT"
+cd "$ROOT" || exit 1
 RE='ForceAI-KW|force-ai-foundation|Force-AI/internal-projects|forceai\.|com\.forceai|ff6e01|#ff6e01|Kuwait|KWD|MyFatoorah|aladiyat|rayanah|om-hassan|da-gusto|fca-kuwait|salam-hydraulic'
 if git rev-parse --git-dir >/dev/null 2>&1; then
   files=$( { git ls-files; git ls-files --others --exclude-standard; } | sort -u )
@@ -15,7 +15,7 @@ RE_CI='\bforce[-_ ]?ai'
 RE_NEON='neon'  # F-I11: Ebda has no Neon; Force/client database targets never ship in os/ (covers neonctl, neondb_owner, OS_NEON_ORG)
 hits=$(printf '%s\n' "$files" \
   | grep -vE '^(docs/history/|\.superpowers/|node_modules/|\.git/|docs/plans/done/2026-11-05-foundation-takeover\.md$|os/tests/no-force-strings\.test\.sh$|os/ops/force-purge-check\.sh$|os/tests/force-purge-check\.test\.sh$|package-lock\.json$)' \
-  | while IFS= read -r f; do [ -f "$f" ] && { grep -InE "$RE" -- "$f" 2>/dev/null; grep -InEi "$RE2|$RE_CI" -- "$f" 2>/dev/null; if [ "${f#os/}" != "$f" ]; then grep -InEi "$RE_NEON" -- "$f" 2>/dev/null; fi; } | sort -u | grep -v "OS_UMBRA_VMS" | sed "s|^|$f:|"; done)
+  | while IFS= read -r f; do [ -f "$f" ] && { grep -InE "$RE" -- "$f" 2>/dev/null; grep -InEi "$RE2|$RE_CI" -- "$f" 2>/dev/null; if [ "${f#os/}" != "$f" ]; then grep -InEi "$RE_NEON" -- "$f" 2>/dev/null; fi; } | sort -u | sed "s|^|$f:|"; done)
 if [ -n "$hits" ]; then
   echo "FAIL: predecessor strings found outside docs/history/:"
   printf '%s\n' "$hits"

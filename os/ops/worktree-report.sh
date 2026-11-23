@@ -23,17 +23,25 @@
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/os-config.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/os-config.sh" 2>/dev/null || true
 command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/lib/wt-roots.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-roots.sh" 2>/dev/null || true
+[ -n "${WT_ROOT:-}" ] && WT_ROOT_SET=1
 WT_ROOT="${WT_ROOT:-$OS_PROJECTS_DIR/_worktrees}"
 STATE_DIR="${WHISKY_STATE_DIR:-$HOME/.whisky-os-state}"
 IDLE_DAYS="${IDLE_DAYS:-7}"
 mkdir -p "$STATE_DIR"
 
-[ -d "$WT_ROOT" ] || { echo "no worktree root at $WT_ROOT"; exit 0; }
+# Roots: an explicit WT_ROOT wins; else every existing root (internal + SSD). A missing root is skipped.
+if [ -n "${WT_ROOT_SET:-}" ] || ! command -v wt_all_roots >/dev/null 2>&1; then WT_ROOTS="$WT_ROOT"; else WT_ROOTS="$(wt_all_roots)"; fi
+[ -d "$WT_ROOT" ] || [ -n "$WT_ROOTS" ] || { echo "no worktree root at $WT_ROOT"; exit 0; }
+wt_dirs() { local _r; while IFS= read -r _r; do [ -d "$_r" ] && printf '%s\n' "$_r"/*/; done <<EOR
+$WT_ROOTS
+EOR
+}
 
 active=0; merged=0; stale=0; total_kb=0
 merged_list=(); stale_list=()
 
-for d in "$WT_ROOT"/*/; do
+for d in $(wt_dirs); do
   [ -d "$d" ] || continue
   name=$(basename "$d")
   age=$(( ( $(date +%s) - $(stat -c %Y "$d" 2>/dev/null || stat -f %m "$d" 2>/dev/null || echo 0) ) / 86400 ))
@@ -71,7 +79,7 @@ done
 
 total_gb=$(python3 -c "print(f'{$total_kb/1024/1024:.1f}')")
 
-echo "Worktrees: $(ls -d "$WT_ROOT"/*/ 2>/dev/null | wc -l | tr -d ' ') using ${total_gb}GB"
+echo "Worktrees: $(wt_dirs | grep -c . || true) using ${total_gb}GB"
 echo "  active (recent or dirty — NOT touched): $active"
 echo "  merged + clean (safe to remove):        $merged"
 echo "  stale >${IDLE_DAYS}d, clean, unmerged (review):  $stale"

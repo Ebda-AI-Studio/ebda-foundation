@@ -2,7 +2,7 @@
   "name": "ebda-os-hands",
   "version": "0.1.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "description": "Ebda OS hands: run-batch.mjs pulls the brain's batch, fixes each job with Claude Code headless, opens PRs, merges only pre-approved classes through the repo merge gate.",
   "engines": {

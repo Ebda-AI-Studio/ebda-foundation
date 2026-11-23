@@ -50,7 +50,7 @@ STALE_DAYS="${GATE_STALE_DAYS:-21}"
 # Ahmad's personal account, so new repos are covered the moment they exist (no
 # hardcoded list to drift). Repos without any CI gate workflow simply match
 # nothing below and are skipped. Override with GATE_REPOS="owner/a owner/b".
-GATE_OWNERS="${GATE_OWNERS:-$OS_ORGS}"  # keep in sync with runner-focus.sh + runner-reregister.sh
+GATE_OWNERS="${GATE_OWNERS:-$OS_ORGS}"
 _discover_repos(){
   local o
   for o in $GATE_OWNERS; do
@@ -138,7 +138,7 @@ for w in data:
     # Blanket-flagging produced 4 alerts on 2026-08-16, and every one was noise:
     #   store 'Runner health check'  — schedule deliberately commented out, only
     #                                workflow_dispatch left (documented in-file)
-    #   umbra 'umbra-ci verify'    — workflow FILE DELETED; only the lingering
+    #   an old repo's 'verify' workflow — workflow FILE DELETED; only the lingering
     #                                Actions record remains, still state=active
     #   ci-runner-verify           — on: push, but the repo has had no push since
     #   example-media gitleaks        — repo idle since its last run
@@ -179,7 +179,11 @@ for w in data:
 
     # (c) The repo itself has had no push since the gate last ran — a quiet repo,
     #     not a broken gate.
-    pushedAt="$(_ut "$OS_UT_FAST" gh api "repos/$repo" --jq '.pushed_at' 2>/dev/null)"
+    # Use the default branch's HEAD commit date, not repos/<r>.pushed_at: pushed_at also moves on a
+    # branch delete / tag, which fired a standing false alarm (khawarz-website ci, 2026-10-24 22:33 delete
+    # 56 s after the run on the real last commit). Fall back to pushed_at if the commit lookup fails.
+    pushedAt="$(_ut "$OS_UT_FAST" gh api "repos/$repo/commits/HEAD" --jq '.commit.committer.date' 2>/dev/null)"
+    [ -n "$pushedAt" ] || pushedAt="$(_ut "$OS_UT_FAST" gh api "repos/$repo" --jq '.pushed_at' 2>/dev/null)"
     pushEpoch="$(date -j -f '%Y-%m-%dT%H:%M:%SZ' "$pushedAt" '+%s' 2>/dev/null || echo 0)"
     if [ "$pushEpoch" -gt 0 ] 2>/dev/null && [ "$pushEpoch" -le "$lastEpoch" ]; then
       log "$repo: gate '$wname' ${ageDays}d idle but repo has had no push since — not stale"

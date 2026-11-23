@@ -3,14 +3,15 @@
 #
 # WHY (2026-10-24, 3rd disk-full incident class): every agent worktree ran its own `npm ci`
 # (~2 GB node_modules each), 6 parallel agents filled the Mac disk, and a full host disk corrupts the
-# Umbra CI VM guest (feedback-umbra-sparse-disk-host-full-corrupts-guest). Now ONE install per lockfile
+# CI runners sharing the disk. Now ONE install per lockfile
 # lives in ~/.cache/wt-deps and every worktree gets a `cp -cR` clonefile copy: near-zero disk until a
 # file is written. node_modules is NEVER symlinked (tools resolve real paths and break).
 #
 # Usage: wt-deps.sh [--check] [worktree-dir]   (default: cwd; runs standalone in any existing worktree)
 #   --check   install nothing: exit 0 when a COMPLETE cache entry exists for this lockfile (a "cache hit"), else 1.
 #             Used by hooks/block-worktree-install.sh to tell an agent "clone, don't npm ci" ONLY on a real hit.
-#   WT_DEPS_CACHE=<dir>   cache root (default ~/.cache/wt-deps)
+#   OS_DEPS_CACHE=<dir>   cache root (default <SSD>/.cache/wt-deps when /Volumes/Ebda is mounted, else ~/.cache/wt-deps);
+#                         WT_DEPS_CACHE is the legacy alias
 #   WT_DEPS_KEEP=<n>      keys kept per repo (default 2, newest by creation)
 #   WT_DEPS_FORCE=1       replace an existing non-empty node_modules with the clone
 #   WT_DEPS_REFRESH=1     rebuild this key's cache entry from a fresh install (+ prisma generate) in THIS worktree; the only
@@ -42,7 +43,10 @@ command -v os_config_load >/dev/null 2>&1 && os_config_load
 set -uo pipefail
 CHECK=0; if [ "${1:-}" = "--check" ]; then CHECK=1; shift; fi
 WT="$(cd "${1:-.}" && pwd -P)" || { echo "wt-deps: bad dir" >&2; exit 2; }
-CACHE_ROOT="${WT_DEPS_CACHE:-$HOME/.cache/wt-deps}"
+. "$(dirname "${BASH_SOURCE[0]}")/lib/wt-roots.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-roots.sh" 2>/dev/null || true
+# Cache root: OS_DEPS_CACHE > WT_DEPS_CACHE (legacy) > <SSD>/.cache/wt-deps > ~/.cache/wt-deps (lib/wt-roots.sh).
+# Worktrees and cache must share a volume for APFS clones; across volumes probe_ok fails and it plain-installs.
+if command -v wt_cache_root >/dev/null 2>&1; then CACHE_ROOT="$(wt_cache_root)"; else CACHE_ROOT="${WT_DEPS_CACHE:-$HOME/.cache/wt-deps}"; fi
 KEEP="${WT_DEPS_KEEP:-2}"
 log() { echo "wt-deps: $*" >&2; }
 

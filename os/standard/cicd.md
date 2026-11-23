@@ -13,10 +13,10 @@ Every repo's `.github/workflows/` converges to one canonical shape: a `ci.yml` w
 | 2 | `timeout-minutes` on every job | Every job has a `timeout-minutes` (caps: lint=5, typecheck=10, build=15, unit=10, integration=15, E2E=20, audit=5) — anti-hang for leaked jest/vitest timers | grep workflows for each `jobs.<name>:` block lacking a `timeout-minutes:` key | High |
 | 3 | Prisma `db:generate` before typecheck | The `db:generate` (prisma generate) step runs BEFORE the typecheck step, else tsc reports ~396 phantom errors from missing `@prisma/client` types | grep the typecheck job; confirm a `prisma generate`/`db:generate` step appears earlier in the same job (or as a needs-dependency) | High |
 | 4 | Audit gate split | Prod zero-tolerance `npm audit --audit-level=low --omit=dev`; dev gated at high (unfixable transitive tooling vulns) | grep workflows for `npm audit`; confirm both an `--omit=dev --audit-level=low` invocation AND a separate dev `--audit-level=high` invocation | High |
-| 5 | `notify-failure` Telegram job | A `notify-failure` job fires Telegram via `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALERT_CHAT_ID` on `failure() && main && push`; stays on `ubuntu-latest` even when everything else is self-hosted (fail-open) | grep workflows for a `notify-failure` job with `if:` containing `failure()` + Telegram secret names; confirm its `runs-on: ubuntu-latest` is unconditional | High |
+| 5 | `notify-failure` Telegram job | A `notify-failure` job fires Telegram via `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALERT_CHAT_ID` on `failure() && main && push`; runs on the same Mac pool as everything else (Ahmad 2026-11-16: never a hosted runner; Ruling NO-HOSTED-RUNNERS-1 retired the old "stays on `ubuntu-latest`" fail-open rule, so a Mac-pool outage no longer has an independent alert path here: the brain's Cron Trigger probe is the other channel) | grep workflows for a `notify-failure` job with `if:` containing `failure()` + Telegram secret names; confirm its `runs-on` is the Mac-fallback form | High |
 | 6 | gitleaks all-branch scan + allowlist | gitleaks workflow scans ALL branches with `fetch-depth: 0`, paired with `.gitleaks.toml` (allowlist) + `.gitleaksignore` (documented false positives) | file-exists `.gitleaks.toml` AND `.gitleaksignore`; grep the gitleaks workflow for `fetch-depth: 0` | Critical |
 | 7 | Branch hygiene | Only `main` (+ `preview` if staging active); no `test-*`/`staging`/`vercel/*` orphans — orphan branches with old creds trip the gitleaks all-branch scan even after main is scrubbed | `git branch -r` and confirm no branches outside `main`/`preview`; flag any `test-*`/`staging`/`vercel/*`/`auto-fix/*` orphan | Medium |
-| 8 | Runner routing with non-input default | `runs-on` keyed on a repo `vars.USE_SELF_HOSTED` default (not `inputs.force_cloud` alone) so push/PR events default to cloud; `workflow_dispatch force_cloud` overrides per-run | grep `runs-on:` expressions; confirm they reference `vars.USE_SELF_HOSTED`, not `inputs.force_cloud` as the sole determinant | High |
+| 8 | Runner routing with non-input default | `runs-on` keyed on the repo variable `vars.EBDA_RUNS_ON` (not `inputs.force_cloud` alone), falling back to a Mac label (`["ebda-mac-light"]`, never a hosted runner) when unset, so push/PR events follow the owner's routing; `workflow_dispatch force_cloud` overrides per-run | grep `runs-on:` expressions; confirm they reference `vars.EBDA_RUNS_ON`, not `inputs.force_cloud` as the sole determinant | High |
 | 9 | Pre-push hook mirrors CI subset | A pre-push hook runs lockfile-drift check + prisma generate + lint + typecheck + unit tests to catch issues 90s before burning runner minutes | file-exists `.husky/pre-push` (or `.git/hooks/pre-push`); grep it for lockfile-drift + `prisma generate` + lint + typecheck + unit steps | Medium |
 | 10 | Merge captures all branch commits | Push the LAST commit before announcing "ready"/merging (a merge snapshots origin at merge-time; later/post-squash commits silently drop); one topic per branch; after any squash/merge verify `git show --stat <merge-sha>` covers `origin/main..origin/<branch>` | a merged PR with commits remaining in `origin/main..origin/<branch>` = dropped-commit gap | Medium |
 | 11 | Graphify artifacts tracked convergently | Track ONLY the 3 canonical artifacts (`graph.json`/`GRAPH_REPORT.md`/`graph.html`) via a gitignore whitelist; `git rm --cached` manifest/.graphify_root/cache; regenerate only when HEAD moved or source is dirty (convergence marker) — graphify output is non-deterministic (manifest mtimes + embedded build-commit self-chase) so scheduled auto-commit churns forever | grep `.gitignore` for the whitelist; flag tracked `manifest.json` or unconditional scheduled regen | Medium |
@@ -57,95 +57,57 @@ a genuine content failure (real red, not an infra signature) gets ONE Telegram p
 security-gate discipline as `safe-to-admin-merge.sh` applies: it only unblocks
 infra-flake noise, never bypasses a failing security/lint/test check.
 
-## CI runner guard (minutes-exhausted → self-hosted auto-failover)
-`ops/ci-runner-guard.sh` (Whisky AI OS) — detects when GitHub-hosted Actions minutes run out
-(cloud `ubuntu-latest` jobs die at infra level: no runner, no failed step, empty logs — green
-PRs become un-mergeable for reasons unrelated to the code) and, when a self-hosted runner is
-online, flips the repo's `USE_SELF_HOSTED` variable to `true` so CI routes to the free
-self-hosted runners. Always alerts via the Whisky Whoop bot. Never auto-reverts
-self-hosted→cloud (deliberate cost/load choice). Detection: billing API (if `GH_BILLING_PAT`
-set) + heuristic on the last CI runs. Runs on a schedule (launchd `com.ebda.os.ci-runner-guard`,
-every 30 min) and on demand. Criterion: every Force repo's `ci.yml` MUST honor `vars.USE_SELF_HOSTED`
-(the `runs-on` ternary) so the guard can flip it without a code change.
+## CI runner guard (native Mac runner fleet health)
+CI runs ONLY on native macOS GitHub runners (Ebda-AI-Studio: `ebda-mac-1/2` label `ebda-mac` heavy,
+`ebda-mac-light-1/2` label `ebda-mac-light`). Repos route to them through the repo
+variable `EBDA_RUNS_ON` (`["self-hosted","ebda-mac"]`) and fall back to a Mac label when it is unset (never `ubuntu-latest`). Umbra, the old
+local Linux CI VM, was retired 2026-11-14 (`docs/RULINGS.md` Ruling UMBRA-RETIRE-1).
 
-**Runner fleet (2026-07-12 cutover): Umbra first, legacy OrbStack fallback.** The
-self-hosted runners live in a local VM on the Mac. The canonical host is now the
-Umbra machine `<umbra-vm>` (runner services are systemd units inside the
-VM, so booting it restarts them; its runners register at the ORG level, invisible to
-the repo-scoped `/actions/runners` API — a running Umbra fleet can look like zero
-runners to a naive check, so the guard judges health by the CI queue instead of that
-API). The OrbStack machine `<umbra-vm>` is the legacy safety net, started ONLY when the
-Umbra fleet is also down — running both VM fleets at once on the 16GB box causes
-memory pressure that kills runner services mid-job (observed 2026-07-12: two CI runs
-cancelled mid-`npm ci`). The guard self-heals a stopped machine (`umbra start` /
-`orb start`) before alerting, and never resurrects OrbStack while a Umbra restart is
-still soaking. `os-watch.sh` enumerates whatever runners are actually registered (no
-hardcoded runner names) rather than probing retired names that go silently stale.
+`ops/ci-runner-guard.sh` (launchd `com.ebda.os.ci-runner-guard`, every 30 min, and on demand) judges fleet health from
+the GitHub API only: `gh api orgs/<org>/actions/runners` per org in `RUNNER_ORGS` (default: the primary org).
+- Every runner of the org offline, or every runner carrying one label offline (e.g. all `ebda-mac` heavy runners while
+  `ebda-mac-light` is up) -> a finding: exit 1, one `notify.sh` page, `runner-status.json` warn.
+- Some runners offline, or all busy -> a note only (busy is normal under load).
+- An unreadable runner list (API failure, missing `admin:org` scope) is UNKNOWN, never "all offline": it is noted as
+  not evaluated and does not page.
+- Host disk >= `HOST_DISK_CRIT_PCT` (94) is a finding, >= `HOST_DISK_WARN_PCT` (88) a note: a full Mac disk fails jobs.
+- Every `gh` call is wall-clocked through `_ut` (lib/os-state.sh): a monitor that can block on what it monitors goes
+  quiet, and quiet reads as healthy.
 
-**Guard invariants (2026-09-15).** Three live defects set these; `ops/tests/ci-runner-guard.test.sh`
-enforces each one.
-- **Every `umbra` call is wall-clocked through `_ut`.** A guard run hung 27+ min on an unwrapped
-  `printf … | umbra shell m -- bash`, whose ssh was waiting for a banner the guest never sent. A
-  hung guard is a silent guard, because launchd will not start the next tick. `_ut` preserves
-  stdin: under bash 3.2 a backgrounded command otherwise reads /dev/null, which made a wrapped
-  stdin script run empty. On timeout it kills the whole descendant tree, since a surviving
-  grandchild holding stdout keeps `$(…)` blocked. The suite fails on any unwrapped call.
-- **`starting`/`stopping` is not an outage.** umbra holds a machine in `stopping` for up to 180s.
-  The guard waits for the transition to settle, bounded by `UMBRA_TIMEOUT_SLOW`. A planned
-  `stop && start` produces no page and no competing `umbra start`, and the guard skips probing
-  the still-booting guest for that cycle. A transition that never settles is still alerted.
-  "SELF-HEALED" is reported only when the VM is actually running after the start.
-- **The expected runner count is measured, not configured.** Order: installed `actions.runner.*`
-  units in the guest, then the sum of `count` in `~/.umbra/runners/<machine>.json`, then 1.
-  `RUNNER_INSTANCE_COUNT` is an explicit override and must not be set in the plist. A pinned `1`
-  printed "20/1 active — healthy" and made a shortfall impossible to detect.
+## Main-first CI (starved main run)
+GitHub does not schedule self-hosted jobs FIFO across runs, so many builder PRs can hold both heavy runners
+(`self-hosted` + `ebda-mac`) while the main-branch CI run sits `queued` for hours. A red/pending main stops the store
+merge drain (only fixes-main PRs merge), so every other approved PR stalls. Measured 3x on 2026-11-14.
 
-**Auto-rebuild of a corrupt guest (2026-09-16).** The guard's one DESTRUCTIVE remedy. When
-`umbra doctor --json` returns a verdict with `health: fail`, `rung: guest-disk-corrupt` and a
-`subject` naming the guard's own machine, the guard runs `umbra rebuild <machine> --yes` instead
-of standing down. Authorised by Ahmad ("rebuild it if it comes back") after <umbra-vm> corrupted
-twice in two days: a reboot never recovered it (forced stop at 120s, failed readiness, the vm
-process burning 0.01s of cpu over a 10s sample) and a rebuild always did, in ~9 min.
-
-- **Only that rung, and only that machine.** `guest-ssh-stall`, `netstack-dead`, `host-hardware`,
-  `machine-crashed` and `billing-lockout` never rebuild. The target comes from the verdict's
-  `subject`, never from config — a destructive action must name its target from the evidence that
-  convicted it, so a corrupt verdict about another guest cannot destroy this one.
-- **`guest-disk-corrupt` STAYS in `UNHEALABLE_RUNGS`.** It must keep blocking the restart/reboot
-  path, which still makes the fault worse. The rebuild is layered in FRONT of the stand-down, not
-  a reclassification.
-- **Rate limit + cooldown, persisted across runs** (`~/.whisky-os-state/guest-rebuild-history.json`,
-  `ops/lib/guest-rebuild.sh`): at most **2 rebuilds per rolling 24h**, never two inside **3h**. The
-  guard ticks every 30 min, so an unguarded persistent verdict is 48 destructive rebuilds a day —
-  the 2026-08-27→09-07 restart loop with a bigger hammer. 3h because a freshly rebuilt guest wedged
-  again ~37 min later on 2026-09-15; a shorter gap loops against a cause that is not the disk. On
-  hitting either limit the guard alerts loudly and does nothing else. A missing lib FAILS CLOSED
-  (no guardrail ⇒ no rebuild).
-- **Never destroy a live job — unless the guest is already unusable.** A busy runner defers the
-  rebuild only while the guest still answers ssh with a WRITABLE root. On an unusable guest the
-  busy flag is a stale registration, not work in flight (2026-09-16: runners drained 20→16 while
-  jobs queued unrun, a listener log frozen mid-write), so deferring to it would defer forever.
-- **Verified after the fact, in the guard's own output:** state `running`, ssh answering, root
-  writable, ≥1 runner unit active, GitHub runners online. An exit code of 0 is not a restored
-  service, and a rebuild that leaves root read-only is reported as NOT restored and alerts.
-- Every decision is logged with its evidence (rung, subject, `guest_usable`, `runner_busy`,
-  rebuild history) so a human can audit why it did or did not fire.
-- **Hands-off while umbra provisions** (2026-10-16): `umbra rebuild` holds
-  `~/.umbra/provisioning/<vm>` (`expires=<epoch>`, refreshed per step, 60-min TTL, removed on
-  success or a failed `health` step, kept on any other failure). The guard
-  (`ops/lib/umbra-provisioning.sh`) stands down for THAT machine only — no start, reboot, rebuild,
-  prune, clock hard-set or outage page — until the expiry, and refuses an expiry more than 4h out.
-  Collected findings, fleet-wide checks and per-repo routing still run and page, and the marker is
-  re-read immediately before every guest-changing action (check-then-act). The expiry, never the file's existence, is the signal: a killed rebuild hands the guest
-  back within one TTL. The lib fails OPEN (missing/malformed ⇒ normal guard). Why: at 02:53 the
-  guard rebooted a guest mid-rebuild, and with a doctor verdict in hand it would have started a
-  second `umbra rebuild` on top of the first (reproduced in `ops/tests/ci-runner-guard.test.sh`).
-- **`umbra doctor` gets its own wall clock** (`UMBRA_TIMEOUT_DOCTOR`, 180s; doctor measured 65-66s
-  on a degraded guest against the 45s probe ceiling), and an empty doctor result is logged as
-  "not evaluated" — never silently read as healthy.
-- **ATTENTION rungs page, never act.** `guest-crash-damage` (a runner tool-cache `node` exiting
-  132, or EXT4 warnings in the boot's kernel log) has a local remedy, so the guard alerts with
-  doctor's `next_action` for its own machine only and keeps healing as normal.
+`ops/main-first.sh` (launchd `com.ebda.os.main-first`, every 5 min; `--dry-run` supported; log
+`~/Library/Logs/ebda-main-first.log`; ledger `~/.whisky-os-state/main-first/`) automates the controller's manual fix,
+per repo in `MAIN_FIRST_REPOS` (default ebda-store, ebda-whatsapp, ebda-foundation). When the NEWEST main `CI` run is
+queued/in_progress and one of its jobs has been queued longer than `MAIN_FIRST_MIN` (10) minutes:
+1. cancel older main CI runs whose head is an ancestor of the newest main head (compare API);
+2. cancel QUEUED `pull_request` runs with a queued job asking for `MAIN_FIRST_LABEL` (`ebda-mac`) - never in_progress
+   runs, never a branch in `MAIN_FIRST_ALLOW_BRANCHES`, never a PR labelled `fixes-main`; one PR comment per head;
+3. when the newest main CI run completes `success`, re-request each cancelled run once (approved PRs first, oldest
+   approval first, `MAIN_FIRST_RERUN_CAP` (2) per tick); a closed PR or a moved head is dropped (the push already
+   started a fresh run); ledger entries expire after 24 h. A red main re-runs nothing.
+Batch-first (2026-11-15): the merge drain writes `~/.whisky-os-state/main-first/drain-batch-<owner>__<repo>` (one PR number
+per line, max `MAIN_FIRST_BATCH_MAX` 3, rewritten every drain tick). While it is fresh (mtime <= `MAIN_FIRST_BATCH_MAX_AGE_MIN`,
+15) and main CI is green, queued `pull_request` runs of non-batch PRs whose jobs are ALL still queued are cancelled (partially
+started, push and schedule runs are left alone) and ledgered; re-runs go batch PRs first and hold non-batch entries until the
+batch goes stale. Missing/stale file = off (today's behaviour). main-first only reads the file; header of `ops/main-first.sh` has the contract.
+A cancel on a QUEUED self-hosted run often does nothing: after ~20 s (`MAIN_FIRST_VERIFY_WAIT`) the run is re-read and, if still
+`queued`, `POST .../force-cancel` is called (both logged). Runs older than 24 h whose branch has no open PR are logged and skipped.
+Main lease (Ruling MAIN-LEASE-1, 2026-11-17): GitHub gives queued jobs to runners newest-first, so a PR queue that refills between 5-minute
+ticks starved main CI twice in one day (61 min). While a repo's newest main run has a QUEUED job (older than 30 s) main holds a lease: after the
+normal pass a 30 s loop (270 s budget) cancels each newly queued non-protected PR run on arrival (all jobs still queued, heavy label; protected:
+drain batch PRs, fixes-main PRs, allow-listed branches, runs already started) into `<slug>.lease.tsv`, and the moment main has no queued job left
+it releases the lease (main completed, or 2 steps in a row with no queued job) and re-runs them, each re-run confirmed and retried until it takes (cap 10, phase-3 checks; runs held by a fresh batch go to the normal ledger). Both pools count: a queued main job on ebda-mac OR ebda-mac-light holds the lease. Never held without a queued
+main job; `MAIN_FIRST_LEASE=0` turns it off. All reads happen before any cancel; a 5xx/504 or unparsable response skips the repo for that tick. Tests:
+`ops/tests/main-first.test.sh` (fake `gh`).
+The guard only REPORTS; it never starts, stops or rebuilds anything. The runners are launchd services on the Mac
+(`actions.runner.<org>.<name>`): restart one with `launchctl kickstart -k gui/$(id -u)/actions.runner.<org>.<name>`.
+It does not flip routing variables: routing is the owner's `EBDA_RUNS_ON` decision.
+Tests: `ops/tests/ci-runner-guard.test.sh` (fake `gh`: healthy, all-offline, one dead label pool, API failure,
+multi-org, host disk).
 
 ## Self-hosted post-job hook MUST be best-effort (never fail a job) — 2026-06-11
 A GitHub Actions self-hosted runner can run a hook after every job via the runner's
@@ -163,17 +125,14 @@ Canonical shape: `template/runner-hooks/post-job-cleanup.sh` — `set +e`, run t
 real cleanup with `|| true`, and **always `exit 0`**. Keep real logic in a sibling
 `post-job-cleanup.real.sh` so the "never fail" guarantee can't be edited away.
 
-**Install / repair (on the runner host — the OrbStack `<umbra-vm>` Ubuntu machine, `orb -m
-<umbra-vm>`, not the Mac):** `bash ops/setup-runner-hooks.sh` — diagnoses the current hook
-(prints it + its exit code so we learn *why* it failed, not just mask it), preserves
-existing logic as the `.real.sh`, writes the best-effort wrapper, idempotent. No runner
-restart needed (the hook is read fresh per job). One edit fixes all runners sharing the
-hook path.
+**Install / repair (on the Mac runner host):** open the runner's `.env` (`ACTIONS_RUNNER_HOOK_JOB_COMPLETED=...`),
+read the hook and its exit code so we learn *why* it failed, not just mask it, make it follow the canonical shape above
+(`set +e`, `|| true`, `exit 0`), then restart that runner's launchd service. The hook is read fresh per job.
 
 **Detection (OS, reactive):** `ops/runner-hook-health.sh [--notify]` reads recent CI
 runs across Force repos and flags the signature *job failed but only the cleanup /
 "Complete runner" step failed — every real step passed*, then alerts with the one-line
-fix. Complements `ci-runner-guard.sh` (that handles cloud-minutes exhaustion; this
+fix. Complements `ci-runner-guard.sh` (that judges whether runners are online; this
 handles a broken self-hosted post-job hook). **Scheduled** via launchd
 `com.ebda.os.runner-hook-health` every 3h (`--notify`), alongside
 `com.ebda.os.ci-runner-guard` (both runtime copies in `~/.claude/scripts`, plist
@@ -224,34 +183,24 @@ reading the diff and start inspecting the runtime.
 
 ### The runner host's disk is a fleet-wide single point of failure (2026-08-23)
 
-`<umbra-vm>` reached **0 bytes free of 58 G**: 18 registered runners, ~40 G of
-`_work` checkouts and `node_modules`. Every runner then failed to reach GitHub,
-**all 18 registrations went offline**, and four repos sat with runs that could
-never start. Nothing watched the disk, so the first symptom was CI having been
-dead for days.
+A CI host that reaches 0 bytes free takes every runner offline at once (they lose their GitHub session and
+do not recover on their own), and runs sit queued with nothing watching. Two rules:
 
-Two rules follow:
-
-1. **Adding runner instances adds disk, not just concurrency.** Budget
-   `instances × workspace size` before scaling a fleet — a repo with a large
-   `node_modules` costs 2–3 G *per instance*.
-2. **Watch the CI host's disk and reclaim automatically.** A full disk on a CI
-   host is not a "warn later" condition: it takes the whole fleet down, and the
-   runners do not recover on their own once GitHub reaps the session.
-   `ci-runner-guard.sh` now warns at 80% and runs `umbra prune` at 90%, and
-   `umbra prune` clears idle `_work` trees (skipping runners mid-job).
-   An unreadable disk reads as **unknown**, never 0% — a guest you cannot reach
-   must not report healthy.
+1. **Adding runner instances adds disk, not just concurrency.** Budget `instances x workspace size` before scaling a
+   fleet - a repo with a large `node_modules` costs 2-3 G *per instance*.
+2. **Watch the CI host's disk.** `ci-runner-guard.sh` reads the Mac's data volume every cycle (note at 88%, finding
+   at 94%); `workspace-hygiene.sh` removes merged worktrees hourly and alerts below 30 GB free. An unreadable disk
+   reads as **unknown**, never 0%.
 
 sources: stray-process-on-shared-runner-poisons-ci
 
 ### A shared runner host turns every per-job resource into a contended one (2026-08-23)
 
-Scaling `<umbra-vm>` from 6 to 18 runner instances bought throughput and three outages. Each was a
+Scaling a runner host from 6 to 18 instances bought throughput and three outages. Each was a
 shared resource that simply was not contended at 6 instances:
 
 - **Disk** — 18 × ~2.5 GB of `_work` filled a 58 GB disk to **0 bytes**; the whole fleet went
-  offline. Budget `instances × workspace size` before adding instances.
+  offline. Budget `instances x workspace size` before adding instances.
 - **The dpkg lock** — a nightly `db-backup` dumped the database successfully and *then* failed
   installing `rclone`, so the backup never uploaded. A DR job that fails at the last step is worse
   than one that fails early: the log shows a successful dump.
@@ -292,28 +241,6 @@ Learned on the course-platform build; sibling of `feedback-partial-deploy-from-p
 - **A gate is proved failable by leaking, not by reading YAML.** Plant a real violation of each arm,
   confirm a non-zero exit that NAMES the offending file, restore, confirm zero.
 
-
-## Runner focus — runners are ON-DEMAND (2026-10-08)
-**Standard:** the Umbra guest `<umbra-vm>` (6 CPU / 6 GiB, disk on the external SSD — never move it)
-runs only the runners of the repos that are using CI right now. Everything else is stopped AND
-disabled, so the whole guest RAM goes to the repo that needs it. 22 always-on runner services
-for ~19 repos plus two load hangs in one day (2026-10-08) is the failure this prevents.
-
-- `ops/runner-focus.sh on|off|only|all|auto|status <slug>...` (slug = repo part of the runner
-  name; `status` shows active/idle/busy and guest memory). `off` never stops a BUSY runner
-  (GitHub `busy=true`, or unknowable) — it skips it and keeps it in the focus set until a
-  later `off` succeeds.
-- Desired set lives in `~/.umbra/runner-focus.json` (`{"focus":[slugs]}`; no file = all runners
-  expected). Default focus: `ebda`. Starting a new project's CI: `runner-focus.sh on <repo>`.
-- `ci-runner-guard.sh` and `runner-reregister.sh` read it: a deactivated runner is EXPECTED to
-  be down — not counted, never restarted, never re-registered. Hung-guest detection and reboot
-  are unchanged and judged on the focused runners. An unreadable focus file disables healing
-  and alerts (fail closed: healing blind would restart runners deactivated on purpose).
-- Auto-on: each guard cycle runs `runner-focus.sh auto`, which turns ON a deactivated repo whose
-  job has been queued for a self-hosted label (`<umbra-vm>`/`self-hosted`) for > 3 min. It only
-  ever turns runners on. Org-level runners (ebda) are never auto-handled. Reset with
-  `runner-focus.sh only <slug>...` when the work is done.
-- Tests: `ops/tests/ci-runner-guard.test.sh` ("a deactivated runner is not healed").
 
 ## Merge gate + gate scope (2026-10-25)
 A PR is merged only through `ops/merge-gate.sh` (zero checks is never green; head pinned; explicit required checks

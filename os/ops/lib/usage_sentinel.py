@@ -21,7 +21,7 @@ MAX_AGE = int(os.environ.get("USAGE_MAX_AGE", "900"))
 MANUAL_MAX_AGE = int(os.environ.get("USAGE_MANUAL_MAX_AGE", "3600"))
 STOP_PCT = float(os.environ.get("USAGE_STOP_PCT", "80"))
 CHECKPOINTS = [int(x) for x in os.environ.get("USAGE_CHECKPOINTS", "40 60 75 80 90").split()]
-UNKNOWN_REPEAT = int(os.environ.get("USAGE_UNKNOWN_REPEAT", "21600"))
+UNKNOWN_REPEAT = int(os.environ.get("USAGE_UNKNOWN_REPEAT", "86400"))
 NOW = int(os.environ.get("USAGE_NOW", str(int(time.time()))))
 ACTIONS = os.environ.get("OS_ACTIONS_LOG", f"{HOME}/.whisky-os-state/actions.jsonl")
 
@@ -128,6 +128,9 @@ def run(as_json):
     if best is None:
         last = max((c for c in (read_json(os.path.join(STATE, "manual.json")),) if c), key=lambda c: c.get("t", 0), default=None)
         last_txt = f" Last manual reading {last.get('pct')}% at {last.get('t')}." if last else ""
+        since = int(st.setdefault("unknown_since", NOW))
+        days = (NOW - since) // 86400
+        last_txt += f" UNKNOWN for {days}d: the weekly-limit gate is NOT deciding anything." if days >= 1 else ""
         due = NOW - int(st.get("unknown_alert_at", 0)) >= UNKNOWN_REPEAT
         if due:
             notify("usage UNKNOWN", "No fresh weekly-usage reading. " + "; ".join(why) + "." + last_txt +
@@ -141,6 +144,7 @@ def run(as_json):
         if st.get("week") != week:
             st["week"], st["alerted"] = week, []
         st.pop("unknown_alert_at", None)
+        st.pop("unknown_since", None)
         out.update(status="ok", pct=pct, source=best["src"], age_s=best["age"], five_hour=best["five_hour"])
         code = 0
         crossed = [c for c in CHECKPOINTS if pct >= c and c not in st["alerted"]]

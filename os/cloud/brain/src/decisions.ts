@@ -69,7 +69,7 @@ export function decisionButtons(d: Pick<Decision, 'id' | 'kind' | 'link'>): Arra
   return d.link ? [row, [{ text: '🔗 Open', url: d.link }]] : [row];
 }
 
-async function tg(env: Env, method: 'sendMessage' | 'editMessageText', body: unknown): Promise<{ ok: boolean; result?: any }> {
+export async function tg(env: Env, method: 'sendMessage' | 'editMessageText', body: unknown): Promise<{ ok: boolean; result?: any }> {
   if (!env.TELEGRAM_BOT_TOKEN) return { ok: false };
   try {
     const url = method === 'sendMessage' ? `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage` : `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageText`;

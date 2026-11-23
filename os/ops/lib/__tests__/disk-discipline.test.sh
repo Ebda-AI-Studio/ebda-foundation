@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Disk discipline: (1) global git post-checkout dispatcher, (2) PreToolUse install block, (3) PostToolUse worktree
-# deps, (4) workspace-hygiene Umbra VM trim. Every gate has its NEGATIVE case (a guard that cannot be made to
-# fail is not evidence). Fully isolated: temp HOME, stub wt-deps, stub umbra. Run: bash ops/lib/__tests__/disk-discipline.test.sh
+# deps, (4) workspace-hygiene has no CI-VM step. Every gate has its NEGATIVE case (a guard that cannot be made to
+# fail is not evidence). Fully isolated: temp HOME, stub wt-deps. Run: bash ops/lib/__tests__/disk-discipline.test.sh
 set -uo pipefail
 OPS="$(cd "$(dirname "$0")/../.." && pwd)"
 _pass=0; _fail=0
@@ -9,6 +9,7 @@ ok() { echo "PASS: $1"; _pass=$((_pass+1)); }
 no() { echo "FAIL: $1"; _fail=$((_fail+1)); }
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 export HOME="$T/home"; mkdir -p "$HOME/Library/Logs"
+export OS_SSD_ROOT="$T/no-ssd"   # never touch the real /Volumes/Ebda
 git config --global user.email t@t; git config --global user.name t; git config --global init.defaultBranch main
 
 # APFS clonefile (cp -c) exists on the dev Mac only; Linux CI cannot exercise the clone path, so those cases SKIP visibly
@@ -127,8 +128,8 @@ printf '{"packages":{"node_modules/x":{"resolved":"https://evil.tld/x.tgz"}}}' >
 printf '#!/bin/sh\nmkdir -p node_modules/ok "evil\n../../escaped/node_modules"; echo x > node_modules/ok/i; mkdir -p "%s/outside"; echo secret > "%s/outside/s"; mkdir -p sub; ln -s "%s/outside" sub/node_modules\n' "$T" "$T" "$T" > "$BIN/npm"
 TV="$T/trav"; mkrepo "$TV"; (cd "$TV" && PATH="$BIN:$PATH" bash "$OPS/wt-deps.sh" "$TV" >/dev/null 2>&1)
 M="$(cat "$T"/cache/trav/*/manifest 2>/dev/null)"
-printf '%s' "$M" | grep -q '\.\.' && no "manifest kept a '..' entry" || ok "newline-in-name dir (escape via '..') is dropped from the manifest"
-printf '%s' "$M" | grep -q 'sub/node_modules' && no "symlinked node_modules listed" || ok "symlinked node_modules pointing outside is not snapshotted"
+grep -q '\.\.' <<<"$M" && no "manifest kept a '..' entry" || ok "newline-in-name dir (escape via '..') is dropped from the manifest"
+grep -q 'sub/node_modules' <<<"$M" && no "symlinked node_modules listed" || ok "symlinked node_modules pointing outside is not snapshotted"
 [ ! -e "$T/escaped" ] && ok "nothing created outside the worktree/cache" || no "escape dir created"
 find "$T/cache/trav" -name s 2>/dev/null | grep -q . && no "outside file copied into cache" || ok "outside symlink target never copied into the cache"
 
@@ -167,7 +168,7 @@ WT="$T/plain-wt"; touch "$T/hit"
 printf '%s' "$(cmdp "$WT" 'npm ci')" | bash "$G" >/dev/null 2>&1; [ $? -eq 2 ] && ok "deny npm ci in a worktree on a cache hit" || no "npm ci not denied on hit"
 printf '%s' "$(cmdp "$WT" 'cd /tmp && cd '"$WT"' && pnpm install --frozen-lockfile')" | bash "$G" >/dev/null 2>&1; [ $? -eq 2 ] && ok "deny pnpm install after cd into the worktree" || no "pnpm install after cd not denied"
 printf '%s' "$(cmdp "$WT" 'yarn')" | bash "$G" >/dev/null 2>&1; [ $? -eq 2 ] && ok "deny bare yarn on a hit" || no "bare yarn not denied"
-msg="$(printf '%s' "$(cmdp "$WT" 'npm install')" | bash "$G" 2>&1 >/dev/null)"; printf '%s' "$msg" | grep -q "wt-deps" && ok "deny message points at wt-deps" || no "deny message missing wt-deps"
+msg="$(printf '%s' "$(cmdp "$WT" 'npm install')" | bash "$G" 2>&1 >/dev/null)"; grep -q "wt-deps" <<<"$msg" && ok "deny message points at wt-deps" || no "deny message missing wt-deps"
 rm -f "$T/hit"
 printf '%s' "$(cmdp "$WT" 'npm ci')" | bash "$G" >/dev/null 2>&1; [ $? -eq 0 ] && ok "ALLOW npm ci on a cache MISS (genuine lockfile change)" || no "npm ci blocked on a miss"
 touch "$T/hit"
@@ -190,38 +191,7 @@ printf '%s' "$(cmdp "$R" 'git status')" | bash "$P" >/dev/null 2>&1
 python3 -c "import json,sys;print(json.dumps({'tool_name':'EnterWorktree','cwd':sys.argv[1],'tool_input':{},'tool_response':{'worktreePath':sys.argv[2]}}))" "$R" "$NEW" | bash "$P" >/dev/null 2>&1
 grep -q "hk-wt" "$T/wtd.calls" && ok "PostToolUse: EnterWorktree response path runs wt-deps" || no "EnterWorktree not handled"
 
-# ============ 4. workspace-hygiene Umbra trim ============
-eval "$(sed -n '/^umbra_trim() {/,/^}/p' "$OPS/workspace-hygiene.sh")"
-HERE="$OPS"; REPO_FILTER=""; DRY=0; _ut() { shift; "$@"; }
-. "$OPS/lib/safe-prune.sh"   # umbra_trim prunes through safe_umbra_prune (idle-only, no fstrim unless the host is the reason)
-UR="$T/umbra"; mkdir -p "$UR/machines/vm1" "$UR/provisioning"; head -c 4096 /dev/urandom > "$UR/machines/vm1/disk.img"
-cat > "$T/umbra-stub" <<STUB
-#!/usr/bin/env bash
-case "\$1" in
-  list) printf 'NAME STATE IP\nvm1 running 1.2.3.4\nvm2 stopped 1.2.3.5\n' ;;
-  prune) echo "\$2" >> "$T/prune.calls"; echo "\$*" >> "$T/prune.args"; [ -n "\${STUB_BUSY:-}" ] && echo "\$2: skipped, a CI job is running (--if-idle)" ;;
-esac
-STUB
-chmod +x "$T/umbra-stub"
-export UMBRA_BIN="$T/umbra-stub" UMBRA_ROOT="$UR" UMBRA_PRUNE_STATE="$T/prune.tsv"; : > "$T/prune.calls"; rm -f "$T/prune.tsv"
-runtrim() { prune_notes=(); HYGIENE_FREE_GB="$1" umbra_trim; }
-runtrim 100; [ ! -s "$T/prune.calls" ] && grep -q '^vm1' "$T/prune.tsv" && ok "healthy host, first sighting: baseline recorded, no prune" || no "pruned on a healthy host / no baseline"
-runtrim 100; [ ! -s "$T/prune.calls" ] && ok "healthy host, no growth: no prune" || no "pruned without cause"
-runtrim 35; [ "$(cat "$T/prune.calls")" = "vm1" ] && ok "host free 35 < 40 GB: prunes the RUNNING vm only (stopped vm2 untouched)" || no "low-disk prune wrong: $(cat "$T/prune.calls")"
-grep -q -- '--if-idle' "$T/prune.args" && ! grep -q -- '--no-fstrim' "$T/prune.args" && ok "the automatic prune is idle-only and may fstrim (the host disk is the reason)" || no "automatic prune flags wrong: $(cat "$T/prune.args")"
-: > "$T/prune.calls"; : > "$T/prune.args"; printf 'vm1\t1\t0\n' > "$T/prune.tsv"
-STUB_BUSY=1 runtrim 35; printf "%s\n" ${prune_notes[@]+"${prune_notes[@]}"} | grep -q DEFERRED && ok "a busy guest defers the prune (note says DEFERRED, no failure)" || no "busy guest not deferred: ${prune_notes[*]:-}"
-: > "$T/prune.calls"; : > "$T/prune.args"; rm -f "$T/prune.tsv"; runtrim 100 >/dev/null
-: > "$T/prune.calls"; : > "$T/prune.args"; runtrim 20; grep -qx 'prune vm1' "$T/prune.args" && ok "host free 20 < 25 GB: hard override, plain prune with no idle guard" || no "override flags wrong: $(cat "$T/prune.args")"
-: > "$T/prune.calls"; printf 'vm1\t1\t0\n' > "$T/prune.tsv"   # last prune recorded 0 KB allocated; img is 4 KB -> no growth beyond 10 GB
-runtrim 100; [ ! -s "$T/prune.calls" ] && ok "growth below 10 GB: no prune" || no "pruned on tiny growth"
-printf 'vm1\t1\t4\n' > "$T/prune.tsv"   # last prune left exactly today's 4 KB -> growth 0, not "more than" 0
-UMBRA_PRUNE_GROWTH_GB=0 UMBRA_PRUNE_FREE_GB=0 runtrim 100; [ ! -s "$T/prune.calls" ] && ok "growth threshold is strictly 'more than'" || no "threshold off-by-one"
-: > "$T/prune.calls"; printf 'vm1\t1\t%s\n' "-20971520" > "$T/prune.tsv"   # pretend img grew ~20 GB since last prune
-runtrim 100; [ "$(cat "$T/prune.calls")" = "vm1" ] && ok "disk.img grew >10 GB since last prune: prunes" || no "growth prune missing"
-: > "$T/prune.calls"; printf 'expires=%s\nphase=rebuilding\n' "$(( $(date +%s) + 600 ))" > "$UR/provisioning/vm1"
-runtrim 5; [ ! -s "$T/prune.calls" ] && printf "%s\n" ${prune_notes[@]+"${prune_notes[@]}"} | grep -q skipped && ok "NEVER prunes while umbra rebuild provisions the vm (even at 5 GB free)" || no "pruned during provisioning"
-rm -f "$UR/provisioning/vm1"; DRY=1; : > "$T/prune.calls"; runtrim 5
-[ ! -s "$T/prune.calls" ] && printf "%s\n" ${prune_notes[@]+"${prune_notes[@]}"} | grep -q "would prune" && ok "DRY_RUN reports, does not prune" || no "dry run pruned"
+# ============ 4. workspace-hygiene no longer touches any CI VM (Umbra retired 2026-11-14) ============
+if ! grep -qiE 'umbra|safe_umbra_prune' "$OPS/workspace-hygiene.sh"; then ok "workspace-hygiene has no VM-trim step"; else no "workspace-hygiene still references umbra"; fi
 
 echo; echo "disk-discipline: $_pass passed, $_fail failed"; [ "$_fail" -eq 0 ]

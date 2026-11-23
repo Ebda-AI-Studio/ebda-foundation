@@ -5,8 +5,8 @@
 # lines, and ops/lib/os-config.sh itself.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$ROOT"
-RE='com\.ebda\.os|Ebda-AI-Studio|Whisky-11|voidengineer-911|umbra-ci6|org-lingering-river-25973882|Desktop/projects'
+cd "$ROOT" || exit 1
+RE='com\.ebda\.os|Ebda-AI-Studio|Whisky-11|voidengineer-911|org-lingering-river-25973882|Desktop/projects'
 hits=$(find os/ops -type f ! -path 'os/ops/tests/*' ! -path 'os/ops/lib/__tests__/*' ! -path 'os/ops/launchd/*' ! -name '*.md' ! -path 'os/ops/lib/os-config.sh' ! -name '*.pyc' \
   | LC_ALL=C sort | while IFS= read -r f; do
     grep -nE "$RE" "$f" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' | sed "s|^|$f:|"

@@ -14,7 +14,7 @@ import calendar, json, os, subprocess, sys, time
 
 HOME = os.path.expanduser("~")
 STATE = os.environ.get("CI_ALERT_STATE", f"{HOME}/.whisky-os-state/ci-alert")
-REPOS = os.environ.get("CI_ALERT_REPOS", f'{os.environ.get("OS_ORG", "")}/ebda-store {os.environ.get("OS_REPO_SLUG", "")} umbra').split()
+REPOS = os.environ.get("CI_ALERT_REPOS", f'{os.environ.get("OS_ORG", "")}/ebda-store {os.environ.get("OS_REPO_SLUG", "")}').split()
 NOTIFY = os.environ.get("CI_ALERT_NOTIFY", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "notify.sh"))
 NOW = int(os.environ.get("CI_ALERT_NOW", str(int(time.time()))))
 QUEUED_MIN = int(os.environ.get("CI_ALERT_QUEUED_MIN", "20"))

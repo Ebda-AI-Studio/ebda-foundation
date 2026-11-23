@@ -227,7 +227,7 @@ eq "live daemon -> daemon-running"   "$(JF_LAUNCHCTL_OVERRIDE=running verdict da
 eq "dead daemon -> daemon-stopped"   "$(JF_LAUNCHCTL_OVERRIDE=loaded  verdict daemon1)" "daemon-stopped"
 eq "absent daemon -> daemon-stopped" "$(JF_LAUNCHCTL_OVERRIDE=absent  verdict daemon1)" "daemon-stopped"
 eq "no launchctl -> unprovable, not a pass" "$(JF_LAUNCHCTL_OVERRIDE=unknown verdict daemon1)" "daemon-unprovable"
-# umbrad's shape: KeepAlive is a DICT, not a bool.
+# A daemon's shape: KeepAlive is a DICT, not a bool.
 mkplist daemon2 '<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>'
 eq "dict KeepAlive is still a daemon" "$(JF_LAUNCHCTL_OVERRIDE=running verdict daemon2)" "daemon-running"
 # A job with BOTH a schedule and RunAtLoad is scheduled, not a daemon.
