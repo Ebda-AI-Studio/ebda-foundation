@@ -33,6 +33,18 @@ describe('workflow-lint fork-guard exemption', () => {
   });
 });
 
+describe('workflow-lint plain run scalar', () => {
+  const wf = (run: string) => `name: x\nconcurrency:\n  group: g\njobs:\n  a:\n    runs-on: \${{ fromJSON(vars.EBDA_RUNS_ON || '[\"ebda-mac-light\"]') }}\n    timeout-minutes: 5\n    steps:\n      - ${run}\n`;
+  it('flags `run: echo "a (b): c"`, the form that made a whole workflow unparseable', () => {
+    expect(lintWorkflow('w.yml', wf('run: echo "all-safe diff (docs): no review"')).join('\n')).toMatch(/invalid YAML/);
+  });
+  it('accepts a block scalar, a quoted scalar and a plain scalar without colon-space', () => {
+    expect(lintWorkflow('w.yml', wf('run: |\n          echo "a: b"'))).toEqual([]);
+    expect(lintWorkflow('w.yml', wf('run: "echo a: b"'))).toEqual([]);
+    expect(lintWorkflow('w.yml', wf('run: echo a - b'))).toEqual([]);
+  });
+});
+
 
 describe('workflow-lint short-job any-runner exception (RUNNER-ANY-1)', () => {
   const any = "    runs-on: ${{ fromJSON(vars.EBDA_ANY_RUNS_ON || vars.EBDA_RUNS_ON || '[\"ebda-mac-light\"]') }}\n    timeout-minutes: 5\n";

@@ -129,7 +129,7 @@ for w in data:
       printf '• %s: "%s" enabled but has NEVER RUN — check its `on:` triggers 🚨\n' "$short" "$wname" >>"$ACC"
       continue
     fi
-    lastEpoch="$(date -j -f '%Y-%m-%dT%H:%M:%SZ' "$last" '+%s' 2>/dev/null || echo 0)"
+    lastEpoch="$(TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%SZ' "$last" '+%s' 2>/dev/null || date -d "$last" '+%s' 2>/dev/null || echo 0)"
     [ "$lastEpoch" -gt 0 ] 2>/dev/null || continue
     ageDays=$(( ( $(date '+%s') - lastEpoch ) / 86400 ))
     [ "$ageDays" -gt "$STALE_DAYS" ] || continue
@@ -184,7 +184,7 @@ for w in data:
     # 56 s after the run on the real last commit). Fall back to pushed_at if the commit lookup fails.
     pushedAt="$(_ut "$OS_UT_FAST" gh api "repos/$repo/commits/HEAD" --jq '.commit.committer.date' 2>/dev/null)"
     [ -n "$pushedAt" ] || pushedAt="$(_ut "$OS_UT_FAST" gh api "repos/$repo" --jq '.pushed_at' 2>/dev/null)"
-    pushEpoch="$(date -j -f '%Y-%m-%dT%H:%M:%SZ' "$pushedAt" '+%s' 2>/dev/null || echo 0)"
+    pushEpoch="$(TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%SZ' "$pushedAt" '+%s' 2>/dev/null || date -d "$pushedAt" '+%s' 2>/dev/null || echo 0)"
     if [ "$pushEpoch" -gt 0 ] 2>/dev/null && [ "$pushEpoch" -le "$lastEpoch" ]; then
       log "$repo: gate '$wname' ${ageDays}d idle but repo has had no push since — not stale"
       continue
