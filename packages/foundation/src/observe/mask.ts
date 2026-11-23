@@ -11,7 +11,7 @@ import { asciiDigits } from '../phone';
  *    see them in full on the dashboard;
  *  - application logs ship to the off-platform log drain (Axiom, 30-day
  *    retention), so every email / phone / recipient field passed to a logger
- *    call goes through these helpers (issue 2390). Enforced by
+ *    call goes through these helpers (issue 2390). Guarded by
  *    tests/unit/no-raw-pii-in-logs.test.ts.
  *
  * Enough survives for the merchant to recognise a customer ("the one ending
