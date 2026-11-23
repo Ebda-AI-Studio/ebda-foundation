@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## v0.4.4
+- BINDING-LIST-2 (packages/foundation/src/smart-layer/rails/binding-claims.ts, ui-truth.ts, tests): a numbered block whose first step was dropped restarts at 1 (it started at 2 in v0.4.3); a removed marker or label no longer leaves a space before the following punctuation
+
 ## v0.4.3
 - BINDING-LIST-1 (packages/foundation/src/smart-layer/rails/binding-claims.ts, binding-claims.test.ts): an unsourced sentence on a numbered/bulleted line drops that line and renumbers the block instead of becoming the pointer text (#173)
 
