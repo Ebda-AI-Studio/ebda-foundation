@@ -137,7 +137,7 @@ mk_paged_bucket() { # <name> -> healthy bucket whose D0 orders table is paged in
   local b; b="$(mk_bucket "$1")"; rm -f "$b/store-do-backups/s1/$D0/orders.ndjson"
   mk_paged "$b/store-do-backups/s1/$D0" orders 10 12 8; printf '%s' "$b"
 }
-mkdir -p "$TMP"/home-{p1,p2,p3,p4,p5,p6,p7,p8}
+mkdir -p "$TMP"/home-{p1,p2,p3,p4,p5,p6,p7,p8,p9}
 
 B="$(mk_paged_bucket p1)"; run p1 "$B"
 [ "$RC" = 0 ] && [ "$N" = 0 ] && grep -q "ok store s1" "$TMP/log-p1" && pass "P1 a healthy paged table (3 parts) verifies and pages zero times" || { fail "P1 healthy paged (rc=$RC pages=$N)"; cat "$TMP/log-p1"; }
@@ -159,6 +159,13 @@ B="$(mk_paged_bucket p6)"; M="$B/store-do-backups/s1/$D0/manifest.json"; jq '.ta
 
 B="$(mk_paged_bucket p7)"; M="$B/store-do-backups/s1/$D0/manifest.json"; jq '.tables.orders.parts[0].file="../x.ndjson"' "$M" > "$TMP/m" && mv "$TMP/m" "$M"; run p7 "$B"
 [ "$RC" != 0 ] && grep -q "unsafe part file name" "$TMP/log-p7" && pass "P7 a part file name that escapes the day folder is rejected" || { fail "P7 unsafe name (rc=$RC)"; cat "$TMP/log-p7"; }
+
+# P9: part 0002 is replaced by a second listing of part 0001; rows and table digest are recomputed so that ONLY the uniqueness check can catch it
+B="$(mk_paged_bucket p9)"; M="$B/store-do-backups/s1/$D0/manifest.json"
+jq '.tables.orders.parts[1]=.tables.orders.parts[0] | .tables.orders.rows=([.tables.orders.parts[].rows]|add)' "$M" > "$TMP/m" && mv "$TMP/m" "$M"
+jq --arg s "$(jq -j '[.tables.orders.parts[].sha256]|join("\n")' "$M" | shasum -a 256 | awk '{print $1}')" '.tables.orders.sha256=$s' "$M" > "$TMP/m" && mv "$TMP/m" "$M"
+run p9 "$B"
+[ "$RC" != 0 ] && grep -q "lists part 'orders.part-0001.ndjson' more than once" "$TMP/log-p9" && pass "P9 a manifest listing the same part twice fails on uniqueness (count, rows and digest were made consistent)" || { fail "P9 duplicate part (rc=$RC)"; cat "$TMP/log-p9"; }
 
 # mutation control: the OLD logic (hash only <table>.ndjson) cannot see a paged table at all
 sed 's/if \[ "\$(jq -r --arg t "\$t" .\.tables\[\$t\] | has("parts").*/if false; then/' "$OPS/backup-ebda-cloudflare.sh" > "$TMP/mut4.sh"

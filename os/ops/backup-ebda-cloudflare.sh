@@ -127,6 +127,10 @@ verify_parts() {
   [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -gt 0 ] || { stamp "  $m: $t parts is not a non-empty array" >&2; return 1; }
   on_disk="$(find "$dir" -maxdepth 1 -type f -name "$t.part-*.ndjson" | grep -c .)" || on_disk=0
   [ "$on_disk" -eq "$n" ] || { stamp "  $m: $t manifest lists $n parts but $on_disk part files are on disk" >&2; return 1; }
+  # every part is listed ONCE: a manifest that names one part file twice (and skips another) still has the right count and passes each part's own check
+  dup="$(jq -r --arg t "$t" '[.tables[$t].parts[].file // ""] | group_by(.) | map(select(length > 1) | .[0]) | .[0] // empty' "$m")" \
+    || { stamp "  $m: $t parts unreadable" >&2; return 1; }
+  [ -z "$dup" ] || { stamp "  $m: $t lists part '$dup' more than once" >&2; return 1; }
   listing="$(jq -r --arg t "$t" '.tables[$t].parts[] | [(.file // ""), (.rows | tostring), (.sha256 // "")] | @tsv' "$m")" \
     || { stamp "  $m: $t parts unreadable" >&2; return 1; }
   while IFS=$'\t' read -r f pr psha; do
