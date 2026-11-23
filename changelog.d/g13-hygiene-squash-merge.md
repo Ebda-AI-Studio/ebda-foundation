@@ -1,0 +1,1 @@
+- G13 (hygiene squash-merge): `wt_squash_integrated` in `ops/lib/wt-safety.sh`; `wt_merge_verdict` and `worktree-cleanup.sh` treat a squash-merged branch as merged by content (tree equals a main commit, or merged PR mergeCommit identical for every changed file). Test `lib/__tests__/wt-squash-merged.test.sh`.

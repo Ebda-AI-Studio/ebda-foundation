@@ -34,29 +34,46 @@ jf_log_tail() {
   done
 }
 
-job_failure_report() {
-  local label="${1-}" rc="${2-}" plist="${3-}" sd day stamp gh_bin slug tail body url
-  [ -n "$label" ] && [ -n "$rc" ] || { echo "SKIPPED usage"; return 0; }
-  [ "$rc" = "0" ] && { echo "SKIPPED exit-0"; return 0; }
+# jf_file_issue <stamp-key> <title> <body>  -> FILED <url> | DEDUPED | SKIPPED <why>. One review-finding issue per key per UTC day
+# (the shared fixer queue: G14 launchd jobs and sched-fail-watch scheduled workflows both file through here, so one failure is one issue).
+# The stamp is written only after the issue exists: a failed filing is retried on the next run, never silently dropped.
+jf_file_issue() {
+  local key="${1-}" title="${2-}" body="${3-}" sd day stamp gh_bin slug url
+  [ -n "$key" ] && [ -n "$title" ] || { echo "SKIPPED usage"; return 0; }
   sd="${JF_FAILURE_STATE:-${WHISKY_OS_STATE:-$HOME/.whisky-os-state}/job-failure}"; mkdir -p "$sd" 2>/dev/null
-  day="$(date -u +%Y-%m-%d)"; stamp="$sd/${label}.${day}"
+  day="$(date -u +%Y-%m-%d)"; stamp="$sd/${key}.${day}"
   [ -e "$stamp" ] && { echo "DEDUPED"; return 0; }
   gh_bin="${JF_FAILURE_GH:-gh}"
   { command -v "$gh_bin" >/dev/null 2>&1 || [ -x "$gh_bin" ]; } || { echo "SKIPPED no-gh"; return 0; }
   [ -n "${OS_REPO_SLUG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
   slug="${OS_REPO_SLUG:-}"; [ -n "$slug" ] || { echo "SKIPPED no-repo-slug"; return 0; }
+  "$gh_bin" label create review-finding -R "$slug" --color D93F0B --description "OS finding for the fixer queue" >/dev/null 2>&1 || true
+  if url="$("$gh_bin" issue create -R "$slug" --label review-finding --title "$title" --body "$body" 2>/dev/null)" && [ -n "$url" ]; then
+    : > "$stamp"
+    echo "FILED $url"
+  else echo "SKIPPED gh-failed"; fi
+}
+
+# jf_clear <stamp-key>  -> recovery: forget today's (and older) stamps so the NEXT failure of this key files a fresh issue.
+jf_clear() {
+  local key="${1-}" sd; [ -n "$key" ] || return 0
+  sd="${JF_FAILURE_STATE:-${WHISKY_OS_STATE:-$HOME/.whisky-os-state}/job-failure}"
+  rm -f "$sd/${key}."[0-9]*-[0-9]*-[0-9]* 2>/dev/null; return 0
+}
+
+job_failure_report() {
+  local label="${1-}" rc="${2-}" plist="${3-}" day tail body
+  [ -n "$label" ] && [ -n "$rc" ] || { echo "SKIPPED usage"; return 0; }
+  [ "$rc" = "0" ] && { echo "SKIPPED exit-0"; return 0; }
+  day="$(date -u +%Y-%m-%d)"
   tail="$(jf_log_tail "$plist" 40)"; [ -n "$tail" ] || tail="(no log output found)"
   body="Scheduled job \`$label\` exited non-zero (last exit code **$rc**) on $day (UTC).
 
-Opened automatically by os-selftest (\`lib/job-failure.sh\`, G14), one issue per job per day. Fix the job, or if the exit is expected, make it exit 0.
+Opened automatically by sched-fail-watch (\`lib/job-failure.sh\`, G14), one issue per job per day. Fix the job, or if the exit is expected, make it exit 0.
 
 Log tail (secrets masked):
 \`\`\`
 $tail
 \`\`\`"
-  "$gh_bin" label create review-finding -R "$slug" --color D93F0B --description "OS finding for the fixer queue" >/dev/null 2>&1 || true
-  if url="$("$gh_bin" issue create -R "$slug" --label review-finding --title "job-failure: $label exited $rc ($day)" --body "$body" 2>/dev/null)" && [ -n "$url" ]; then
-    : > "$stamp"   # stamp only after the issue exists: a failed filing is retried on the next run, never silently dropped
-    echo "FILED $url"
-  else echo "SKIPPED gh-failed"; fi
+  jf_file_issue "$label" "job-failure: $label exited $rc ($day)" "$body"
 }

@@ -31,6 +31,17 @@ cost=$(printf '%s' "$in" | jq -r '.cost.total_cost_usd // 0')
 transcript=$(printf '%s' "$in" | jq -r '.transcript_path // ""')
 session_id=$(printf '%s' "$in" | jq -r '.session_id // ""')
 
+# ── usage snapshot (producer for lib/usage_sentinel.py) ──────────────
+# Restored 2026-11-20: nothing wrote ~/.claude/usage-snapshot.json after 2026-10-25, so the
+# sentinel read UNKNOWN for 26 days. Claude Code passes .rate_limits to the statusline; persist
+# it (atomic, only when a weekly % is present - never write a reading we do not have).
+snap="${USAGE_SNAPSHOT:-$HOME/.claude/usage-snapshot.json}"
+if printf '%s' "$in" | jq -e '.rate_limits.seven_day.used_percentage|numbers' >/dev/null 2>&1; then
+  printf '%s' "$in" | jq -c --argjson t "$(date +%s)" '{t:$t, rl:.rate_limits}' >"$snap.tmp$$" 2>/dev/null \
+    && mv "$snap.tmp$$" "$snap" 2>/dev/null
+  rm -f "$snap.tmp$$" 2>/dev/null
+fi
+
 # ── 📁 PROJECT ───────────────────────────────────────────────────────
 proj_name=$(basename "$proj" 2>/dev/null)
 [ -z "$proj_name" ] && proj_name="$(basename "$cwd")"

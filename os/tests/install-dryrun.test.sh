@@ -55,7 +55,7 @@ OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H2" >/dev/null 2>&1
 
 H3="$T/h3"; mkdir -p "$H3"
 msg="$(FAKE_LOADED="com.for""ceai.os-watch" bash "$INSTALL" --home "$H3" 2>&1)"; rc=$?
-[ "$rc" != 0 ] && printf '%s' "$msg" | grep -q 'os/cutover.sh' && ok "refuses with 'run os/cutover.sh' while an old-prefix label is loaded" || no "no refusal (rc=$rc)"
+[ "$rc" != 0 ] && grep -q 'os/cutover.sh' <<<"$msg" && ok "refuses with 'run os/cutover.sh' while an old-prefix label is loaded" || no "no refusal (rc=$rc)"
 [ -z "$(find "$H3" -type f 2>/dev/null)" ] && ok "refusal wrote nothing" || no "refusal wrote files"
 # a literal /Users/ path in any installed template breaks other users and --home installs
 lit=""; for t in $(grep -vE '^(#|[[:space:]]*$)' "$ROOT/os/launchd/mac-local.list" | cut -f2); do lit="$lit$(grep -Hn '/Users/' "$ROOT/os/$t")"; done
@@ -97,7 +97,7 @@ for j in claude-bundle-sync pr-shepherd sentry-stale-watch; do
 done
 H8="$T/h8"; mkdir -p "$H8" "$T/loaded8"
 out8="$(LOADED_DIR="$T/loaded8" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H8" 2>&1)"
-[ ! -e "$H8/Library/LaunchAgents/com.ebda.os.hands-mac-local.plist" ] && printf '%s' "$out8" | grep -q 'skip   com.ebda.os.hands-mac-local (opt-in' && ok "hands-mac-local skipped without OS_HANDS_LOCAL" || no "hands-mac-local installed by default"
+[ ! -e "$H8/Library/LaunchAgents/com.ebda.os.hands-mac-local.plist" ] && grep -q 'skip   com.ebda.os.hands-mac-local (opt-in' <<<"$out8" && ok "hands-mac-local skipped without OS_HANDS_LOCAL" || no "hands-mac-local installed by default"
 LOADED_DIR="$T/loaded8" OS_HANDS_LOCAL=1 OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H8" >/dev/null 2>&1
 [ -e "$H8/Library/LaunchAgents/com.ebda.os.hands-mac-local.plist" ] && [ -f "$T/loaded8/com.ebda.os.hands-mac-local" ] && ok "OS_HANDS_LOCAL=1 installs and loads hands-mac-local" || no "opt-in did not install hands-mac-local"
 LOADED_DIR="$T/loaded8" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H8" >/dev/null 2>&1
@@ -108,5 +108,13 @@ cp -R "$ROOT/os" "$T/r9" 2>/dev/null; mkdir -p "$T/repo9"; mv "$T/r9" "$T/repo9/
 printf 'x\tops/launchd/com.ebda.os.pr-shepherd.plist\tbogus\n' >> "$T/repo9/os/launchd/mac-local.list"
 bash "$T/repo9/os/install.sh" --dry-run --home "$H9" >"$T/h9.out" 2>&1; rc=$?
 [ "$rc" != 0 ] && grep -q "unknown flag 'bogus'" "$T/h9.out" && ok "unknown mac-local.list flag fails the install (rc=$rc)" || { no "unknown flag accepted (rc=$rc)"; tail -2 "$T/h9.out"; }
-[ "$fail" = 0 ] && echo "install-dryrun: PASS" || echo "install-dryrun: FAIL"
+# install.sh never drives the REAL launchd from a --home dir (2026-11-17: an unstubbed --home loop re-pointed every real com.ebda.os job at a deleted temp HOME)
+HG="$T/hg"; mkdir -p "$HG"
+og="$(PATH="/usr/bin:/bin:/usr/sbin:/sbin" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$HG" 2>&1)"; rcg=$?
+if [ -x /bin/launchctl ] || [ -x /usr/bin/launchctl ]; then
+  [ "$rcg" = 2 ] && grep -q "refusing" <<<"$og" && [ ! -d "$HG/Library/LaunchAgents" ] && ok "--home with the real launchctl on PATH is refused before anything is touched" || no "real launchctl + --home not refused (rc=$rcg)"
+  PATH="/usr/bin:/bin:/usr/sbin:/sbin" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$HG" --dry-run >/dev/null 2>&1 && ok "--dry-run is allowed with the real launchctl" || no "--dry-run refused"
+fi
+[ "$fail" = 0 ] && echo "install-dryrun: PASS" || 
+echo "install-dryrun: FAIL"
 exit "$fail"

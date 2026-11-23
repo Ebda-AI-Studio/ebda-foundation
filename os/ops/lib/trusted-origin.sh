@@ -23,7 +23,17 @@ wt_trusted_repo() {
   local d root url
   d="$(cd "${1:-.}" 2>/dev/null && pwd -P)" || return 1
   root="$(cd "${WT_TRUST_ROOT:-$OS_PROJECTS_DIR}" 2>/dev/null && pwd -P)" || return 1
-  case "$d/" in "$root"/*) ;; *) return 1 ;; esac
+  case "$d/" in "$root"/*) ;; *)
+    # a worktree on the SSD / OS_WORKTREE_ROOT is as trusted as one under the projects root (origin is still validated)
+    local _r _ok=1
+    # shellcheck source=wt-roots.sh
+    command -v wt_all_roots >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/wt-roots.sh" 2>/dev/null || true
+    command -v wt_all_roots >/dev/null 2>&1 && while IFS= read -r _r; do
+      _r="$(cd "$_r" 2>/dev/null && pwd -P)" || continue
+      case "$d/" in "$_r"/*) _ok=0 ;; esac
+    done < <(wt_all_roots)
+    [ "$_ok" = 0 ] || return 1 ;;
+  esac
   url="$(git -C "$d" config --get remote.origin.url 2>/dev/null)" || return 1
   wt_trusted_origin_url "$url"
 }

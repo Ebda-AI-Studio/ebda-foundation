@@ -2,7 +2,7 @@ name: Prod watch
 # Ruling AIOS-7 (2026-11-11): the PRIMARY probe loop runs on the brain's Cron Trigger; this GitHub-hosted run is the secondary
 # heartbeat from outside Cloudflare (R2 log rules, daily digest, probe alerts while the brain does not answer).
 
-# The outside-in production watch for the Ebda suite (os/ops/ebda-prod-watch.mjs). It runs on GitHub-hosted runners ON PURPOSE: off
+# The outside-in production watch for the Ebda suite (os/ops/ebda-prod-watch.mjs). It was designed to run on GitHub-hosted runners ON PURPOSE (no longer possible, Ruling NO-HOSTED-RUNNERS-1; the workflow is disabled): off
 # Cloudflare (so a Cloudflare-wide outage, which also takes down status.ebda.app and the brain Worker, still alerts) and off the
 # Egyptian ISP that blocks Cloudflare's 188.114.96/97.x range from the Mac. It must never follow EBDA_RUNS_ON onto the self-hosted Mac runners.
 #
@@ -37,8 +37,9 @@ concurrency:
 jobs:
   watch:
     name: Probe + logs + alert
-    # hosted-only: outside-in watch; the Mac runners sit behind the ISP block and go dark with it
-    runs-on: ubuntu-latest
+    # NO-HOSTED-RUNNERS-1: this workflow is DISABLED (gh workflow disable); it was hosted-only by design (outside-in, off the Egyptian ISP that
+    # blocks Cloudflare's range from the Mac) and cannot keep that property on a Mac runner. The brain's Cron Trigger is the primary probe loop.
+    runs-on: ${{ fromJSON(vars.EBDA_RUNS_ON || '["ebda-mac-light"]') }}
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

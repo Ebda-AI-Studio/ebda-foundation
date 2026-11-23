@@ -37,7 +37,21 @@ describe('dashboard gate: nothing configured (the test env has no password and n
     expect(await enc.text()).not.toContain('<html');
     const h = await SELF.fetch('https://brain.test/health');
     expect(h.status).toBe(200);
-    expect(await h.json()).toEqual({ ok: true, service: 'ebda-os-brain' });
+    // the test env carries the template placeholder, not a sha: reads 'unknown'
+    expect(await h.json()).toEqual({ ok: true, service: 'ebda-os-brain', commit: 'unknown' });
+  });
+});
+
+describe('/health carries the deploy commit (the verify-against-production rule: "is it deployed?" is answered by the running Worker)', () => {
+  const sha = '0123456789abcdef0123456789abcdef01234567';
+  it('returns a stamped sha, and +dirty when the tree had uncommitted tracked changes', async () => {
+    expect(await (await call({ ...env, GIT_COMMIT: sha } as Env, '/health')).json()).toEqual({ ok: true, service: 'ebda-os-brain', commit: sha });
+    expect(((await (await call({ ...env, GIT_COMMIT: `${sha}+dirty` } as Env, '/health')).json()) as { commit: string }).commit).toBe(`${sha}+dirty`);
+  });
+  it('anything that is not a sha (the template placeholder, an unset var, junk) reads unknown', async () => {
+    for (const v of [undefined, '', '__GIT_COMMIT__', 'main', `${sha}; drop`]) {
+      expect(((await (await call({ ...env, GIT_COMMIT: v } as Env, '/health')).json()) as { commit: string }).commit, String(v)).toBe('unknown');
+    }
   });
 });
 

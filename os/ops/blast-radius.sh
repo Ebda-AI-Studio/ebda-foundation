@@ -78,7 +78,8 @@ find_graph_json() {
   done
   # Fallback: search worktrees dir
   local wt_graph
-  wt_graph=$(find "$OS_PROJECTS_DIR/_worktrees" -maxdepth 2 \
+  local _wr; _wr="$(. "$(dirname "${BASH_SOURCE[0]}")/lib/wt-roots.sh" 2>/dev/null && wt_all_roots | tr '\n' ' ')"
+  wt_graph=$(find ${_wr:-"$OS_PROJECTS_DIR/_worktrees"} -maxdepth 2 \
     -name "graph.json" -path "*/graphify-out/*" 2>/dev/null \
     | grep "$slug" | head -1)
   if [ -n "$wt_graph" ]; then
