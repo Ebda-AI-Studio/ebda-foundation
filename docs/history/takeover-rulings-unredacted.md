@@ -24,7 +24,7 @@ Ruling TK-08 - (supersedes OD-2 ruling): Ahmad said "Do it" (2026-11-05 ~22:30) 
 
 Ruling TK-09 - finding "step 3 no PR/merge" — preflight ruling (one PR at end) stands — cost if wrong: none extra.
 
-Ruling TK-10 - finding "plan doc docs/plans/2026-11-05-foundation-takeover.md matches forbidden strings" — it must name them; Task 2's no-force-strings test exempts docs/history/ AND that one plan file by exact path — cost if wrong: a future plan could hide a Force string (only this path is exempt).
+Ruling TK-10 - finding "plan doc docs/plans/done/2026-11-05-foundation-takeover.md matches forbidden strings" — it must name them; Task 2's no-force-strings test exempts docs/history/ AND that one plan file by exact path — cost if wrong: a future plan could hide a Force string (only this path is exempt).
 
 Ruling TK-11 - finding "repo-wide forbidden-string test missing" — it is Task 2 Step 1 by the plan; not pulled into Task 1 — cost if wrong: none (Task 2 is next).
 

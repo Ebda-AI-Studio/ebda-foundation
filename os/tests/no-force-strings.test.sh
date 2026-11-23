@@ -14,7 +14,7 @@ RE2='forceai[-_.]|\b(fwb|wbs)\b|force-website-builder|whatsapp-bulk-sender|gcc-h
 RE_CI='\bforce[-_ ]?ai'
 RE_NEON='neon'  # F-I11: Ebda has no Neon; Force/client database targets never ship in os/ (covers neonctl, neondb_owner, OS_NEON_ORG)
 hits=$(printf '%s\n' "$files" \
-  | grep -vE '^(docs/history/|\.superpowers/|node_modules/|\.git/|docs/plans/2026-11-05-foundation-takeover\.md$|os/tests/no-force-strings\.test\.sh$|os/ops/force-purge-check\.sh$|os/tests/force-purge-check\.test\.sh$|package-lock\.json$)' \
+  | grep -vE '^(docs/history/|\.superpowers/|node_modules/|\.git/|docs/plans/done/2026-11-05-foundation-takeover\.md$|os/tests/no-force-strings\.test\.sh$|os/ops/force-purge-check\.sh$|os/tests/force-purge-check\.test\.sh$|package-lock\.json$)' \
   | while IFS= read -r f; do [ -f "$f" ] && { grep -InE "$RE" -- "$f" 2>/dev/null; grep -InEi "$RE2|$RE_CI" -- "$f" 2>/dev/null; if [ "${f#os/}" != "$f" ]; then grep -InEi "$RE_NEON" -- "$f" 2>/dev/null; fi; } | sort -u | sed "s|^|$f:|"; done)
 if [ -n "$hits" ]; then
   echo "FAIL: predecessor strings found outside docs/history/:"

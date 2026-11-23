@@ -50,7 +50,10 @@ local_send() {
   printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$token" > "$cfg"
   resp="$(curl -sS -m 15 -K "$cfg" --data-urlencode "chat_id=${chat}" --data-urlencode "disable_notification=${silent}" --data-urlencode "text=${msg}" 2>&1)"
   rm -f "$cfg"
-  if printf '%s' "$resp" | grep -q '"ok":[[:space:]]*true'; then echo "notify: sent (telegram ok:true)"; return 0; fi
+  if printf '%s' "$resp" | grep -q '"ok":[[:space:]]*true'; then
+    local mid; mid="$(printf '%s' "$resp" | sed -nE 's/.*"message_id":[[:space:]]*([0-9]+).*/\1/p' | head -n1)"
+    echo "notify: sent (telegram ok:true${mid:+ message_id=$mid})"; return 0
+  fi
   # never echo the raw response on failure paths that could contain the URL/token (curl errors can)
   echo "notify: Telegram API did not return ok:true ($(printf '%s' "$resp" | sed -E 's#bot[0-9]+:[A-Za-z0-9_-]+#bot<redacted>#g' | head -c 160))" >&2
   return 1

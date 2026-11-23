@@ -17,6 +17,7 @@ import { providerFor, type JobUsage, type HandsBatch, type HandsJob, type HandsP
 import { admit, dayKey, digestMessage, questionMessage, sendTelegram, URGENT_KINDS, type MsgKind, type Outgoing } from './telegram';
 import { usageGuard } from './usage';
 import { SocialEngine } from './social/engine';
+import { TgScheduler, type ScheduleInput } from './tg-schedule';
 import type { Brand, Decision } from './social/types';
 import type { AdvisoryRunSummary } from './watchers/advisories';
 import { ALERT_DEDUPE_MS, type PlatformAlert } from './alerts';
@@ -212,6 +213,7 @@ export class BrainDO extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS leases (repo TEXT PRIMARY KEY, holder TEXT NOT NULL, note TEXT, claimed_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
     `);
     SocialEngine.migrate(this.sql);
+    TgScheduler.migrate(this.sql);
   }
 
   // ---------- small helpers ----------
@@ -1229,6 +1231,23 @@ export class BrainDO extends DurableObject<Env> {
   social(): SocialEngine {
     if (!this._social) this._social = new SocialEngine(this.sql, this.env, () => this.fetchImpl, () => this.ctx.storage.sync());
     return this._social;
+  }
+  private _tgSched: TgScheduler | null = null;
+  tgSched(): TgScheduler {
+    if (!this._tgSched) this._tgSched = new TgScheduler(this.sql, this.env, () => this.fetchImpl);
+    return this._tgSched;
+  }
+  tgScheduleAdd(i: ScheduleInput, now: number = Date.now()) {
+    return this.tgSched().add(i, now);
+  }
+  tgScheduleList(status?: string) {
+    return this.tgSched().list(status);
+  }
+  tgScheduleRemove(id: string) {
+    return this.tgSched().remove(id);
+  }
+  tgScheduleTick(now: number = Date.now()) {
+    return this.tgSched().tick(now);
   }
   socialIngest(d: unknown, now: number = Date.now()) {
     return this.social().ingest(d, now);
