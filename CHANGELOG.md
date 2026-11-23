@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## v0.4.2
+- SMART-EMPTY-1 (packages/foundation/src/smart-layer/loop.ts, loop.test.ts): an empty model reply or empty render is no longer reported as a provider failure; it gets its own message and rail marker (#171)
+
 ## v0.4.1
 - FDN-BUMP-1 (.github/workflows/foundation-bump.yml, docs/rulings/FDN-BUMP-1.md): a missing EBDA_FOUNDATION_BUMP_TOKEN now warns (summary + one Telegram alert) instead of failing main red; real errors with a token still fail
 - ERASABLE-TS-1 (packages/foundation/src/request-guard.ts, identity-claims.ts, instapay-dedupe.ts, smart-layer/plan/budget.ts, smart-layer/provider.ts, tsconfig.json, test/erasable-syntax.test.ts): v0.4.0 shipped TypeScript parameter properties that Node strip-only mode rejects (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX), so consumers running vendored foundation under type stripping could not start; rewritten as explicit fields (behaviour identical), `erasableSyntaxOnly` enabled in tsconfig and a test strips every vendored file with node:module
