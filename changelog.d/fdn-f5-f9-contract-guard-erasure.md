@@ -1,0 +1,1 @@
+- F5-F9 (packages/foundation/src/contracts/wa-v1.ts, wa-v1-verify.ts, identity-claims.ts, request-guard.ts, erasure.ts): the Store-Chat contract (bytes unchanged), identity claim helpers, request shape + rate-limit helpers and the erasure types/completeness checklist move into the foundation
