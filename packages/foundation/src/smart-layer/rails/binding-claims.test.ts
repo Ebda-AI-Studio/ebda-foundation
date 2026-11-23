@@ -88,3 +88,15 @@ describe('checkBindingClaims: list items', () => {
     expect(r.text).toBe('أ:\n1. واحد.\n2. تلاتة.\n\nب:\n1. اتنين.\n2. اربعة.');
   });
 });
+
+describe('checkBindingClaims: the first step is dropped (live reply, Ebda Chat number move)', () => {
+  const reply = 'النقل مفيهوش معالج جاهز، بس الخطوات بسيطة:\n\n1. الباقة بـ 499 جنيه في الشهر.\n2. في Ebda Chat: افتح شاشة الأرقام.\n3. لو Meta قالت الرقم مشغول، استنى.';
+  it('the block restarts at 1 when "1." was the dropped step', () => {
+    const r = checkBindingClaims(reply, [plan('Growth', '599')], []);
+    expect(r.text).toBe('النقل مفيهوش معالج جاهز، بس الخطوات بسيطة:\n\n1. في Ebda Chat: افتح شاشة الأرقام.\n2. لو Meta قالت الرقم مشغول، استنى.');
+  });
+  it('a block that never had its first step dropped keeps its own start', () => {
+    const r = checkBindingClaims('3. اول.\n4. بـ 499 جنيه.\n5. تالت.', [plan('Growth', '599')], []);
+    expect(r.text).toBe('3. اول.\n4. تالت.');
+  });
+});
