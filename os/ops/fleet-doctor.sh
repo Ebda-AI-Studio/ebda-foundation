@@ -77,7 +77,7 @@ except Exception:
   esac
   # main-protection ruleset
   if rs="$(ghx api "repos/$repo/rulesets" --jq '.[].name' 2>/dev/null)"; then
-    if printf '%s\n' "$rs" | grep -qx 'main-protection'; then verdict "$repo main-protect" OK "ruleset main-protection present"
+    if grep -qx 'main-protection' <<<"$rs"; then verdict "$repo main-protect" OK "ruleset main-protection present"
     else verdict "$repo main-protect" FAIL "no ruleset named main-protection (rulesets: $(printf '%s' "$rs" | tr '\n' ',' ))"; fi
   else verdict "$repo main-protect" UNKNOWN "rulesets unreadable (permissions or plan)"; fi
   # conflicts not covered by the train
