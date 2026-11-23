@@ -61,3 +61,30 @@ describe('checkBindingClaims', () => {
     expect(checkBindingClaims('الكوبون SUMMER10 جاهز.', [], []).removed).toEqual([]);
   });
 });
+
+describe('checkBindingClaims: list items', () => {
+  const steps = 'خطوات نقل الرقم:\n1. افتح شاشة الأرقام.\n2. الباقة بـ 499 جنيه في الشهر.\n3. اضغط تأكيد.\n4. استنى الموافقة.';
+  it('an unsourced numbered step is dropped, not replaced by the pointer, and the rest is renumbered', () => {
+    const r = checkBindingClaims(steps, [plan('Growth', '599')], []);
+    expect(r.removed.map((x) => x.reason)).toEqual(['amount']);
+    expect(r.text).toBe('خطوات نقل الرقم:\n1. افتح شاشة الأرقام.\n2. اضغط تأكيد.\n3. استنى الموافقة.');
+    expect(r.text).not.toContain('الباقات');
+  });
+  it('a bullet is dropped without renumbering anything', () => {
+    const r = checkBindingClaims('الحالات:\n- أول حالة.\n- الباقة بـ 499 جنيه.\n- تالت حالة.', [plan('Growth', '599')], []);
+    expect(r.text).toBe('الحالات:\n- أول حالة.\n- تالت حالة.');
+  });
+  it('a sourced step stays and nothing is renumbered', () => {
+    const r = checkBindingClaims(steps.replace('499', '599'), [plan('Growth', '599')], []);
+    expect(r.removed).toEqual([]);
+    expect(r.text).toBe(steps.replace('499', '599'));
+  });
+  it('a plain sentence (not a list item) is still replaced by the pointer', () => {
+    const r = checkBindingClaims('باقة Growth بـ 499 جنيه.', [plan('Growth', '599')], []);
+    expect(r.text).toContain('الباقات');
+  });
+  it('two separate numbered blocks are renumbered independently', () => {
+    const r = checkBindingClaims('أ:\n1. واحد.\n2. بـ 499 جنيه.\n3. تلاتة.\n\nب:\n1. اتنين.\n2. اربعة.', [plan('Growth', '599')], []);
+    expect(r.text).toBe('أ:\n1. واحد.\n2. تلاتة.\n\nب:\n1. اتنين.\n2. اربعة.');
+  });
+});
