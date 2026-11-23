@@ -54,8 +54,8 @@ assert len(L)==3, f"expected 3 links, got {len(L)}"
 assert {n["id"] for n in g["nodes"]}=={"existing_a","new_b"}, "node set wrong (no_src must drop)"
 PY
 
-echo "$OUT" | grep -q '+1 nodes, +2 edges' && ok "reports the real edge count" || no "reports the real edge count (got: $(echo "$OUT" | tail -1))"
-echo "$OUT" | grep -q 'dropped(no endpoints) 1' && ok "reports endpoint-dropped edges" || no "reports endpoint-dropped edges"
+grep -q '+1 nodes, +2 edges' <<<"$OUT" && ok "reports the real edge count" || no "reports the real edge count (got: $(echo "$OUT" | tail -1))"
+grep -q 'dropped(no endpoints) 1' <<<"$OUT" && ok "reports endpoint-dropped edges" || no "reports endpoint-dropped edges"
 
 # legacy graph that still has "edges": must be folded into links, not duplicated
 GO2="$W/legacy/graphify-out"; mkdir -p "$GO2"

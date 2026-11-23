@@ -179,7 +179,11 @@ for w in data:
 
     # (c) The repo itself has had no push since the gate last ran — a quiet repo,
     #     not a broken gate.
-    pushedAt="$(_ut "$OS_UT_FAST" gh api "repos/$repo" --jq '.pushed_at' 2>/dev/null)"
+    # Use the default branch's HEAD commit date, not repos/<r>.pushed_at: pushed_at also moves on a
+    # branch delete / tag, which fired a standing false alarm (khawarz-website ci, 2026-10-24 22:33 delete
+    # 56 s after the run on the real last commit). Fall back to pushed_at if the commit lookup fails.
+    pushedAt="$(_ut "$OS_UT_FAST" gh api "repos/$repo/commits/HEAD" --jq '.commit.committer.date' 2>/dev/null)"
+    [ -n "$pushedAt" ] || pushedAt="$(_ut "$OS_UT_FAST" gh api "repos/$repo" --jq '.pushed_at' 2>/dev/null)"
     pushEpoch="$(date -j -f '%Y-%m-%dT%H:%M:%SZ' "$pushedAt" '+%s' 2>/dev/null || echo 0)"
     if [ "$pushEpoch" -gt 0 ] 2>/dev/null && [ "$pushEpoch" -le "$lastEpoch" ]; then
       log "$repo: gate '$wname' ${ageDays}d idle but repo has had no push since — not stale"

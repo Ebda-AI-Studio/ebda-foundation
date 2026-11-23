@@ -23,7 +23,7 @@ sandbox_available && no "unavailable when the binary is missing" || ok "unavaila
 
 out="$(sandbox_run "$H" -- /bin/echo hi 2>&1)"; rc=$?
 [ "$rc" = "70" ] && ok "refuses with exit 70 when it cannot enforce" || no "refuses with exit 70 (got $rc)"
-printf '%s' "$out" | grep -q "REFUSING to run unconfined" && ok "says why it refused" || no "says why it refused"
+grep -q "REFUSING to run unconfined" <<<"$out" && ok "says why it refused" || no "says why it refused"
 # anchored: a bare grep for "hi" also matches "this" in the refusal message,
 # which made this assertion fail while the code was correct
 printf '%s\n' "$out" | grep -qx "hi" && no "did NOT run the command" || ok "did NOT run the command"
@@ -31,8 +31,8 @@ printf '%s\n' "$out" | grep -qx "hi" && no "did NOT run the command" || ok "did 
 # the deliberate override runs it AND announces itself
 out="$(SANDBOX_ALLOW_UNCONFINED=1 sandbox_run "$H" -- /bin/echo hi 2>&1)"; rc=$?
 [ "$rc" = "0" ] && ok "override runs the command" || no "override runs the command (got $rc)"
-printf '%s' "$out" | grep -q "^hi$" && ok "override produced the command's output" || no "override produced the command's output"
-printf '%s' "$out" | grep -q "UNCONFINED" && ok "override announces itself on stderr" || no "override announces itself on stderr"
+grep -q "^hi$" <<<"$out" && ok "override produced the command's output" || no "override produced the command's output"
+grep -q "UNCONFINED" <<<"$out" && ok "override announces itself on stderr" || no "override announces itself on stderr"
 
 # a stub that claims to exist but FAILS its probe must still be treated as unavailable
 mkdir -p "$H/bin"; printf '#!/usr/bin/env bash\n[ "$1" = "--probe" ] && exit 1\nexit 0\n' > "$H/bin/landlock-run"

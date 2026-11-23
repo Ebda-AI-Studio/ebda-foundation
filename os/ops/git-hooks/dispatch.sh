@@ -38,7 +38,10 @@ if [ "$name" = "post-checkout" ]; then
     TRUSTLIB="${WT_TRUST_LIB:-$HOME/.claude/scripts/lib/trusted-origin.sh}"
     # shellcheck disable=SC1090
     if [ -n "$top" ] && [ -f "$top/package.json" ] && [ -x "$WTD" ] && [ -f "$TRUSTLIB" ] && . "$TRUSTLIB" && wt_trusted_repo "$top"; then
-      free_kb="$(df -k "$HOME" | awk 'NR==2{print $4}')"
+      # shellcheck disable=SC1090,SC1091
+      . "$(dirname "$TRUSTLIB")/wt-roots.sh" 2>/dev/null || true
+      # free space of the volume the worktree is on (SSD or internal), not always $HOME
+      if command -v wt_free_kb >/dev/null 2>&1; then free_kb="$(wt_free_kb "$top")"; else free_kb="$(df -k "$HOME" | awk 'NR==2{print $4}')"; fi
       if [ "${free_kb:-0}" -ge $(( ${WT_MIN_FREE_GB:-30} * 1024 * 1024 )) ] || bash "$WTD" --check "$top" >/dev/null 2>&1; then
         mkdir -p "$HOME/Library/Logs" 2>/dev/null
         { echo "$(date -u +%FT%TZ) post-checkout new worktree $top"; WT_DEPS_HOOK=1 bash "$WTD" "$top" 2>&1; } \

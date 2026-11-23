@@ -45,7 +45,7 @@ const parseArgs = (raw: unknown): unknown => {
 };
 
 // An assistant turn that only calls tools has NO text. Workers AI's chat schema rejects `content: null` (HTTP 400 code 5006, measured 2026-11-17 on
-// @cf/meta/llama-3.3-70b-instruct-fp8-fast), which turned every tool-using turn into a provider error; an empty string is accepted by Workers AI and OpenAI alike.
+// the Llama 3.3 70B fast model), which turned every tool-using turn into a provider error; an empty string is accepted by Workers AI and OpenAI alike.
 function toWire(req: LlmRequest): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [{ role: 'system', content: req.system }];
   for (const m of req.messages) {

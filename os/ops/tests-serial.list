@@ -1,0 +1,13 @@
+# OS-SUITES-PARALLEL-1: suites that must run ONE AT A TIME, after the parallel set, because they share a host-wide resource (a lock, the process
+# table, a fixed port, the installed ~/.claude). Format: <class>/<suite>, one per line, `#` comments. A suite not listed here runs in parallel
+# (RUN_TESTS_JOBS, default 2). A new suite is parallel by default: add it here when it takes a lock, signals processes by pattern or binds a port.
+ops-shell/single-instance
+ops-shell/main-first
+ops-shell/main-first-fairness
+ops-shell/loop-watchdog
+ops-shell/alert-wait
+ops-shell/worktree-cleanup
+ops-shell/wt-deps-prisma
+ops-lib/disk-discipline
+ops-lib/job-cadence
+remediation/gate

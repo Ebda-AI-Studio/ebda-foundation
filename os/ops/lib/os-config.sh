@@ -38,6 +38,7 @@ os_config_load() {
   : "${OS_SERVICES_ENV:=$HOME/.whisky-services.env}"
   : "${OS_SENTRY_ORG:=org-lingering-river-25973882}"
   : "${OS_PERSONAL_OWNER:=voidengineer-911}"
+  OS_MONEY_STATUS_CREATORS="${OS_MONEY_STATUS_CREATORS-$OS_PERSONAL_OWNER}"   # unset -> the personal owner; EMPTY stays empty (the drain then refuses every risky PR)
   : "${OS_NONFORCE_BUSINESS_DIRS:=Ebda-AI-Studio Whisky-11 Personal}"
   OS_ORG="${OS_ORGS%% *}"
   OS_BILLED_ORGS=""   # the orgs only (OS_ORGS minus the personal account): what billing and GHAS checks iterate

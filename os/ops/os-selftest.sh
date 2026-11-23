@@ -214,19 +214,16 @@ check_plist_freshness() {
   return 0
 }
 
-# G14: last exit code of each loaded job; non-zero -> add_medium + (not on DRY_RUN) a deduped review-finding issue
+# G14: last exit code of each loaded job is REPORTED here (add_medium); the fixer issue is filed by sched-fail-watch.sh (2 consecutive
+# failures, one writer: form XOR page), so a single flaky exit never opens a fixer from this daily check.
 check_last_exit() {
-  local plist="$1" label rc out
+  local plist="$1" label rc
   command -v jf_last_exit >/dev/null 2>&1 || return 0
   label=$(basename "$plist" .plist)
   rc="$(jf_last_exit "$label")"
   [ -n "$rc" ] && [ "$rc" != "0" ] || return 0
   add_medium "$label: last run exited non-zero (code $rc)"
   _fail "$label: last exit code $rc"
-  if [ "$DRY_RUN" != "1" ] && command -v job_failure_report >/dev/null 2>&1; then
-    out="$(job_failure_report "$label" "$rc" "$plist")"
-    _info "  fixer: $out"
-  fi
 }
 
 if [ "$FRESHNESS_LIB_OK" = "0" ]; then
