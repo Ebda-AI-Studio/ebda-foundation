@@ -30,7 +30,7 @@ Ruling TK-08 - (supersedes OD-2 ruling): Ahmad said "Do it" (2026-11-05 ~22:30) 
 
 Ruling TK-09 - finding "step 3 no PR/merge" — preflight ruling (one PR at end) stands — cost if wrong: none extra.
 
-Ruling TK-10 - finding "plan doc docs/plans/2026-11-05-foundation-takeover.md matches forbidden strings" — it must name them; Task 2's no-force-strings test exempts docs/history/ AND that one plan file by exact path — cost if wrong: a future plan could hide a Force string (only this path is exempt).
+Ruling TK-10 - finding "plan doc docs/plans/done/2026-11-05-foundation-takeover.md matches forbidden strings" — it must name them; Task 2's no-force-strings test exempts docs/history/ AND that one plan file by exact path — cost if wrong: a future plan could hide a Force string (only this path is exempt).
 
 Ruling TK-11 - finding "repo-wide forbidden-string test missing" — it is Task 2 Step 1 by the plan; not pulled into Task 1 — cost if wrong: none (Task 2 is next).
 
@@ -131,7 +131,7 @@ Ruling MG-4 - The gate installed on the Mac (`~/.claude/scripts/merge-gate.sh` +
 
 Ruling MG-5 - The three other readers of the check rollup under `os/ops/` are NOT changed in this PR and are recorded here as open siblings of MG-1: `pr-shepherd.sh` (feeds every run to `merge_verdict`, so a superseded CANCELLED run blocks its merge; fails closed), `safe-to-admin-merge.sh` (counts a required check as passed when ANY run of that name is SUCCESS, so an old SUCCESS hides a newer run still in progress; fails open, narrow, and only on a protected base), `os-watch.sh` (reports a PR red on a superseded FAILURE; alert only, never a merge). Evidence: read 2026-11-10; none of the three has a test that feeds it a rollup, so a change here would ship unproven, and the brief for this PR is the merge gate; the cloud shepherd (`os/cloud/brain/src/watchers/pr-shepherd.ts`) reads the rollup `state` GitHub computes and is not affected. Cost if wrong: until they get the same latest-run rule with tests, the local shepherd can sit on a mergeable PR and the admin-merge check can say "no failing checks" while a re-run of a required check is still running.
 
-## Observability (2026-11-10, docs/plans/2026-11-10-observability.md)
+## Observability (2026-11-10, docs/plans/done/2026-11-10-observability.md)
 
 Rulings OBS-1 (alert job on GitHub-hosted runners, off Cloudflare), OBS-2 (Telegram = P1 + one digest, 6/day, outage exempt), OBS-3 (missing secret = red run), OBS-4 (reader paced at 3 req/s): full text in the plan.
 
