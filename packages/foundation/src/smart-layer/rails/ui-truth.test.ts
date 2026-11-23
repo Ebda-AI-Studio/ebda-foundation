@@ -62,3 +62,15 @@ describe('renderReply', () => {
     expect(renderReply('[[cap:marketing.coupons]][[cap:marketing.coupons]]', reg, 'ar', hits).segments.filter((s) => s.kind === 'cap')).toHaveLength(2);
   });
 });
+
+describe('renderReply: a removal does not leave a space before punctuation', () => {
+  it('an unknown capability marker before a colon', () => {
+    const r = renderReply('الخطوات بسيطة [[cap:not.a.cap]]:\n1. افتح', reg, 'ar', hits);
+    expect(r.removed).toEqual(['cap:not.a.cap']);
+    expect(r.segments).toEqual([{ kind: 'text', text: 'الخطوات بسيطة:\n1. افتح' }]);
+  });
+  it('text with no removal is left exactly as written', () => {
+    const r = renderReply('الخطوات بسيطة :\n1. افتح', reg, 'ar', hits);
+    expect(r.segments).toEqual([{ kind: 'text', text: 'الخطوات بسيطة :\n1. افتح' }]);
+  });
+});
