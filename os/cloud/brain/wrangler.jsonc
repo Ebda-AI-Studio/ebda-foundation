@@ -32,6 +32,8 @@
 
   "vars": {
     "OS_ORGS": "__OS_ORGS__",
+    // the git commit this build was deployed from (stamped by scripts/deploy.sh, "+dirty" when the tree had uncommitted tracked changes); /health returns it
+    "GIT_COMMIT": "__GIT_COMMIT__",
     // owner/name list of repos whose code is deployed (from OS_BRAIN_DEPLOYED_REPOS); an advisory is urgent only there
     "DEPLOYED_REPOS": "__DEPLOYED_REPOS__",
     // live public endpoints only (both answered 200 on 2026-11-05); override with OS_BRAIN_HEALTH_TARGETS at deploy

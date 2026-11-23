@@ -19,6 +19,8 @@ BRANCH="${2:?branch name, e.g. feat/mfa or fix/foo}"
 # business-folder slots first (2026-09-25), legacy compat paths last.
 # shellcheck source=/dev/null
 . "$(dirname "$0")/lib/projects-layout.sh"
+# shellcheck source=lib/wt-roots.sh
+. "$(dirname "$0")/lib/wt-roots.sh"
 ROOT="$(resolve_repo_dir "$REPO" || echo "$OS_PROJECTS_DIR/$REPO")"
 
 # Session awareness (2026-07-12): warn when OTHER live Claude sessions are
@@ -33,7 +35,10 @@ fi
 # Disk guard (2026-10-24): a full host disk fails CI runner jobs and degrades the Mac (the native runners share this disk).
 # Refuse to add another worktree under WT_MIN_FREE_GB (default 30) free. WT_FORCE=1 overrides.
 MIN_FREE_GB="${WT_MIN_FREE_GB:-30}"
-free_kb="$(df -k "$HOME" | awk 'NR==2{print $4}')"
+# The floor measures the volume the worktree will be CREATED on (SSD, override or internal), not $HOME.
+WT_ROOT_DIR="$(wt_worktree_root)"
+wt_warn_fallback
+free_kb="$(wt_free_kb "$WT_ROOT_DIR")"
 if [ "${WT_FORCE:-0}" != "1" ] && [ "${free_kb:-0}" -lt $((MIN_FREE_GB*1024*1024)) ]; then
   printf 'REFUSING: host has %s GB free (< %s GB). A full disk fails CI runner jobs and degrades the Mac.\n' "$((free_kb/1024/1024))" "$MIN_FREE_GB" >&2
   # NO du scan here. `du -sk` over _worktrees/_backups/caches took 5+ MINUTES on a loaded host (2026-10-25) and ran on
@@ -41,10 +46,10 @@ if [ "${WT_FORCE:-0}" != "1" ] && [ "${free_kb:-0}" -lt $((MIN_FREE_GB*1024*1024
   # The per-directory breakdown is opt-in: WT_REPORT=1, or run ops/worktree-report.sh.
   if [ "${WT_REPORT:-0}" = "1" ]; then
     echo "Top space users:" >&2
-    du -sk "$OS_PROJECTS_DIR/_worktrees" "$OS_PROJECTS_DIR/_backups" "$HOME/.cache" "$HOME/Library/Caches" 2>/dev/null \
+    du -sk "$WT_ROOT_DIR" "$OS_PROJECTS_DIR/_backups" "$HOME/.cache" "$HOME/Library/Caches" 2>/dev/null \
       | sort -rn | awk '{printf "  %6.1f GB  %s\n",$1/1048576,$2}' >&2
     echo "  largest worktrees:" >&2
-    find "$OS_PROJECTS_DIR/_worktrees" -mindepth 1 -maxdepth 6 -type d -name '*__*' -prune -exec du -sk {} + 2>/dev/null \
+    find "$WT_ROOT_DIR" -mindepth 1 -maxdepth 6 -type d -name '*__*' -prune -exec du -sk {} + 2>/dev/null \
       | sort -rn | head -8 | awk '{printf "  %6.1f GB  %s\n",$1/1048576,$2}' >&2
   else
     echo "  (space breakdown skipped: it is slow on a busy host. WT_REPORT=1 $0 $* , or bash ~/.claude/scripts/worktree-report.sh)" >&2
@@ -55,7 +60,12 @@ if [ "${WT_FORCE:-0}" != "1" ] && [ "${free_kb:-0}" -lt $((MIN_FREE_GB*1024*1024
 fi
 
 SLUG="$(printf '%s' "$BRANCH" | tr '/' '-')"
-WT="$OS_PROJECTS_DIR/_worktrees/${REPO}__${SLUG}"
+WT="$WT_ROOT_DIR/${REPO}__${SLUG}"
+# Already created on the OTHER volume (e.g. before the SSD was mounted)? Reuse it rather than make a twin.
+for _r in $(wt_all_roots); do
+  [ -d "$_r/${REPO}__${SLUG}" ] && { WT="$_r/${REPO}__${SLUG}"; break; }
+done
+mkdir -p "$(dirname "$WT")"
 
 git -C "$ROOT" fetch origin -q
 # Detect the repo's actual default branch — foundation is 'master', most are 'main';

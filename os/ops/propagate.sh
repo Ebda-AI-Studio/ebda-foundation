@@ -48,6 +48,7 @@ cd "$HERE" || exit 1
 STATE_DIR="$HOME/.whisky-os-state"; mkdir -p "$STATE_DIR"
 GH_USER="$OS_ORG"
 PROJECTS_ROOT="$OS_PROJECTS_DIR"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/wt-roots.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-roots.sh" 2>/dev/null || true
 NEW_WORKTREE_HELPER="$HOME/.claude/scripts/new-task-worktree.sh"
 
 # ---------------------------------------------------------------------------
@@ -349,7 +350,7 @@ for target_slug in $APPLICABLE_REPOS; do
 
   # Determine worktree path
   BRANCH_SLUG="$(echo "$PROP_BRANCH" | tr '/' '-')"
-  WT_PATH="$PROJECTS_ROOT/_worktrees/${TARGET_DIR_NAME}__${BRANCH_SLUG}"
+  WT_PATH="$(command -v wt_worktree_root >/dev/null 2>&1 && wt_worktree_root || echo "$PROJECTS_ROOT/_worktrees")/${TARGET_DIR_NAME}__${BRANCH_SLUG}"
 
   # Create worktree using helper if available, else raw git
   if [ -x "$NEW_WORKTREE_HELPER" ]; then

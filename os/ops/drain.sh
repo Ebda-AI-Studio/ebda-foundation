@@ -2,7 +2,7 @@
 # Ebda AI OS - drain.sh: the durable merge loop for ONE repo (replaces the controller's drain2.sh / drain-fdn.sh).
 #
 #   drain.sh --repo OWNER/NAME --dir CHECKOUT [--gate PATH] [--hold-risky] [--name N] [--interval S]
-#            [--stall-min 60] [--held-min 120] [--max-wait-min 20] [--main-workflow CI|none] [--max-ahead 3] [--starve-min 20] [--once]
+#            [--stall-min 60] [--held-min 120] [--max-wait-min 20] [--main-workflow CI|none] [--max-ahead 3] [--starve-min 20] [--freeze] [--thaw-top 10] [--once]
 #
 # Every cycle: list open PRs into main that are green and mergeable, and merge each through the merge gate (head pinned, three
 # consecutive polls, explicit required checks: never `gh pr merge` directly). With --hold-risky a PR labelled `risky-path` (set by
@@ -25,6 +25,10 @@
 #              hours (#884, 2h20m). Any run on a fixes-main PR's current head queued > --starve-min (default 20) is cancelled and re-run
 #              (back of the queue, picked next), at most 2 times per RUN ID and --starve-min apart (createdAt does not move on a re-run). Only current
 #              fixes-main heads are touched, never one labelled `hold` (old ghost runs 409). Every re-run is read back and confirmed (RERUN-VERIFIED-1).
+#   FREEZE (--freeze, Ruling MAIN-RED-FREEZE-1): while main CI is RED, every QUEUED run that is not on main and not a fixes-main PR head is
+#              cancelled (they compete for the runners that main's fix needs; 101 queued runs once starved #884 for 3 h) and recorded in
+#              <name>.frozen; a run whose cancel is refused (409, a ghost that holds no runner) is remembered and never retried. When main turns
+#              green the --thaw-top (default 10) oldest PRs' frozen runs are re-run, AI review first, a batch per cycle; the rest follow.
 #   MONEY (G49, MONEY-SHA-1): a `risky` PR needs the label money-review-passed AND the commit status `controller/money-review` = success on its
 #              exact head sha (set by the controller after the independent review: `gh api repos/<repo>/statuses/<sha> -f state=success
 #              -f context=controller/money-review`) by an account in OS_MONEY_STATUS_CREATORS (os.env, default the personal owner; empty = refuse all). A new head has no status,
@@ -45,13 +49,13 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/args.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/args.sh" || exit 2
 args_help "${BASH_SOURCE[0]}" "$@"
-REPO=""; DIR=""; GATE="$HOME/.claude/scripts/merge-gate.sh"; HOLD=0; NAME=""; INTERVAL=60; STALL_MIN=60; HELD_MIN=120; MAXWAIT=20; ONCE=0; MAIN_WF="CI"; MAX_AHEAD=3; STARVE_MIN=20; STARVE_CAP=2
+REPO=""; DIR=""; GATE="$HOME/.claude/scripts/merge-gate.sh"; HOLD=0; NAME=""; INTERVAL=60; STALL_MIN=60; HELD_MIN=120; MAXWAIT=20; ONCE=0; MAIN_WF="CI"; MAX_AHEAD=3; STARVE_MIN=20; STARVE_CAP=2; FREEZE=0; THAW_TOP=10
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="${2:?}"; shift ;; --dir) DIR="${2:?}"; shift ;; --gate) GATE="${2:?}"; shift ;; --hold-risky) HOLD=1 ;;
     --name) NAME="${2:?}"; shift ;; --interval) INTERVAL="${2:?}"; shift ;; --stall-min) STALL_MIN="${2:?}"; shift ;;
     --held-min) HELD_MIN="${2:?}"; shift ;; --max-wait-min) MAXWAIT="${2:?}"; shift ;; --once) ONCE=1 ;;
-    --main-workflow) MAIN_WF="${2:?}"; shift ;; --max-ahead) MAX_AHEAD="${2:?}"; shift ;; --starve-min) STARVE_MIN="${2:?}"; shift ;;
+    --main-workflow) MAIN_WF="${2:?}"; shift ;; --max-ahead) MAX_AHEAD="${2:?}"; shift ;; --starve-min) STARVE_MIN="${2:?}"; shift ;; --freeze) FREEZE=1 ;; --thaw-top) THAW_TOP="${2:?}"; shift ;;
     *) args_unknown "${BASH_SOURCE[0]}" "$1" ;;
   esac
   shift
@@ -59,7 +63,7 @@ done
 [ -n "$REPO" ] && [ -n "$DIR" ] || { echo "drain: --repo and --dir are required (try --help)" >&2; exit 2; }
 case "$REPO" in */*) ;; *) echo "drain: --repo must be OWNER/NAME" >&2; exit 2 ;; esac
 whole() { case "$2" in ''|*[!0-9]*) echo "drain: $1 must be a whole number" >&2; exit 2 ;; esac; }
-whole --interval "$INTERVAL"; whole --stall-min "$STALL_MIN"; whole --held-min "$HELD_MIN"; whole --max-wait-min "$MAXWAIT"; whole --max-ahead "$MAX_AHEAD"; whole --starve-min "$STARVE_MIN"
+whole --interval "$INTERVAL"; whole --stall-min "$STALL_MIN"; whole --held-min "$HELD_MIN"; whole --max-wait-min "$MAXWAIT"; whole --max-ahead "$MAX_AHEAD"; whole --starve-min "$STARVE_MIN"; whole --thaw-top "$THAW_TOP"
 [ -n "$NAME" ] || NAME="${REPO##*/}"
 case "$NAME" in *[!A-Za-z0-9._-]*|'') echo "drain: --name must be [A-Za-z0-9._-]" >&2; exit 2 ;; esac
 [ -d "$DIR" ] || { echo "drain: --dir $DIR does not exist" >&2; exit 2; }
@@ -80,7 +84,14 @@ ENABLED="$SD/$NAME.enabled"; STOP="$SD/$NAME.stop"; GLOBAL_STOP="$HOME/.claude/h
 HB="$SD/$NAME.heartbeat"; PROG="$SD/$NAME.progress"; POSTED="$SD/$NAME.last-post"
 log() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 halted() { [ -f "$STOP" ] || [ -f "$GLOBAL_STOP" ]; }
-[ -f "$ENABLED" ] || { log "drain $NAME: not switched over ($ENABLED absent); idle"; exit 0; }
+# Off by design until switched over (F-DRAIN-1): launchd fires this every 5 min, so say it once a day, not 288 times.
+if [ ! -f "$ENABLED" ]; then
+  IDLE_MARK="$SD/$NAME.idle-logged"
+  if [ -z "$(find "$IDLE_MARK" -mmin -1440 2>/dev/null)" ]; then
+    log "drain $NAME: not switched over ($ENABLED absent); idle (logged once per 24h)"; : > "$IDLE_MARK"
+  fi
+  exit 0
+fi
 halted && { log "drain $NAME: stop file present; idle"; exit 0; }
 single_instance "drain-$NAME"
 
@@ -134,12 +145,83 @@ rerun_failed_note() { # $1 = id, $2 = what
 rerun_gaveup() { grep -qxF "$1" "$SD/$NAME.rerun-failed" 2>/dev/null; }
 
 DE="$HERE/lib/drain_eligible.py"
+# Ruling MAIN-GREEN-NOTIFY-1: a main run whose ONLY unfinished job is the notify job (it does no testing: it posts the failure alert) is as good as
+# completed. The notify job is `always()` and needs every other job, so once it is queued or running EVERY other job has finished; the run is then treated
+# as completed+success only if all other jobs ended success/skipped/neutral. Fails closed: an API error, an empty or 100-job (truncated) list, a notify job
+# still `waiting` on its needs, a notify job that already failed/was cancelled, or any other job that is not a clean success keeps the run as it is.
+# (stdout is the normalized runs json, so the log line goes to stderr.)
+NOTIFY_JOB_RE="${DRAIN_NOTIFY_JOB_RE:-^Notify on failure}"
+notify_only_normalize() { # $1 = runs json (newest first); prints the json with qualifying incomplete runs marked completed+success
+  local runs="$1" ids id jobs ok=""
+  ids="$(printf '%s' "$runs" | python3 -I -c 'import json,sys
+print(*[str(x.get("databaseId")) for x in json.load(sys.stdin)[:3] if x.get("status") != "completed" and x.get("databaseId")])' 2>/dev/null)" || { printf '%s' "$runs"; return 0; }
+  [ -n "$ids" ] || { printf '%s' "$runs"; return 0; }
+  for id in $ids; do
+    jobs="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" 2>/dev/null)" || continue
+    if printf '%s' "$jobs" | NOTIFY_RE="$NOTIFY_JOB_RE" python3 -I -c 'import json,os,re,sys
+try:
+    jobs = json.load(sys.stdin).get("jobs")
+except Exception:
+    sys.exit(1)
+if not isinstance(jobs, list) or not jobs or len(jobs) >= 100:
+    sys.exit(1)
+rx = re.compile(os.environ["NOTIFY_RE"])
+notify = [j for j in jobs if rx.search(j.get("name") or "")]
+others = [j for j in jobs if not rx.search(j.get("name") or "")]
+if not notify or not others:
+    sys.exit(1)
+if any(j.get("status") != "completed" or j.get("conclusion") not in ("success", "skipped", "neutral") for j in others):
+    sys.exit(1)
+# the notify job must be the (only) unfinished piece and must be past its `needs`: queued or running, never waiting, never already failed
+if any(j.get("status") not in ("queued", "in_progress") for j in notify):
+    sys.exit(1)
+sys.exit(0)' 2>/dev/null; then ok="$ok $id"; log "main run $id: only the notify job is unfinished and every other job succeeded/skipped: counted as completed (MAIN-GREEN-NOTIFY-1)" >&2; fi
+  done
+  [ -n "$ok" ] || { printf '%s' "$runs"; return 0; }
+  printf '%s' "$runs" | IDS="$ok" python3 -I -c 'import json,os,sys
+ids = set(os.environ["IDS"].split())
+rs = json.load(sys.stdin)
+for r in rs:
+    if str(r.get("databaseId")) in ids:
+        r["status"] = "completed"; r["conclusion"] = "success"
+print(json.dumps(rs))' 2>/dev/null || printf '%s' "$runs"
+}
+
+# MERGE-QUEUE-1 (Ruling MERGE-QUEUE-1): does a green merge_group run cover main's newest commit? Compares git TREE ids (a queue squash gives a new
+# commit sha but the same tree), requires the run's `Merge queue gate` job = success, and FAILS CLOSED: an API error, no match, or ANY completed
+# non-success merge_group run on the same tree (ambiguity) = not green. Rc 0 = covered (and logs the run).
+merge_group_green() {
+  local tip tree runs line id sha t gate matched=0 bad=0 ok_id=""
+  tip="$(gh api "repos/$REPO/commits/main" --jq .sha 2>/dev/null)" || return 1
+  [ "${#tip}" -ge 7 ] || return 1
+  tree="$(gh api "repos/$REPO/git/commits/$tip" --jq .tree.sha 2>/dev/null)" || return 1
+  [ "${#tree}" -ge 7 ] || return 1
+  runs="$(gh run list --repo "$REPO" --event merge_group --workflow "$MAIN_WF" --limit 20 --json databaseId,headSha,status,conclusion 2>/dev/null)" || return 1
+  while IFS=' ' read -r id sha st conc; do
+    [ -n "$id" ] || continue
+    [ "$st" = completed ] || continue
+    t="$(gh api "repos/$REPO/git/commits/$sha" --jq .tree.sha 2>/dev/null)" || return 1
+    [ "$t" = "$tree" ] || continue
+    matched=$((matched + 1))
+    if [ "$conc" != success ]; then bad=$((bad + 1)); continue; fi
+    gate="$(gh run view "$id" --repo "$REPO" --json jobs --jq '.jobs[] | select(.name == "Merge queue gate") | .conclusion' 2>/dev/null)" || return 1
+    if [ "$gate" = success ] && [ -z "$ok_id" ]; then ok_id="$id"; elif [ "$gate" != success ]; then bad=$((bad + 1)); fi
+  done <<EOR
+$(printf '%s' "$runs" | python3 -I -c 'import json,sys
+for r in json.load(sys.stdin): print(r.get("databaseId"), r.get("headSha"), r.get("status"), r.get("conclusion") or "-")' 2>/dev/null)
+EOR
+  [ "$matched" -gt 0 ] && [ "$bad" -eq 0 ] && [ -n "$ok_id" ] || return 1
+  log "main ${tip:0:8} is covered by green merge_group run $ok_id (same tree ${tree:0:8}): counted as main's green"
+  return 0
+}
+
 # MAIN GATE. Sets MAIN_VERDICT (green|full|red|pending|unverified|unknown|off), MAIN_SHA, MAIN_AHEAD. Rc 0 = may merge ordinary PRs.
 main_gate() {
   MAIN_VERDICT=off; MAIN_SHA=-; MAIN_AHEAD=0
   [ "$MAIN_WF" = none ] && return 0
   local runs green ahead v rid att
   runs="$(gh run list --repo "$REPO" --branch main --event push --workflow "$MAIN_WF" --limit 15 --json databaseId,headSha,status,conclusion,attempt 2>/dev/null)" || { MAIN_VERDICT=unknown; return 1; }
+  runs="$(notify_only_normalize "$runs")"
   green="$(printf '%s' "$runs" | python3 -I -c 'import json,sys
 for r in json.load(sys.stdin):
     if r.get("status") == "completed" and r.get("conclusion") == "success": print(r["headSha"]); break' 2>/dev/null)"
@@ -153,6 +235,9 @@ for r in json.load(sys.stdin):
 $(printf '%s' "$runs" | python3 -I "$DE" --mode main --max-ahead "$MAX_AHEAD" --ahead "$ahead" 2>/dev/null || echo "unknown - 0 0")
 EOV
   MAIN_VERDICT="${v:-unknown}"
+  # MERGE-QUEUE-1: a queue merge fires a push run that repeats a lane the merge group already proved. If main's newest commit has the SAME TREE as a
+  # merge_group run whose `Merge queue gate` succeeded, that run counts as main's green (only upgrades pending / unverified / full, never red).
+  case "$MAIN_VERDICT" in pending|unverified|full) merge_group_green && { MAIN_VERDICT=green; MAIN_AHEAD=0; } ;; esac
   if [ "$MAIN_VERDICT" = unverified ] && [ "${rid:-0}" -gt 0 ] && [ ! -f "$SD/$NAME.healed-main-$rid-a$att" ] && ! rerun_gaveup "$rid"; then
     # G74: the newest main commit has no completed run: ask for one, and confirm it took (marked done only once it did)
     if rerun_verified "$rid"; then : > "$SD/$NAME.healed-main-$rid-a$att"; log "main run $rid on $MAIN_SHA ended cancelled: re-run confirmed"
@@ -231,6 +316,52 @@ $(gh pr list --repo "$REPO" --state open --base main --label fixes-main --limit 
 EOS
 }
 
+# MAIN-RED-FREEZE-1: main is red -> cancel queued runs that are not main's fix. Runs only when --freeze is on and the verdict is `red`
+# (not pending / unverified / unknown: a main run in progress or unreadable CI is no reason to cancel other people's work).
+freeze_pass() {
+  [ "$FREEZE" = 1 ] && [ "$MAIN_VERDICT" = red ] || return 0
+  local keep id br sha wf att cout crc
+  keep="$(gh pr list --repo "$REPO" --state open --label fixes-main --limit 30 --json headRefName --jq '[.[].headRefName]|join(",")' 2>/dev/null)" || return 0
+  gh run list --repo "$REPO" --status queued --limit 300 --json databaseId,headBranch,headSha,workflowName,attempt 2>/dev/null \
+    | python3 -I "$DE" --mode freeze --keep "$keep" 2>/dev/null | while IFS=$'\t' read -r id br sha wf att; do
+      [ -n "$id" ] || continue
+      grep -qxF "$id" "$SD/$NAME.frozen-ghost" 2>/dev/null && continue
+      grep -q "^$id	" "$SD/$NAME.frozen" 2>/dev/null && continue
+      cout="$(gh run cancel "$id" --repo "$REPO" 2>&1)"; crc=$?
+      if [ "$crc" = 0 ]; then
+        printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$br" "$sha" "$wf" "$att" >> "$SD/$NAME.frozen"
+        log "FREEZE main red: cancelled queued run $id ($wf on $br)"
+      elif grep -q "409" <<<"$cout"; then echo "$id" >> "$SD/$NAME.frozen-ghost"   # 409: a ghost that holds no runner, never retried
+      else log "FREEZE: cancel of run $id failed (not a 409, will retry): $(printf '%s' "$cout" | head -c 120)"; fi
+    done
+}
+
+# Main is green again: re-run the frozen runs of the oldest --thaw-top PRs (AI review first), drop them from the record.
+thaw_pass() {
+  [ "$FREEZE" = 1 ] && [ "$MAIN_VERDICT" = green ] && [ -s "$SD/$NAME.frozen" ] || return 0
+  local order batch id br sha wf att n=0 opens cur
+  order="$(gh pr list --repo "$REPO" --state open --base main --limit 100 --json number,headRefName --jq 'sort_by(.number)|map(.headRefName)|join(",")' 2>/dev/null)" || return 0
+  # a frozen run is re-run only while its PR is still open on the head it was frozen at (the sha is stored abbreviated: compare by prefix)
+  opens="$(gh pr list --repo "$REPO" --state open --base main --limit 100 --json headRefName,headRefOid --jq '.[]|"\(.headRefName)=\(.headRefOid)"' 2>/dev/null)" || return 0
+  batch="$(python3 -I "$DE" --mode thaw --branches "$order" --top "$THAW_TOP" < "$SD/$NAME.frozen" 2>/dev/null)"
+  [ -n "$batch" ] || return 0
+  while IFS=$'\t' read -r id br sha wf att; do
+    [ -n "$id" ] || continue
+    cur="$(printf '%s\n' "$opens" | sed -n "s|^$br=||p" | head -1)"
+    if [ -z "$cur" ] || [ "${cur#"$sha"}" = "$cur" ]; then
+      log "THAW run $id dropped: ${cur:+head moved on }${cur:-PR closed or not open} ($wf on $br)"
+      grep -v "^$id	" "$SD/$NAME.frozen" > "$SD/$NAME.frozen.tmp" 2>/dev/null; mv "$SD/$NAME.frozen.tmp" "$SD/$NAME.frozen"; continue
+    fi
+    if rerun_verified "$id"; then log "THAW main green: re-run $id confirmed ($wf on $br)"
+    else rerun_failed_note "$id" "thaw $wf on $br"; rerun_gaveup "$id" || continue   # keep it in the record for the next cycle
+    fi
+    grep -v "^$id	" "$SD/$NAME.frozen" > "$SD/$NAME.frozen.tmp" 2>/dev/null; mv "$SD/$NAME.frozen.tmp" "$SD/$NAME.frozen"
+    n=$((n + 1))
+  done <<EOT
+$batch
+EOT
+}
+
 cycle() {
   local ready rc now merged=0 eligible=0 held=0 p sha risky passed fk fail_at oldest_held hf a
   now="$(epoch)"
@@ -242,6 +373,8 @@ cycle() {
   main_gate || gate_ok=0
   if [ "$MAIN_VERDICT" = unknown ]; then UNK_STREAK=$(( $(read_int "$SD/$NAME.unknown-streak") + 1 )); else UNK_STREAK=0; fi
   echo "$UNK_STREAK" > "$SD/$NAME.unknown-streak"
+  freeze_pass
+  thaw_pass
   if [ "$gate_ok" = 0 ]; then
     if [ "$MAIN_VERDICT" = unknown ]; then
       log "main CI unreadable ($MAIN_WF), streak $UNK_STREAK: merging nothing this cycle"

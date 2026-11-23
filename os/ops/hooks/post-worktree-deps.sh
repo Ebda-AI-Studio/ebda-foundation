@@ -77,12 +77,13 @@ for p in out:
     if p not in seen: seen.add(p); print(p)
 ' 2>/dev/null)"
 [ -n "$cands" ] || exit 0
+. "$(dirname "${BASH_SOURCE[0]}")/../lib/wt-roots.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-roots.sh" 2>/dev/null || true
 WTD="${WT_DEPS_BIN:-$HOME/.claude/scripts/wt-deps.sh}"
 [ -f "$WTD" ] || exit 0
 msgs=""
 while IFS= read -r wt; do
   [ -f "$wt/.git" ] && [ -f "$wt/package.json" ] || continue         # linked worktree (.git is a FILE) with a package.json
-  free_kb="$(df -k "$HOME" | awk 'NR==2{print $4}')"
+  if command -v wt_free_kb >/dev/null 2>&1; then free_kb="$(wt_free_kb "$wt")"; else free_kb="$(df -k "$HOME" | awk 'NR==2{print $4}')"; fi
   if [ "${free_kb:-0}" -lt $(( ${WT_MIN_FREE_GB:-30} * 1024 * 1024 )) ] && ! bash "$WTD" --check "$wt" >/dev/null 2>&1; then
     msgs="$msgs wt-deps: host free < ${WT_MIN_FREE_GB:-30} GB and no cache hit - did NOT install deps in $wt (run workspace-hygiene.sh first)."; continue
   fi

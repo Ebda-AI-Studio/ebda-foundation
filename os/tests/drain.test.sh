@@ -20,17 +20,23 @@ cat > "$T/bin/gh" <<'STUB'
 #!/bin/bash
 [ -n "${GH_FAIL:-}" ] && exit 1
 case "$1 $2" in
-  "pr list") case "$*" in *--label*) cat "$T/fixes-list.txt" 2>/dev/null ;; *) cat "$PRS_FILE" ;; esac ;;
-  "run cancel") echo "$*" >> "$RERUN_LOG"; echo "completed $(cut -d' ' -f2 "$T/rs-$3" 2>/dev/null || echo 1)" > "$T/rs-$3" ;;
-  "run view") rs="$(cat "$T/rs-$3" 2>/dev/null || echo "completed 1")"; case "$*" in *status,attempt*) echo "$rs" ;; *"json status"*) echo "${rs% *}" ;; *"json attempt"*) [ -n "${RUNVIEW_FAIL_ATTEMPT:-}" ] && exit 1; echo "${rs#* }" ;; esac ;;
+  "pr list") case "$*" in *headRefName,headRefOid*) cat "$T/open-pairs.txt" 2>/dev/null ;; *--label*headRefName*) cat "$T/fixes-branches.txt" 2>/dev/null ;; *--label*) cat "$T/fixes-list.txt" 2>/dev/null ;; *number,headRefName*) cat "$T/pr-order.txt" 2>/dev/null ;; *) cat "$PRS_FILE" ;; esac ;;
+  "run cancel") case " ${GHOST_IDS:-} " in *" $3 "*) echo "HTTP 409: Cannot cancel a workflow run that is completed" >&2; exit 1 ;; esac; case " ${FLAKY_IDS:-} " in *" $3 "*) echo "HTTP 502: Bad Gateway" >&2; exit 1 ;; esac; echo "$*" >> "$RERUN_LOG"; echo "completed $(cut -d' ' -f2 "$T/rs-$3" 2>/dev/null || echo 1)" > "$T/rs-$3" ;;
+  "run view") case "$*" in *"--json jobs"*) cat "$T/mgjob-$3.txt" 2>/dev/null; exit 0 ;; esac
+    rs="$(cat "$T/rs-$3" 2>/dev/null || echo "completed 1")"; case "$*" in *status,attempt*) echo "$rs" ;; *"json status"*) echo "${rs% *}" ;; *"json attempt"*) [ -n "${RUNVIEW_FAIL_ATTEMPT:-}" ] && exit 1; echo "${rs#* }" ;; esac ;;
   "run list") [ -n "${MAIN_FAIL:-}" ] && exit 1
+    case "$*" in *"--event merge_group"*) [ -n "${MG_FAIL:-}" ] && exit 1; cat "$T/mg-runs.json" 2>/dev/null || echo '[]'; exit 0 ;; esac
+    case "$*" in *--status*queued*) cat "$T/queued.json" 2>/dev/null || echo '[]'; exit 0 ;; esac
     sha=""; while [ $# -gt 0 ]; do [ "$1" = --commit ] && sha="$2"; shift; done
     if [ -n "$sha" ]; then cat "$T/runs-$sha.json" 2>/dev/null || echo '[]'; else cat "$MAIN_RUNS"; fi ;;
   "run rerun") echo "$*" >> "$RERUN_LOG"
     case " ${REFUSE_RERUN:-} " in *" $3 "*) ;; *) a="$(cut -d' ' -f2 "$T/rs-$3" 2>/dev/null || echo 1)"; echo "queued $((a + 1))" > "$T/rs-$3" ;; esac ;;
   "api repos"*|"api "*)
     case "$2" in
+      */actions/runs/*/jobs*) [ -n "${NJOBS_FAIL:-}" ] && exit 1; id="${2#*/runs/}"; cat "$T/njobs-${id%%/*}.json" 2>/dev/null || exit 1 ;;
       */compare/*) echo "{\"ahead_by\": ${AHEAD:-0}}" ;;
+      */commits/main) [ -n "${TIP_FAIL:-}" ] && exit 1; echo "${TIP:-}" ;;
+      */git/commits/*) [ -n "${TREE_FAIL:-}" ] && exit 1; cat "$T/tree-${2##*/}.txt" 2>/dev/null ;;
       */statuses) [ -n "${STATUS_FAIL:-}" ] && exit 1; n="${2#*/commits/}"; cat "$T/status-${n%/statuses}.json" 2>/dev/null || echo '[]' ;;
       *) echo '{}' ;;
     esac ;;
@@ -71,7 +77,7 @@ REPO_SLUG="drain-test-$$/r"
 run() { bash "$DRAIN" --repo "$REPO_SLUG" --dir "$T/checkout" --gate "$T/gate.sh" --name r --once "$@" 2>&1; }
 main_runs() { echo "$1" > "$MAIN_RUNS"; }   # newest first: id sha status conclusion attempt
 mr() { printf '{"databaseId":%s,"headSha":"%s","status":"%s","conclusion":"%s","attempt":%s}' "$1" "$2" "$3" "$4" "${5:-1}"; }
-reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$RERUN_LOG" "$T/locks" "$HOME/.claude/handoff/drain.stop" "$T"/status-*.json "$T"/runs-*.json "$T/fixes-list.txt" "$T"/rs-*; : > "$GATE_LOG"; mkdir -p "$SD"; GATE_RC=0; unset GH_FAIL MAIN_FAIL REFUSE_RERUN; AHEAD=0; export AHEAD
+reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$RERUN_LOG" "$T/locks" "$HOME/.claude/handoff/drain.stop" "$T"/status-*.json "$T"/runs-*.json "$T/fixes-list.txt" "$T/fixes-branches.txt" "$T/pr-order.txt" "$T/queued.json" "$T/open-pairs.txt" "$T"/rs-* "$T"/mg-runs.json "$T"/mgjob-*.txt "$T"/tree-*.txt "$T"/njobs-*.json; : > "$GATE_LOG"; mkdir -p "$SD"; GATE_RC=0; unset GH_FAIL MAIN_FAIL GHOST_IDS FLAKY_IDS REFUSE_RERUN STATUS_FAIL MG_FAIL TIP_FAIL TREE_FAIL TIP NJOBS_FAIL; AHEAD=0; export AHEAD
   main_runs "[$(mr 900 m000000aa completed success)]"; }
 on() { touch "$SD/r.enabled"; }
 # money fixtures (Ruling MONEY-SHA-1): the controller's commit status on a head sha. money_ok SHA [state] [created_at]
@@ -80,6 +86,12 @@ calls() { wc -l < "$GATE_LOG" | tr -d ' '; }
 
 reset; prs "$(pr 1 aaaaaaa1 green)"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "off until the enabled marker exists: no gate call" || no "ran while off"
+# F-DRAIN-1: the idle line is logged once per 24h, not on every 5-minute launchd tick.
+reset; prs "$(pr 1 aaaaaaa1 green)"
+o1="$(run)"; o2="$(run)"
+[ "$(printf '%s\n%s\n' "$o1" "$o2" | grep -c 'not switched over')" = 1 ] && ok "off-by-default idle line logged once, not per tick" || no "idle line repeated ($o1 / $o2)"
+touch -t 202001010000 "$SD/r.idle-logged"; o3="$(run)"
+grep -q 'not switched over' <<<"$o3" && ok "idle line logged again once the 24h marker is stale" || no "no re-log after 24h"
 
 reset; on; prs "$(pr 1 aaaaaaa1 green)"
 run >/dev/null; [ "$(calls)" = 1 ] && grep -q "^1 aaaaaaa1 --repo $REPO_SLUG " "$GATE_LOG" && ok "green+mergeable PR goes through the gate, head pinned, --repo passed" || no "green PR not gated ($(cat "$GATE_LOG"))"
@@ -237,6 +249,32 @@ run >/dev/null; [ ! -s "$RERUN_LOG" ] && ok "a freshly queued fixes-main run is 
 reset; on; prs; : > "$T/fixes-list.txt"; wr hs5 "$(qr 55 2026-11-17T05:14:00Z)"
 run >/dev/null; [ ! -s "$RERUN_LOG" ] && ok "queued runs on non-fixes-main heads (ghost runs) are never touched" || no "touched a non-fixes-main run"
 
+# ---- MAIN-RED-FREEZE-1: --freeze cancels queued non-fixes-main runs while main is red, thaws them when it is green
+qd() { printf '{"databaseId":%s,"headBranch":"%s","headSha":"%s","workflowName":"%s","attempt":1}' "$1" "$2" "$3" "$4"; }
+reset; on; prs; echo "fix-884" > "$T/fixes-branches.txt"; main_runs "[$(mr 902 m2 completed failure)]"
+echo "[$(qd 11 feat-a aaaa1111b 'CI'),$(qd 12 fix-884 bbbb2222c 'CI'),$(qd 13 main mmmm3333d 'CI'),$(qd 14 feat-a aaaa1111b 'AI review')]" > "$T/queued.json"
+run --freeze >/dev/null
+[ "$(grep -c '^run cancel 11 ' "$RERUN_LOG")" = 1 ] && [ "$(grep -c '^run cancel 14 ' "$RERUN_LOG")" = 1 ] && ! grep -qE "^run cancel (12|13) " "$RERUN_LOG" && ok "main red + --freeze: queued runs of other branches cancelled; the fixes-main head and main itself are kept" || no "freeze cancelled the wrong runs ($(cat "$RERUN_LOG" 2>/dev/null))"
+[ "$(wc -l < "$SD/r.frozen" | tr -d ' ')" = 2 ] && ok "cancelled runs are recorded for the thaw" || no "frozen record wrong"
+run --freeze >/dev/null; [ "$(grep -c '^run cancel 11 ' "$RERUN_LOG")" = 1 ] && ok "a frozen run is not cancelled twice" || no "re-cancelled"
+reset; on; prs; : > "$T/fixes-branches.txt"; main_runs "[$(mr 902 m2 completed failure)]"; GHOST_IDS="21"; export GHOST_IDS
+echo "[$(qd 21 old-ghost gggg 'CI'),$(qd 22 feat-b hhhh 'CI')]" > "$T/queued.json"
+run --freeze >/dev/null; run --freeze >/dev/null
+[ "$(grep -c '^run cancel 22 ' "$RERUN_LOG")" = 1 ] && grep -qx 21 "$SD/r.frozen-ghost" && ! grep -q "^21	" "$SD/r.frozen" && ok "a run whose cancel is refused (ghost, 409) is remembered and never recorded for re-run" || no "ghost handling wrong"
+reset; on; prs; : > "$T/fixes-branches.txt"; main_runs "[$(mr 902 m2 in_progress ''),$(mr 901 m1 completed success)]"
+echo "[$(qd 31 feat-c cccc 'CI')]" > "$T/queued.json"
+run --freeze >/dev/null; [ ! -s "$RERUN_LOG" ] && ok "main pending (not red): nothing is frozen" || no "froze while main pending"
+reset; on; prs; : > "$T/fixes-branches.txt"; main_runs "[$(mr 902 m2 completed failure)]"
+echo "[$(qd 41 feat-d dddd 'CI')]" > "$T/queued.json"
+run >/dev/null; [ ! -s "$RERUN_LOG" ] && ok "without --freeze nothing is cancelled (off by default)" || no "froze without the flag"
+reset; on; prs; printf 'b1,b2,b3\n' > "$T/pr-order.txt"; printf 'b1=shaaaaa1\nb2=shaaaaa2\nb3=shaaaaa3\n' > "$T/open-pairs.txt"; mkdir -p "$SD"
+for b in b3 b2 b1 b9; do printf '%s\t%s\t%s\t%s\t%s\n' "${b:1}0" "$b" sha "CI" 1 >> "$SD/r.frozen"; printf '%s\t%s\t%s\t%s\t%s\n' "${b:1}1" "$b" sha "AI review" 1 >> "$SD/r.frozen"; done
+run --freeze --thaw-top 2 >/dev/null
+[ "$(grep -cE '^run rerun (10|11|20|21) ' "$RERUN_LOG")" = 4 ] && ! grep -qE "^run rerun (30|31|90|91) " "$RERUN_LOG" && ok "main green: the --thaw-top oldest PRs (b1, b2) are re-run, not the rest" || no "thaw picked the wrong runs ($(cat "$RERUN_LOG" 2>/dev/null | tr '\n' ' '))"
+[ "$(sed -n 1p "$RERUN_LOG" | grep -c 'rerun 11 ')" = 1 ] && ok "inside a branch the AI review run is re-run first" || no "AI review not first ($(head -2 "$RERUN_LOG" | tr '\n' ' '))"
+[ "$(wc -l < "$SD/r.frozen" | tr -d ' ')" = 4 ] && ok "thawed runs leave the record; the rest wait for a later cycle" || no "record not trimmed"
+run --freeze --thaw-top 2 >/dev/null; [ "$(grep -cE '^run rerun (30|31) ' "$RERUN_LOG")" = 2 ] && ok "the next cycle thaws the next batch (b3)" || no "second batch not thawed"
+
 # ---- re-run is VERIFIED (2026-11-17: #811's CI and a main run stayed cancelled because the re-run silently did not take)
 reset; on; prs "$(cpr 7 h7 CI CANCELLED)"; wr h7 "$(rr 72 CI cancelled)"; REFUSE_RERUN="72"; export REFUSE_RERUN
 run >/dev/null; [ "$(grep -c '^run rerun 72 ' "$RERUN_LOG")" = 3 ] && [ ! -f "$SD/r.healed-72-a1" ] && ok "a re-run that does not take is retried (3 tries) and the run is NOT marked healed (G47)" || no "unverified rerun marked or not retried ($(grep -c '^run rerun 72 ' "$RERUN_LOG"))"
@@ -279,6 +317,87 @@ for i in 1 2 3 4 5; do run --starve-min 0 >/dev/null; done
 reset; on; prs "$(cpr 7 h7 CI CANCELLED)"; wr h7 "$(rr 72 CI cancelled)"; echo "completed 1" > "$T/rs-72"; REFUSE_RERUN="72"; export REFUSE_RERUN; RUNVIEW_FAIL_ATTEMPT=1; export RUNVIEW_FAIL_ATTEMPT
 run >/dev/null; [ ! -f "$SD/r.healed-72-a1" ] && ok "an unreadable attempt number is a failed try, never a confirmation" || no "confirmed on a failed first read"
 unset RUNVIEW_FAIL_ATTEMPT REFUSE_RERUN
+
+# MERGE-QUEUE-1: a green merge_group run of the SAME TREE counts as main's green (upgrades pending / unverified / full only), fail closed
+mgr() { printf '{"databaseId":%s,"headSha":"%s","status":"%s","conclusion":"%s"}' "$1" "$2" "$3" "$4"; }
+mgq() { echo "[$1]" > "$T/mg-runs.json"; }          # merge_group runs, newest first
+tree() { echo "$2" > "$T/tree-$1.txt"; }            # commit sha -> tree id
+gatejob() { echo "$2" > "$T/mgjob-$1.txt"; }        # merge_group run id -> its `Merge queue gate` conclusion
+pending_main() { main_runs "[$(mr 902 m2 in_progress ''),$(mr 901 m1 completed success)]"; TIP=tip0002; export TIP; }
+reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0001; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 1 ] && ok "main pending but a green merge_group run of the SAME TREE covers it: the PR merges" || no "same-tree merge_group green ignored ($(calls))"
+reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0002; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a merge_group run of a DIFFERENT tree does not count (trees, not commit shas)" || no "different tree counted as green"
+reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0001; gatejob 700 failure
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a merge_group run whose Merge queue gate job did not succeed does not count" || no "gate job failure counted"
+reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success),$(mgr 699 gg0000 completed failure)"; tree gg1000 TREE0001; tree gg0000 TREE0001; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 0 ] && ok "ambiguity (another completed merge_group run of the same tree failed): fail closed" || no "ambiguous evidence counted"
+reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 in_progress '')"; tree gg1000 TREE0001; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a merge_group run still in progress is not green" || no "in-progress merge_group run counted"
+reset; on; prs "$(pr 1 a1 green)"; pending_main; mgq "[]"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "no merge_group run at all: main stays pending" || no "pending main merged with no evidence"
+for fail in TIP_FAIL TREE_FAIL MG_FAIL; do
+  reset; on; prs "$(pr 1 a1 green)"; pending_main; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0001; gatejob 700 success
+  env "$fail=1" bash -c 'true'; export "$fail=1"; run >/dev/null; unset "$fail"
+  [ "$(calls)" = 0 ] && ok "$fail: an API error while reading the evidence fails closed" || no "$fail did not fail closed"
+done
+reset; on; prs "$(pr 1 a1 green)"; main_runs "[$(mr 902 m2 completed failure),$(mr 901 m1 completed success)]"; TIP=tip0002; export TIP; tree tip0002 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0001; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a RED newest main run is never overridden by merge_group evidence" || no "red main upgraded to green"
+reset; on; prs "$(pr 1 a1 green)"; main_runs "[$(mr 901 m1 completed success)]"; AHEAD=9; export AHEAD; TIP=tip0009; export TIP; tree tip0009 TREE0001; mgq "$(mgr 700 gg1000 completed success)"; tree gg1000 TREE0001; gatejob 700 success
+run >/dev/null; [ "$(calls)" = 1 ] && ok "more merges ahead than --max-ahead (queue batch) but the head tree is covered by a green merge_group run: merges" || no "covered batch blocked ($(calls))"
+unset TIP AHEAD; AHEAD=0; export AHEAD
+# freeze: only a 409 is a ghost; any other cancel failure is retried next cycle
+reset; on; prs; : > "$T/fixes-branches.txt"; main_runs "[$(mr 902 m2 completed failure)]"; FLAKY_IDS="61"; export FLAKY_IDS
+echo "[$(qd 61 feat-f ffff 'CI')]" > "$T/queued.json"
+run --freeze >/dev/null; run --freeze >/dev/null
+[ "$(cat "$RERUN_LOG" 2>/dev/null | grep -c '^run cancel 61 ')" = 0 ] && [ ! -e "$SD/r.frozen-ghost" ] && ok "freeze: a 502 cancel failure is NOT recorded as a ghost (retried each cycle)" || no "502 recorded as ghost"
+unset FLAKY_IDS; run --freeze >/dev/null; [ "$(grep -c '^run cancel 61 ' "$RERUN_LOG")" = 1 ] && ok "freeze: ... and it is cancelled once the API recovers" || no "not retried after recovery"
+# thaw: a run of a closed PR, or whose PR head moved, is dropped from the record, never re-run
+reset; on; prs; printf 'b1,b2\n' > "$T/pr-order.txt"; printf 'b2=zzzzzzzz\n' > "$T/open-pairs.txt"; mkdir -p "$SD"
+printf '%s\t%s\t%s\t%s\t%s\n' 10 b1 shaaaaa1 CI 1 >> "$SD/r.frozen"; printf '%s\t%s\t%s\t%s\t%s\n' 20 b2 shaaaaa2 CI 1 >> "$SD/r.frozen"
+run --freeze --thaw-top 5 >/dev/null
+[ ! -s "$RERUN_LOG" ] && [ ! -s "$SD/r.frozen" ] && ok "thaw: a closed PR's run (b1) and a moved head's run (b2) are dropped from the record, not re-run" || no "thawed a closed/moved PR ($(cat "$RERUN_LOG" 2>/dev/null | tr '\n' ' '))"
+
+# MAIN-GREEN-NOTIFY-1: a main run whose only unfinished job is the notify job counts as completed; fail closed for everything else
+nj() { # <run id> name:status:conclusion ...   (conclusion '-' = none)
+  local id="$1"; shift
+  python3 -I - "$id" "$@" > "$T/njobs-$id.json" <<'PY'
+import json, sys
+jobs = []
+for a in sys.argv[2:]:
+    n, st, c = a.split(":")
+    jobs.append({"name": n, "status": st, "conclusion": None if c == "-" else c})
+print(json.dumps({"total_count": len(jobs), "jobs": jobs}))
+PY
+}
+NOTIFY="Notify on failure (main and nightly)"
+inprog_main() { main_runs "[$(mr 902 m2 in_progress ''),$(mr 901 m1 completed success)]"; }
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "Unit Tests:completed:success" "Security Audit:completed:skipped" "$NOTIFY:queued:-"
+run >/dev/null; [ "$(calls)" = 1 ] && ok "MAIN-GREEN-NOTIFY-1: only the notify job is queued, every other job succeeded/skipped: main counts as green, the PR merges" || no "queued notify-only held the merge ($(calls))"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "$NOTIFY:in_progress:-"
+run >/dev/null; [ "$(calls)" = 1 ] && ok "a notify job that is already running (5 s of work) does not hold main either" || no "in-progress notify held the merge"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "Unit Tests:queued:-" "$NOTIFY:waiting:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a queued REAL job keeps main pending (notify still waiting on its needs)" || no "real queued job counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "Unit Tests:in_progress:-" "$NOTIFY:queued:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a running real job next to a queued notify job is NOT green" || no "running real job ignored"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "Unit Tests:completed:failure" "$NOTIFY:queued:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a FAILED real job is never green, notify queued or not" || no "failed real job counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "$NOTIFY:completed:failure"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a FAILED notify job still means not green" || no "failed notify counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:cancelled" "$NOTIFY:queued:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a cancelled real job is not green" || no "cancelled job counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "$NOTIFY:waiting:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a notify job still waiting on its needs does not prove the other jobs finished: not green" || no "waiting notify counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "$NOTIFY:queued:-"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a run whose job list holds only the notify job proves nothing: not green" || no "notify-only list counted as green"
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; nj 902 "Build:completed:success" "$NOTIFY:queued:-"; NJOBS_FAIL=1; export NJOBS_FAIL
+run >/dev/null; [ "$(calls)" = 0 ] && ok "an API error reading the jobs fails closed" || no "API error counted as green"
+unset NJOBS_FAIL
+reset; on; prs "$(pr 1 a1 green)"; inprog_main; python3 -I -c '
+import json
+jobs=[{"name":"j%d"%i,"status":"completed","conclusion":"success"} for i in range(99)]+[{"name":"Notify on failure (main and nightly)","status":"queued","conclusion":None}]
+print(json.dumps({"total_count":len(jobs),"jobs":jobs}))' > "$T/njobs-902.json"
+run >/dev/null; [ "$(calls)" = 0 ] && ok "a 100-job (possibly truncated) list fails closed" || no "truncated job list counted as green"
 
 reset; on; run --bogus >/dev/null 2>&1; [ $? = 2 ] && ok "unknown flag exits 2" || no "unknown flag accepted"
 echo "drain: $p passed, $f failed"; [ "$f" = 0 ]

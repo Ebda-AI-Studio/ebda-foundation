@@ -16,7 +16,7 @@ no() { echo "FAIL: $1"; f=$((f+1)); }
 scan() {
   python3 -I - "$@" <<'PY'
 import re, sys
-sink = re.compile(r"\|\s*(?:/usr/bin/|/bin/)?grep\s+(?:-[A-Za-z]+\s+)*(?:-[A-Za-z]*q[A-Za-z]*|--quiet|--silent)\b")
+sink = re.compile(r"(?<!\|)\|(?!\|)\s*(?:/usr/bin/|/bin/)?grep\s+(?:-[A-Za-z]+\s+)*(?:-[A-Za-z]*q[A-Za-z]*|--quiet|--silent)\b")
 pipefail = re.compile(r"set\s+(?:-[A-Za-z]+\s+)*-[A-Za-z]*o\s+pipefail|set\s+-[A-Za-z]*o\s+pipefail|set\s+-o\s+pipefail|set -euo pipefail|set -uo pipefail")
 for path in sys.argv[1:]:
     if path.endswith("os/tests/no-pipe-grep-q.test.sh"):
@@ -40,7 +40,7 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 printf '%s\n' '#!/usr/bin/env bash' 'set -uo pipefail' 'printf "%s" "$x" | grep -q foo && echo y' > "$T/bad1.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'if ! launchctl list | grep -qF "$l"; then :; fi' > "$T/bad2.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'set -o pipefail' 'cmd | grep -iq pat' > "$T/bad3.sh"
-printf '%s\n' '#!/usr/bin/env bash' 'set -uo pipefail' 'grep -q foo <<<"$x" && echo y' 'grep -q foo < <(cmd)' '# cmd | grep -q commented' 'cmd | grep -v x | wc -l' 'cmd | grep foo' > "$T/good.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'set -uo pipefail' 'grep -q foo <<<"$x" && echo y' 'grep -q foo < <(cmd)' '# cmd | grep -q commented' 'cmd | grep -v x | wc -l' 'cmd | grep foo' 'a || grep -q foo f' > "$T/good.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'cmd | grep -q foo   # no pipefail in this file' > "$T/nopf.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'set -uo pipefail' 'echo hi | grep -q hi  # pipefail-grep-ok: one short literal' > "$T/pragma.sh"
 [ -n "$(scan "$T/bad1.sh")" ] && ok "flags printf | grep -q under pipefail" || no "missed printf | grep -q"

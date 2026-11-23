@@ -9,6 +9,7 @@ ok() { echo "PASS: $1"; _pass=$((_pass+1)); }
 no() { echo "FAIL: $1"; _fail=$((_fail+1)); }
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 export HOME="$T/home"; mkdir -p "$HOME/Library/Logs"
+export OS_SSD_ROOT="$T/no-ssd"   # never touch the real /Volumes/Ebda
 git config --global user.email t@t; git config --global user.name t; git config --global init.defaultBranch main
 
 # APFS clonefile (cp -c) exists on the dev Mac only; Linux CI cannot exercise the clone path, so those cases SKIP visibly

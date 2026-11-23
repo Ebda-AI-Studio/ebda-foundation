@@ -133,8 +133,10 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | mac-maintenance | KEEP-MAC | mac-maintenance | local disk upkeep |
 | os-selftest | KEEP-MAC | os-selftest | checks the local install |
 | os-watch | KEEP-MAC | os-watch | self-check of the local OS runtime and runner status |
+| outside-watch | KEEP-MAC | outside-watch | every 5 min curl probe of the public Ebda hosts from the Mac (off Cloudflare), 2-failure rule, alerts via notify.sh (replaces the disabled hosted prod-watch workflow, F-OBS-1) |
 | claude-bundle-sync | KEEP-MAC | claude-bundle-sync | keeps the Claude Code app bundle linked to the newest build so macOS keeps one permission identity; Mac-only by nature (ruling INSTALL-1) |
 | pr-shepherd | KEEP-MAC | pr-shepherd | the brain watcher shepherds the brain's orgs; the Mac job covers ONE other org set per machine (`OS_PR_SHEPHERD_ORG`), skips when unset or equal to the brain's org (ruling INSTALL-1) |
+| sched-fail-watch | KEEP-MAC | sched-fail-watch | every 10 min: a launchd job (2 consecutive failing runs) or a GitHub scheduled workflow that fails opens ONE review-finding fixer issue per job/day + one Telegram line via notify.sh; no tokens when nothing failed; reads launchctl + the gh API (Cloudflare cron triggers not covered, see the script header) |
 | sentry-stale-watch | KEEP-MAC | sentry-stale-watch | stays on the Mac until the brain's `sentry-stale` is configured for the same Sentry org; then a later PR may drop it (ruling INSTALL-1) |
 | services-watch | PORT-BRAIN | services | HTTP probes; brain health.ts covers only 2 URLs |
 | session-mining | KEEP-MAC | session-mining | claude CLI over local session files |

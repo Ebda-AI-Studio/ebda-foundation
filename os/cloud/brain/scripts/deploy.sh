@@ -28,7 +28,12 @@ OUT="$HERE/wrangler.deploy.jsonc"
 # billed org. The brain's GitHub token is scoped to Ebda-AI-Studio, so the committed value keeps it from 404ing on the other orgs.
 _brain_orgs="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("OS_ORGS", ""))' "$HERE/../../config/brain-watchers.json" 2>/dev/null || true)"
 _brain_orgs="${OS_BRAIN_ORGS:-${_brain_orgs:-$OS_BILLED_ORGS}}"
+# "is it deployed?" must be answerable from the running Worker: stamp the commit into the build (/health returns it). "+dirty" = tracked
+# changes were uncommitted, so the sha does not describe what shipped.
+_commit="$(git -C "$HERE" rev-parse HEAD 2>/dev/null || true)"
+if [ -n "$_commit" ] && [ -n "$(git -C "$HERE" status --porcelain --untracked-files=no 2>/dev/null)" ]; then _commit="${_commit}+dirty"; fi
 OS_BRAIN_KV_ID="${OS_BRAIN_KV_ID:-00000000000000000000000000000000}" \
+OS_BRAIN_GIT_COMMIT="${_commit:-unknown}" \
 OS_BRAIN_ORGS="$_brain_orgs" \
 python3 -I - "$HERE/wrangler.jsonc" "$OUT" <<'PY'
 import json, os, sys
@@ -37,6 +42,7 @@ t = open(src, encoding="utf-8").read()
 sub = {
     "__BRAIN_KV_ID__": os.environ["OS_BRAIN_KV_ID"],
     "__OS_ORGS__": os.environ["OS_BRAIN_ORGS"],
+    "__GIT_COMMIT__": os.environ["OS_BRAIN_GIT_COMMIT"],
     "__DEPLOYED_REPOS__": os.environ.get("OS_BRAIN_DEPLOYED_REPOS") or "__DEPLOYED_REPOS__",
     "__ACCESS_TEAM_DOMAIN__": os.environ.get("OS_BRAIN_ACCESS_TEAM_DOMAIN") or "__ACCESS_TEAM_DOMAIN__",
     "__ACCESS_AUD__": os.environ.get("OS_BRAIN_ACCESS_AUD") or "__ACCESS_AUD__",

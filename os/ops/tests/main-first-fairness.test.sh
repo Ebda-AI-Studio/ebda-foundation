@@ -35,7 +35,8 @@ queued_job() { echo "{\"jobs\":[{\"status\":\"queued\",\"created_at\":\"$2\",\"l
 # prq <repo> id:branch:sha:pr ...
 prq() { local repo="$1" a="" s i br sha n; shift; for s in "$@"; do IFS=: read -r i br sha n <<<"$s"; a="$a{\"id\":$i,\"status\":\"queued\",\"event\":\"pull_request\",\"head_branch\":\"$br\",\"head_sha\":\"$sha\",\"created_at\":\"2026-11-14T11:5$((i%10)):00Z\",\"pull_requests\":[{\"number\":$n}]},"; done
   wj "$repo.prq" "{\"workflow_runs\":[${a%,}]}"; }
-run() { FAKE_DIR="$FK" PATH="$BIN:$PATH" HOME="$T/home" MAIN_FIRST_REPOS="o/a o/b o/c" MAIN_FIRST_STATE="$T/state" MAIN_FIRST_LOG="$T/log" MAIN_FIRST_NOW="$NOW" MAIN_FIRST_VERIFY_WAIT=0 MAIN_FIRST_FAIR_CAP="${CAP:-3}" MAIN_FIRST_FAIR_TOTAL="${TOTAL:-6}" bash "$OPS/main-first.sh" >"$T/out" 2>&1; }
+# MAIN_FIRST_LEASE=0: the fixtures keep a queued main job, so with the lease on every run sleeps its whole 270 s budget (5 runs = 1802 s); fairness does not need the lease.
+run() { FAKE_DIR="$FK" PATH="$BIN:$PATH" HOME="$T/home" MAIN_FIRST_REPOS="o/a o/b o/c" MAIN_FIRST_STATE="$T/state" MAIN_FIRST_LOG="$T/log" MAIN_FIRST_NOW="$NOW" MAIN_FIRST_VERIFY_WAIT=0 MAIN_FIRST_LEASE=0 MAIN_FIRST_FAIR_CAP="${CAP:-3}" MAIN_FIRST_FAIR_TOTAL="${TOTAL:-6}" bash "$OPS/main-first.sh" >"$T/out" 2>&1; }
 posts() { cat "$FK/posts.log" 2>/dev/null; }
 reset() { rm -rf "${FK:?}"/* "$T/state" "$T/log"
   # main CI: a starved (newest run queued, job queued 30 m); b and c green

@@ -45,6 +45,9 @@ JOBS_LOG="$STATE_DIR/agent-jobs.jsonl"
 TG_ENV="${TG_ENV:-$OS_SERVICES_ENV}"
 # shellcheck source=/dev/null
 [ -f "$TG_ENV" ] && { set -a; . "$TG_ENV"; set +a; }
+# F-TG-1: the credentials moved to the macOS Keychain (same services notify.sh reads); the env file stays a fallback.
+: "${TELEGRAM_BOT_TOKEN:=$(security find-generic-password -s ebda-telegram-bot -w 2>/dev/null || true)}"
+: "${TELEGRAM_ALERT_CHAT_ID:=$(security find-generic-password -s ebda-telegram-alert-chat-id -w 2>/dev/null || true)}"
 : "${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN unset — put it in $TG_ENV}"
 : "${TELEGRAM_ALERT_CHAT_ID:?TELEGRAM_ALERT_CHAT_ID unset — put it in $TG_ENV}"
 
