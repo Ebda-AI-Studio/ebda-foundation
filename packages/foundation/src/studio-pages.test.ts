@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createStudioPages, HSTS_VALUE, pickStudioLang, type StudioBrand } from './studio-pages';
+import { isOrange } from './tokens';
 
 // A fixture brand with the same shape as a product's BRAND (the Store's satisfies StudioBrand structurally). The byte-for-byte proof that the
 // Store's old renderer and this one agree lives in the Store (tests/unit/studio-pages-foundation.test.ts, hashes taken from main before the swap).
@@ -35,7 +36,8 @@ describe('studio pages (shared 404 shell)', () => {
   });
   it('no orange anywhere (night + gold) and no script besides the help typeahead', () => {
     const html = studio.renderStudioPage({ lang: 'ar', kind: 'not-found' });
-    expect(html).not.toMatch(/#ff6e01|orange/i);
+    expect(html).not.toMatch(/orange/i);
+    for (const hex of html.match(/#[0-9A-Fa-f]{6}\b/g) ?? []) expect(isOrange(hex), hex).toBe(false);
     expect([...html.matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1])).toEqual(['https://help.ebda.test/assets/typeahead.js']);
   });
   it('every coming-soon product shares ONE structure; only the copy differs', () => {
