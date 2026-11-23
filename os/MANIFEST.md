@@ -78,6 +78,8 @@ One job (`os`) in `ci.yml`: a checkout plus one `git diff` on every PR (about 10
 
 ## macOS-only scripts
 
+**On-demand fleet tools (register OS-M1/C1/F1, hosted-CI reality; no launchd job, run by the controller or a loop step):** `ops/merge-train.sh` (ordered PR queue, rebase-needed labels, cancels non-head runs, migration-number registry; merges only through `merge-gate.sh`), `ops/capacity.sh` (hosted queue/in-progress per repo against the Free ~20-job limit, host disk tiers; report only, fails closed to UNKNOWN), `ops/fleet-doctor.sh` (ci-target, queue, `main-protection` ruleset, uncovered conflicts, `core.bare`, installed-vs-merged drift, clock) and the `hooks/block-pkill-pattern.sh` PreToolUse deny. All portable GNU+BSD, Linux-smoked.
+
 These touch launchd, the Keychain `security` tool, `sw_vers`, `xcrun` or similar; the Linux smoke parses them (`bash -n`) but skips `--help`: `ci-runner-guard.sh`, `ecosystem-research-cron.sh`, `os-selftest.sh`, `hung-job-guard.sh`, `install.sh`, `reload-patched-agents.sh`, `statusline.sh`, `runner-restore.sh`, `uninstall.sh`, `lib/job-freshness.sh`, `lib/keychain.sh`.
 
 ## Rules for anything ported here
