@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoConfirmKey, firstPaymentCapMinor, isCleanPayment, nextAutoState, REVERT_GRACE_MS, revertGraceUntil, revertKey, unusedCreditsToRemove, type AutoEvent, type AutoState } from './instapay-state';
+import { autoConfirmKey, FREE_PLAN_FIRST_PAYMENT_CAP_MINOR, firstPaymentCapMinor, isCleanPayment, nextAutoState, REVERT_GRACE_MS, revertGraceUntil, revertKey, unusedCreditsToRemove, type AutoEvent, type AutoState } from './instapay-state';
 
 const STATES: AutoState[] = ['pending_decision', 'auto_confirmed', 'needs_human', 'reverted', 'failed'];
 const EVENTS: AutoEvent[] = ['decide_auto', 'decide_human', 'revert', 'activation_failed'];
@@ -36,9 +36,13 @@ describe('keys, grace, cap', () => {
     expect(revertGraceUntil(0)).toBe(172_800_000);
     expect(revertGraceUntil(5)).toBe(172_800_005);
   });
-  it('cap is one month of the plan; no plan or bad price -> 0', () => {
+  it('INSTAPAY-CAP-2: a free plan (price exactly 0) caps the first payment at 500 EGP', () => {
+    expect(FREE_PLAN_FIRST_PAYMENT_CAP_MINOR).toBe(50000);
+    expect(firstPaymentCapMinor({ monthlyPriceMinor: 0 })).toBe(50000);
+  });
+  it('cap is one month of the plan; no plan (null) or bad price -> 0', () => {
     expect(firstPaymentCapMinor({ monthlyPriceMinor: 120000 })).toBe(120000);
-    for (const v of [null, 0, -1, 1.5, NaN, Infinity]) expect(firstPaymentCapMinor({ monthlyPriceMinor: v as any })).toBe(0);
+    for (const v of [null, undefined, -1, 1.5, NaN, Infinity]) expect(firstPaymentCapMinor({ monthlyPriceMinor: v as any })).toBe(0);
   });
 });
 
