@@ -69,6 +69,8 @@ const run = (
       over.polls ?? '3',
       '--interval',
       '0',
+      '--repo',
+      'Ebda-AI-Studio/ebda-foundation', // explicit: the gate would otherwise ask `gh repo view` (network) which repo this is
       '--dry-run',
     ],
     {
@@ -85,7 +87,7 @@ const run = (
   // second run WITHOUT --dry-run through the merge seam, to prove the real merge call happens (and only when green)
   const r2 = spawnSync(
     'bash',
-    [GATE, '1', over.want ?? SHA.slice(0, 9), '--polls', over.polls ?? '3', '--interval', '0'],
+    [GATE, '1', over.want ?? SHA.slice(0, 9), '--polls', over.polls ?? '3', '--interval', '0', '--repo', 'Ebda-AI-Studio/ebda-foundation'],
     {
       env: {
         ...process.env,
