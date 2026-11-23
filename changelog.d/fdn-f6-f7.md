@@ -1,0 +1,1 @@
+- F6-F7 (packages/foundation/src/observe, packages/foundation/src/web/search, vectors/redaction.json, vectors/arabic-hamza.json, vectors/arabic-search.json): shared observe (telegramAlert, scrubEvent, masks) and Arabic search hooks extracted from Store and Chat, stricter behaviour wins
