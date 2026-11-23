@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Lints the Cloudflare cron schedules in wrangler config files (wrangler.jsonc / wrangler.json / wrangler.toml):
 //   node cron-lint.mjs [file-or-dir ...]     (default: the current directory; node_modules, .git and worktree dirs are skipped)
-// WHY. Cloudflare's day-of-week field is NOT Unix: 1 = SUNDAY ... 7 = SATURDAY, and 0 is rejected. A schedule written with Unix habits (or a
-// weekday NAME) deploys green and /health answers, while the schedule never registers (Ebda 2026-11: 20 h of dead crons hid behind a green deploy).
-// Rules: exactly 5 fields; every field only digits / * / , / - / /; day-of-week 1-7 (never 0, never a name); the other fields in range.
+// WHY. Cloudflare's day-of-week field is NOT Unix: 1 = SUNDAY ... 7 = SATURDAY, and 0 is REJECTED. One invalid cron makes the whole schedules PUT fail:
+// the code deploys, /health shows the new commit, and no schedule registers (Ebda 2026-10-26: 28 job crons, ~20 h of dead crons behind a red deploy).
+// A numeric weekday is therefore a trap either way (0 is invalid, 1 means Sunday not Monday), so weekdays are always NAMES (SUN..SAT, ranges, lists) or `*`.
+// Rules: exactly 5 fields; the day-of-week field is `*` or names, never a digit; the other fields only digits / * / , / - / / and in range.
 // Exit 0 = clean, 1 = a problem (printed as file: "expr": why), 2 = bad usage. Plain Node >= 20, no dependencies.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,18 +15,19 @@ const FIELDS = [
   ['hour', 0, 23],
   ['day of month', 1, 31],
   ['month', 1, 12],
-  ['day of week', 1, 7],
 ];
+const DAY = '(?:SUN|MON|TUE|WED|THU|FRI|SAT)';
+const DOW = new RegExp(`^(?:\\*|${DAY}(?:-${DAY})?(?:,${DAY}(?:-${DAY})?)*)$`);
 
 /** Problems with one cron expression, as readable strings (empty = fine). */
 export function lintCron(expr) {
   const parts = String(expr).trim().split(/\s+/);
   if (parts.length !== 5) return [`needs exactly 5 fields, found ${parts.length}`];
   const problems = [];
-  parts.forEach((f, i) => {
+  parts.slice(0, 4).forEach((f, i) => {
     const [name, lo, hi] = FIELDS[i];
     if (/[A-Za-z]/.test(f)) {
-      problems.push(i === 4 ? `day of week "${f}": names are not accepted, use 1-7 (1 = Sunday)` : `${name} "${f}": names are not accepted, use numbers`);
+      problems.push(`${name} "${f}": names are not accepted, use numbers`);
       return;
     }
     if (!/^[0-9*,/-]+$/.test(f)) {
@@ -33,9 +35,13 @@ export function lintCron(expr) {
       return;
     }
     for (const n of f.match(/\d+/g) ?? []) {
-      if (Number(n) < lo || Number(n) > hi) problems.push(i === 4 && n === '0' ? 'day of week 0 is rejected by Cloudflare (1 = Sunday ... 7 = Saturday)' : `${name} ${n} is outside ${lo}-${hi}`);
+      if (Number(n) < lo || Number(n) > hi) problems.push(`${name} ${n} is outside ${lo}-${hi}`);
     }
   });
+  const dow = parts[4];
+  if (!DOW.test(dow)) {
+    problems.push(/\d/.test(dow) ? `day of week "${dow}": write weekday names (SUN MON TUE WED THU FRI SAT, ranges MON-FRI, lists MON,WED); a digit is a trap: 0 is rejected by Cloudflare and 1 means Sunday, not Monday` : `day of week "${dow}": only * or the names SUN MON TUE WED THU FRI SAT (ranges MON-FRI, lists MON,WED) are accepted`);
+  }
   return [...new Set(problems)];
 }
 
