@@ -20,7 +20,7 @@
   --ebda-control-lg: 44px;
   --ebda-dur-fast: 150ms;
   --ebda-dur-base: 200ms;
-  --ebda-dur-slow: 300ms;
+  --ebda-dur-slow: 250ms;
   --ebda-ease: cubic-bezier(0.2, 0, 0, 1);
   --ebda-app-icon-radius: 22.37%;
 }
