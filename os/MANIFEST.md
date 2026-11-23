@@ -78,7 +78,7 @@ One job (`os`) in `ci.yml`: a checkout plus one `git diff` on every PR (about 10
 
 ## macOS-only scripts
 
-**On-demand fleet tools (register OS-M1/C1/F1, hosted-CI reality; no launchd job, run by the controller or a loop step):** `ops/merge-train.sh` (ordered PR queue, rebase-needed labels, cancels non-head runs, migration-number registry; merges only through `merge-gate.sh`), `ops/capacity.sh` (hosted queue/in-progress per repo against the Free ~20-job limit, host disk tiers; report only, fails closed to UNKNOWN), `ops/fleet-doctor.sh` (ci-target, queue, `main-protection` ruleset, uncovered conflicts, `core.bare`, installed-vs-merged drift, clock) and the `hooks/block-pkill-pattern.sh` PreToolUse deny. All portable GNU+BSD, Linux-smoked.
+**On-demand fleet tools (register OS-M1/C1/F1, hosted-CI reality; `fleet-doctor` has a launchd job since 2026-11-23, the others run by the controller or a loop step):** `ops/merge-train.sh` (ordered PR queue, rebase-needed labels, cancels non-head runs, migration-number registry; merges only through `merge-gate.sh`), `ops/capacity.sh` (hosted queue/in-progress per repo against the Free ~20-job limit, host disk tiers; report only, fails closed to UNKNOWN), `ops/fleet-doctor.sh` (ci-target, queue, `main-protection` ruleset, uncovered conflicts, `core.bare`, installed-vs-merged drift, clock) and the `hooks/block-pkill-pattern.sh` PreToolUse deny. All portable GNU+BSD, Linux-smoked.
 
 These touch launchd, the Keychain `security` tool, `sw_vers`, `xcrun` or similar; the Linux smoke parses them (`bash -n`) but skips `--help`: `ci-runner-guard.sh`, `ecosystem-research-cron.sh`, `os-selftest.sh`, `hung-job-guard.sh`, `install.sh`, `reload-patched-agents.sh`, `statusline.sh`, `runner-restore.sh`, `uninstall.sh`, `lib/job-freshness.sh`, `lib/keychain.sh`.
 
@@ -122,6 +122,7 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | dr-drill | PORT-BRAIN | dr-drill | checks the age of the last restore-drill PASS (digest after 8 days, one P1 after 14); the drill itself is `restore-drill` below (ruling F-I6) |
 | restore-drill | KEEP-MAC | restore-drill | the weekly restore drill needs R2 + age secrets the hands container must not hold; `ops/restore-drill.sh` posts PASS/FAIL to the brain `POST /drill` |
 | drift-watch | KEEP-MAC | drift-watch | diffs installed copies against the repo on disk |
+| fleet-doctor | KEEP-MAC | fleet-doctor | every 15 min (`StartInterval` 900): `ops/fleet-doctor.sh` (read-only verdicts, one notify per distinct FAIL set, writes `$OS_STATE_DIR/fleet-doctor/last.tsv`); `merge-train.sh run` is NOT scheduled (it merges; the controller runs it) |
 | isp-188-watch | KEEP-MAC | isp-188-watch | hourly DoH check that every merchant-facing host resolves outside 188.114.96.0/23 (blocked by the Egyptian ISP, launch map ISP-188); posts `isp-block-range` findings to the brain, skips when nothing changed |
 | ebda-cf-backup | DROP | - | Ruling CF-BACKUP-1 (Ahmad 2026-11-11): GitHub cf-backup.yml (02:17) is the backup; app.ebda.cf-backup-pull keeps the local copy |
 | ebda-foundation-bump | KEEP-MAC | ebda-foundation-bump | git operations in local checkouts |
