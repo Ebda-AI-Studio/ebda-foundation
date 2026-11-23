@@ -56,7 +56,7 @@ ghx() { _ut "$GH_TIMEOUT" gh "$@"; }
 isnum() { case "${1:-}" in ""|*[!0-9]*) return 1 ;; esac; }
 
 case "$cmd" in
-  add)    isnum "${cargs[0]:-}" || { echo "usage: add <pr> [wave]" >&2; exit 2; }; mt state "$STATE" add "${cargs[@]}"; exit $? ;;
+  add)    isnum "${cargs[0]:-}" || { echo "usage: add <pr> [wave]" >&2; exit 2; }; mt state "$STATE" add ${cargs[@]+"${cargs[@]}"}; exit $? ;;
   after)  isnum "${cargs[0]:-}" && isnum "${cargs[1]:-}" || { echo "usage: after <pr> <dep>" >&2; exit 2; }; mt state "$STATE" after "${cargs[0]}" "${cargs[1]}"; exit $? ;;
   prio)   isnum "${cargs[0]:-}" && isnum "${cargs[1]:-}" || { echo "usage: prio <pr> <n>" >&2; exit 2; }; mt state "$STATE" prio "${cargs[0]}" "${cargs[1]}"; exit $? ;;
   remove) isnum "${cargs[0]:-}" || { echo "usage: remove <pr>" >&2; exit 2; }; mt state "$STATE" remove "${cargs[0]}"; exit $? ;;
@@ -136,7 +136,7 @@ if [ "${#eligible[@]}" -gt 0 ]; then
     git -C "$dir" ls-tree -r --name-only origin/main 2>/dev/null | sed -n 's#.*migrations\{0,1\}/0*\([0-9][0-9]*\)[_.-].*#\1#p' > "$mainfile"
   fi
   files=""
-  for pr in "${eligible[@]}"; do
+  for pr in ${eligible[@]+"${eligible[@]}"}; do
     f="$(ghx api "repos/$repo/pulls/$pr/files?per_page=100" --jq '.[].filename' 2>/dev/null)" || f=""
     while IFS= read -r p; do [ -n "$p" ] && files="$files$pr	$p
 "; done <<EOF_F
@@ -151,7 +151,7 @@ fi
 [ -n "$head" ] || { echo "no mergeable head"; exit 0; }
 echo "HEAD $head $headsha"
 i=0
-for pr in "${eligible[@]}"; do
+for pr in ${eligible[@]+"${eligible[@]}"}; do
   sha="${shas[$i]}"; i=$((i+1))
   [ "$pr" = "$head" ] && continue
   while read -r rid; do

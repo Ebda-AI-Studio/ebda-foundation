@@ -48,7 +48,7 @@ verdict() { # subject verdict evidence
   case "$2" in FAIL) nfail=$((nfail+1)) ;; UNKNOWN) nunk=$((nunk+1)) ;; esac
 }
 
-for repo in "${repos[@]}"; do
+for repo in ${repos[@]+"${repos[@]}"}; do
   # ci-target
   rn="?"
   if rj="$(ghx api "repos/$repo/actions/runners" 2>/dev/null)"; then

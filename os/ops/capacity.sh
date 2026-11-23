@@ -66,7 +66,7 @@ print(n, age)
 }
 
 worst=0; rows=""
-for repo in "${repos[@]}"; do
+for repo in ${repos[@]+"${repos[@]}"}; do
   verdict=UNKNOWN; inp="?"; q="?"; oldest="-"; ci="?"; rn="?"
   if ip_json="$(ghx api "repos/$repo/actions/runs?status=in_progress&per_page=100" 2>/dev/null)" \
      && q_json="$(ghx api "repos/$repo/actions/runs?status=queued&per_page=100" 2>/dev/null)" \
