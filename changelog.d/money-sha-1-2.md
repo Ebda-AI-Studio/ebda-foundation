@@ -1,1 +1,0 @@
-- MONEY-SHA-1b: the `controller/money-review` status must be created by an account in `MONEY_STATUS_CREATORS` (default `voidengineer-911`); filtered by creator first, then newest wins; an empty allow-list refuses (a PR's own workflow could post the status as github-actions[bot]).

@@ -1,1 +1,0 @@
-- G14 (scheduled-job failure opens a fixer): `ops/lib/job-failure.sh` + `os-selftest.sh` `check_last_exit`; a launchd job whose last exit code is non-zero files a deduped (per job per day) `review-finding` issue with the secret-masked log tail. Test `lib/__tests__/job-failure.test.sh`.
