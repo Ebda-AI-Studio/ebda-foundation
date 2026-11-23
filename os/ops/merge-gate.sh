@@ -80,12 +80,13 @@ view() {
   if [ -n "${MERGE_GATE_VIEW_CMD:-}" ]; then eval "$MERGE_GATE_VIEW_CMD"
   else gh pr view "$pr" --repo "$repo" --json headRefOid,mergeable,statusCheckRollup; fi
 }
+dh=(); [ "$defer" = 1 ] && dh=(--defer-heavy)
 deadline=$((SECONDS + ${MERGE_GATE_MAX_WAIT_S:-$((maxmin * 60))})); streak=0; sha=""; ticks=0
 while :; do
   json="$(view 2>/dev/null)" || json=""
   if [ -z "$json" ]; then v="wait:could not read the PR"
   else
-    v="$(printf '%s' "$json" | python3 -I "$py" evaluate "$want" "$required" $([ "$defer" = 1 ] && echo --defer-heavy) 2>/dev/null)" || v="wait:could not evaluate the PR json"
+    v="$(printf '%s' "$json" | python3 -I "$py" evaluate "$want" "$required" ${dh[@]+"${dh[@]}"} 2>/dev/null)" || v="wait:could not evaluate the PR json"
     sha="$(printf '%s' "$json" | python3 -I -c 'import json,sys;print(json.load(sys.stdin).get("headRefOid",""))' 2>/dev/null)"
   fi
   case "$v" in
