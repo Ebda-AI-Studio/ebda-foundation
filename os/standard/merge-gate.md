@@ -28,6 +28,15 @@ A failing/cancelled check or a moved head ends the run at once (exit 1); pending
 `--max-wait-min` (180) then exit 2 with nothing merged. No derivable required list (no PR workflow) exits 2.
 Run it from a checkout of the repo (default workflows dir is `<toplevel>/.github/workflows`) or pass `--workflows`.
 
+**Deferred heavy checks (`--defer-heavy-to-merge-group`, Ruling MQ-FULL-LANE-1, Ebda 2026-11-23).** When the repo's merge queue runs the full lane
+on PR+main before anything merges (ebda-store: `merge_group` runs unit shards, integration, E2E, builder E2E, build, audit), a PR whose heavy
+PR-lane runs were CANCELLED (concurrency, controller sweeps, hosted slot limits - never a defect) may be gated with this flag: those cancelled
+heavy checks (`Unit shard`, `Unit Tests`, `App build(s)`, `Integration*`, `E2E Tests`, `Builder E2E`, `Build`, `Worker dry-run`, `Orphan test coverage`,
+`Security Audit`, `Tested tree check`) are dropped from the verdict. Still refused: any FAILED check, zero checks, every required check (explicit
+SUCCESS), `Lint` and `Type Check` (skipped in the merge_group run, so only the PR run proves them), and the light gates (Repo guards, PR body sections,
+Slop/Capability baselines, AI review, gitleaks, CodeQL). The flag refuses (exit 2) when `rules/branches/main` has no `merge_queue` rule. Each use is
+appended to `$MERGE_GATE_DEFER_LOG` (default `~/.claude/handoff/merge-gate-defer.log`). Never use it for money PRs: they keep full PR-lane CI at the stamped head.
+
 ### Cross-repo: the required list is the TARGET repo's (2026-11-12)
 `ops/merge-gate.sh 72 <sha> --repo Ebda-AI-Studio/ebda-whatsapp`, run from ebda-foundation, derived the required list from
 ebda-foundation's own workflows ("OS brain Worker", "OS hands", "OS layer", "PR sanity"...) and waited 90 minutes for checks

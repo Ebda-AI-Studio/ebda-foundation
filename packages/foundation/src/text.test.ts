@@ -59,3 +59,38 @@ describe('text', () => {
     expect([...AR_FOLD_FROM].length).toBe([...AR_FOLD_TO].length);
   });
 });
+
+describe('edge trim stays linear on long whitespace (CodeQL js/polynomial-redos)', () => {
+  it('trims and collapses correctly', () => {
+    expect(foldArabic('   a   b   ')).toBe('a b');
+    expect(indexTokens('  hello,, world!!  ')).toBe('hello world');
+    expect(foldArabic('   ')).toBe('');
+  });
+
+  // Note: SPACES collapses runs before the trim, so the old regex was not reachable-quadratic through this API;
+  // this pins the behaviour and the time bound so a future change that trims before collapsing cannot regress.
+  it('is fast on 400k characters of whitespace around text', () => {
+    const hostile = ' '.repeat(200_000) + 'x' + ' '.repeat(200_000) + 'y';
+    const t0 = performance.now();
+    expect(foldArabic(hostile)).toBe('x y');
+    expect(indexTokens(hostile)).toBe('x y');
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
+  it('the folds are linear: 10k spaces / 10k و / 10k punctuation stay under 50 ms and trim byte-identically to btrim(x, \' \')', () => {
+    const ms = (f: () => unknown) => {
+      const t0 = performance.now();
+      f();
+      return performance.now() - t0;
+    };
+    for (const i of [' '.repeat(10_000), ' x'.repeat(5_000), 'و'.repeat(10_000), '!'.repeat(10_000), '\u2009'.repeat(10_000), 'ءئؤ'.repeat(3_000)]) {
+      expect(ms(() => foldArabic(i))).toBeLessThan(50);
+      expect(ms(() => foldArabicHamza(i))).toBeLessThan(50);
+      expect(ms(() => indexTokens(i))).toBeLessThan(50);
+      expect(ms(() => indexTokensHamza(i))).toBeLessThan(50);
+    }
+    // edge trim removes ONLY U+0020 (SQL btrim(x, ' ')), after the collapse of [ \t\n\r U+00A0]+
+    expect(foldArabic('  \t x \u2009 ')).toBe('x \u2009');
+    expect(foldArabicHamza('  \t x \u2009 ')).toBe('x');
+    expect(foldArabic(' '.repeat(10_000))).toBe('');
+  });
+});

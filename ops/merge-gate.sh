@@ -22,7 +22,7 @@
 # checkout, pass --workflows <target checkout>/.github/workflows (or run from the target checkout via the installed gate);
 # without it the gate refuses (exit 2) rather than demand this repo's checks from another repo's PR (2026-11-12: ebda-whatsapp
 # #72 waited 90 min for ebda-foundation's "OS brain Worker" / "PR sanity").
-# test seams: MERGE_GATE_VIEW_CMD (prints the `gh pr view --json headRefOid,mergeable,statusCheckRollup` JSON),
+# test seams: MERGE_GATE_VIEW_CMD (prints the `gh pr view --json state,headRefOid,mergeable,statusCheckRollup` JSON),
 #             MERGE_GATE_MERGE_CMD (replaces the final gh pr merge), MERGE_GATE_REQUIRED_JSON, MERGE_GATE_MAX_WAIT_S, MERGE_GATE_MAX_TICKS.
 set -uo pipefail
 pr="${1:?usage: merge-gate.sh <pr> <expected-head-sha> [--repo R] [--polls N] [--interval S] [--max-wait-min M] [--dry-run]}"
@@ -45,7 +45,7 @@ else
   if [ -z "$wfdir" ]; then
     # no explicit dir: $root's workflows are only right when --repo IS the repo that owns $root; fail closed otherwise
     origin="$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$root" remote get-url origin 2>/dev/null | sed -E 's#/+$##; s#^.*[:/]([^/:]+/[^/]+)$#\1#; s#\.git$##')"
-    if [ -z "$origin" ] || [ "$(printf %s "$origin" | tr 'A-Z' 'a-z')" != "$(printf %s "$repo" | tr 'A-Z' 'a-z')" ]; then
+    if [ -z "$origin" ] || [ "$(printf %s "$origin" | tr '[:upper:]' '[:lower:]')" != "$(printf %s "$repo" | tr '[:upper:]' '[:lower:]')" ]; then
       echo "merge-gate: --repo $repo is not the checkout at $root (origin: ${origin:-unknown}); its workflows would give the wrong required checks. Pass --workflows <$repo checkout>/.github/workflows; refusing" >&2; exit 2
     fi
     wfdir="$root/.github/workflows"
@@ -57,7 +57,7 @@ fi
 
 view() {
   if [ -n "${MERGE_GATE_VIEW_CMD:-}" ]; then eval "$MERGE_GATE_VIEW_CMD"
-  else gh pr view "$pr" --repo "$repo" --json headRefOid,mergeable,statusCheckRollup; fi
+  else gh pr view "$pr" --repo "$repo" --json state,headRefOid,mergeable,statusCheckRollup; fi
 }
 
 # one verdict word per poll: ok | wait:<why> | refuse:<why>
@@ -85,6 +85,12 @@ evaluate() {
 deadline=$((SECONDS + ${MERGE_GATE_MAX_WAIT_S:-$((maxmin * 60))})); streak=0; sha=""; ticks=0
 while :; do
   json="$(view 2>/dev/null)" || json=""
+  # PR state first, on EVERY poll: a PR merged/closed by someone else must end the gate, not poll to the deadline.
+  pstate="$(echo "$json" | jq -r '.state // empty' 2>/dev/null || true)"
+  case "$pstate" in
+    MERGED) echo "merge-gate: PR $pr already merged; nothing to do"; exit 0 ;;
+    CLOSED) echo "merge-gate: REFUSED PR $pr: closed without merging" >&2; exit 1 ;;
+  esac
   if [ -z "$json" ]; then v="wait:could not read the PR"; else v="$(echo "$json" | evaluate)"; sha="$(echo "$json" | jq -r .headRefOid)"; fi
   case "$v" in
     ok) streak=$((streak + 1)); echo "merge-gate: PR $pr green poll $streak/$polls"

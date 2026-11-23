@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { DENIED_KEY, buildAlertText, errClass, maskEmail, maskPhone, maskPhones, memoryThrottle, redactEmails, redactFreeText, safeMessage, scrubEvent, scrubRequestUrl, telegramAlert, type EventLike } from './index';
+import { redactSensitiveQuery, DENIED_KEY, buildAlertText, errClass, maskEmail, maskPhone, maskPhones, memoryThrottle, redactEmails, redactFreeText, safeMessage, scrubEvent, scrubRequestUrl, telegramAlert, type EventLike } from './index';
 
 type V = { maskPhones: [string, string][]; redactEmails: [string, string][]; scrubRequestUrl: [string, string | null][]; safeMessage: [string, string][] };
 const v = JSON.parse(readFileSync(new URL('../../../../vectors/redaction.json', import.meta.url), 'utf8')) as V;
@@ -147,5 +147,31 @@ describe('telegramAlert', () => {
   it('DENIED_KEY covers the keys that carry people and credentials', () => {
     for (const k of ['name', 'customerName', 'phone', 'waId', 'wa_id', 'botToken', 'password', 'authorization', 'email', 'body']) expect(DENIED_KEY.test(k), k).toBe(true);
     for (const k of ['orderId', 'workspace', 'error', 'count']) expect(DENIED_KEY.test(k), k).toBe(false);
+  });
+});
+
+describe('linear time on adversarial input (CodeQL js/polynomial-redos)', () => {
+  const ms = (f: () => unknown) => {
+    const t = performance.now();
+    f();
+    return performance.now() - t;
+  };
+  it('url-scrub: 10k "[", 10k spaces, repeated separators and a long unterminated key stay under 50 ms', () => {
+    const inputs = ['['.repeat(10_000), ' '.repeat(10_000), '?'.repeat(10_000), '&'.repeat(10_000), '/'.repeat(10_000), 'a'.repeat(10_000), 'a=['.repeat(3_000), '?q[[[[' + '['.repeat(10_000), '?' + '['.repeat(10_000) + '=x', '[]'.repeat(5_000)];
+    for (const i of inputs) {
+      expect(ms(() => redactSensitiveQuery(i)), i.slice(0, 8)).toBeLessThan(50);
+      expect(ms(() => redactSensitiveQuery(`?${i}=1&q=${i}`)), i.slice(0, 8)).toBeLessThan(50);
+    }
+  });
+  it('array-suffix keys are still recognised exactly as before', () => {
+    for (const k of ['q[]', 'q[0]', 'Q[1]', 'search[x]']) expect(redactSensitiveQuery(`?${k}=secret`), k).toContain('[Filtered]');
+    for (const k of ['q[a]b]', 'q[0]x', 'page[]', 'qq']) expect(redactSensitiveQuery(`?${k}=secret`), k).not.toContain('[Filtered]');
+    expect(redactSensitiveQuery('?q[[0]=secret')).toContain('[Filtered]'); // leftmost "[" after the last "]": the old regex stripped from the first "["
+  });
+  it('scrubEvent and the masks stay linear on 10k spaces, digits and "[" too', () => {
+    const big = ' '.repeat(10_000);
+    expect(ms(() => scrubEvent({ message: big + 'x' + big, request: { url: 'https://x.ebda.app/' + '['.repeat(10_000) } }))).toBeLessThan(50);
+    expect(ms(() => maskPhones('0'.repeat(10_000)))).toBeLessThan(50);
+    expect(ms(() => redactEmails('@'.repeat(5_000) + ' ' + 'a'.repeat(5_000)))).toBeLessThan(50);
   });
 });

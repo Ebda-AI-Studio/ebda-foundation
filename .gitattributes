@@ -1,2 +1,5 @@
 # Append-only ledger: two PRs that each add a ruling at the end keep both on a LOCAL merge (GitHub's own mergeability check ignores this).
 docs/RULINGS.md merge=union
+
+# Counsel-approved legal text is vendored byte for byte: never normalise line endings or whitespace.
+legal/** -text
