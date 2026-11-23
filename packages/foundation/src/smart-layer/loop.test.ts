@@ -335,14 +335,14 @@ describe('runTurn: an empty reply is not a provider failure', () => {
     expect(r.status).toBe('limited');
     expect(textOf(r)).toBe(MSG.emptyModel.ar);
     expect(textOf(r)).not.toBe(MSG.providerFail.ar);
-    expect(f.state.audit.at(-1)!.rails.emptyModel).toBe(1);
+    expect(f.storage.audits.at(-1)!.rails.emptyModel).toBe(1);
   });
   it('a reply the rails strip to nothing gets its own message, status limited, and the stage that emptied it', async () => {
     const f = fakeAdapter();
     const r = await runTurn(f.adapter, f.ctx(), { text: ask }, { provider: scriptedProvider([say('[[cap:does.not.exist]]')]) });
     expect(r.status).toBe('limited');
     expect(textOf(r)).toBe(MSG.emptyRender.ar);
-    expect(f.state.audit.at(-1)!.rails.emptyRender).toBe('render');
+    expect(f.storage.audits.at(-1)!.rails.emptyRender).toBe('render');
   });
   it('a real provider failure still says so', async () => {
     const f = fakeAdapter();
