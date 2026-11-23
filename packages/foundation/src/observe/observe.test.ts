@@ -79,13 +79,13 @@ describe('telegramAlert', () => {
     const t = buildAlertText({
       ...base, scope: 'workspace', scopeLine: 'abcd1234…', env: 'production', runbook: 'https://docs/x.md',
       fields: { orderId: 'o_1', customerName: 'محمد أحمد', phone: '01012345678', note: 'اتصل 01012345678', ids: ['a', 'b'], deep: { a: 1 } },
-      body: 'العميل منى على 01112223334', context: { name: 'منى', ref: 'r1', note: 'x@y.com' },
+      body: 'العميل منى على 01112223334', context: { name: 'منى', ref: 'r1', note: 'x@y.com', apiKey: 'k-123', nested: { authToken: 't' } },
     });
     expect(t.split('\n').slice(0, 4)).toEqual(['🔴 Ebda Chat: instapay_confirmed_not_granted', '[P0 WORKSPACE]', 'workspace=abcd1234…', 'env=production · runbook=https://docs/x.md']);
     expect(t).toContain('orderId=o_1'); expect(t).toContain('ids=a,b'); expect(t).toContain('note=اتصل [phone]');
-    expect(t).not.toContain('محمد'); expect(t).not.toContain('منى\n'); expect(t).not.toMatch(/\d{8,}/); expect(t).not.toContain('x@y.com');
+    expect(t).not.toContain('محمد'); expect(t).toContain('"name": "منى"'); // context keeps product-authored keys (an error name, a store name) expect(t).not.toMatch(/\d{8,}/); expect(t).not.toContain('x@y.com');
     expect(t).toContain('العميل منى على [phone]'); // free-text Arabic names cannot be detected: only structured denied keys drop them (PR body: residual)
-    expect(t).not.toContain('deep');
+    expect(t).not.toContain('deep'); expect(t).not.toContain('k-123'); expect(t).toContain('"ref": "r1"');
   });
   it('platform scope has no scope line; info is blue; text is capped at 4096', () => {
     expect(buildAlertText({ ...base, level: 'info', scopeLine: 'ignored' }).split('\n').slice(0, 2)).toEqual(['🔵 Ebda Chat: instapay_confirmed_not_granted', '[INFO PLATFORM]']);
@@ -101,6 +101,19 @@ describe('telegramAlert', () => {
     expect(JSON.parse(String(init.body))).toMatchObject({ chat_id: 'c' });
     expect(await telegramAlert({ token: 't', chatId: 'c', fetch: vi.fn(async () => new Response('no', { status: 500 })) }, base)).toBe('failed');
     expect(await telegramAlert({ token: 't', chatId: 'c', fetch: vi.fn(async () => { throw new Error('boom 01012345678'); }) }, base)).toBe('failed');
+  });
+  it('reports a rejection and a throw to onError, sends disable_web_page_preview when asked, and survives a throwing onError', async () => {
+    const seen: unknown[] = [];
+    const onError = (i: unknown) => { seen.push(i); };
+    const bad = vi.fn(async () => new Response('chat not found', { status: 400 }));
+    expect(await telegramAlert({ token: 't', chatId: 'c', fetch: bad as unknown as typeof fetch, onError, disableWebPagePreview: true }, base)).toBe('failed');
+    expect(JSON.parse(String((bad.mock.calls[0] as unknown as [string, RequestInit])[1].body))).toMatchObject({ disable_web_page_preview: true });
+    expect(await telegramAlert({ token: 't', chatId: 'c', fetch: vi.fn(async () => { throw new Error('x'); }) as unknown as typeof fetch, onError }, base)).toBe('failed');
+    expect(seen).toEqual([{ status: 400, detail: 'chat not found' }, { err: expect.any(Error) }]);
+    expect(await telegramAlert({ token: 't', chatId: 'c', fetch: bad as unknown as typeof fetch, onError: () => { throw new Error('logger down'); } }, base)).toBe('failed');
+    const plain = vi.fn(async () => new Response('{}'));
+    await telegramAlert({ token: 't', chatId: 'c', fetch: plain as unknown as typeof fetch }, base);
+    expect(JSON.parse(String((plain.mock.calls[0] as unknown as [string, RequestInit])[1].body))).not.toHaveProperty('disable_web_page_preview');
   });
   it('times out a fetch that never settles', async () => {
     const hang = vi.fn((_u: string, init?: RequestInit) => new Promise<Response>((_r, rej) => init?.signal?.addEventListener('abort', () => rej(new Error('aborted')))));

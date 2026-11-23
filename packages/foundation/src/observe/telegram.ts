@@ -43,13 +43,16 @@ const LEVEL_EMOJI: Record<AlertLevel, string> = { p0: '🔴', p1: '🟠', info: 
 /** Keys whose values can be a person's data or a credential: never rendered, whatever the caller passed. */
 export const DENIED_KEY = /^(to|from|body|text|code|email|caption|address|message|name|customer\w*)$|phone|wa_?id|token|secret|password|authorization/i;
 
+/** Context is product-authored JSON (a stack, an error name, queue stats): only credentials are dropped by key, every string value is masked. */
+export const CONTEXT_DENIED_KEY = /token|secret|password|authorization|api[_-]?key/i;
+
 const mask = (s: string): string => redactEmails(maskPhones(s));
 
 function maskDeep(v: unknown, depth = 0): unknown {
   if (typeof v === 'string') return mask(v);
   if (!v || typeof v !== 'object' || depth > 6) return v;
   if (Array.isArray(v)) return v.map((x) => maskDeep(x, depth + 1));
-  return Object.fromEntries(Object.entries(v).filter(([k]) => !DENIED_KEY.test(k)).map(([k, x]) => [k, maskDeep(x, depth + 1)]));
+  return Object.fromEntries(Object.entries(v).filter(([k]) => !CONTEXT_DENIED_KEY.test(k)).map(([k, x]) => [k, maskDeep(x, depth + 1)]));
 }
 
 export function renderFields(fields: Record<string, unknown>): string[] {
@@ -127,6 +130,10 @@ export interface TelegramConfig {
   fetch?: typeof fetch;
   /** Hard cap on connect + headers + body. Default 5000. */
   timeoutMs?: number;
+  /** Telegram's `disable_web_page_preview` (the Store sets it; runbook links in Chat keep their preview). Default false. */
+  disableWebPagePreview?: boolean;
+  /** Called (never throws into the sender) when delivery fails, so the product logs it with ITS logger: `status` + `detail` for a rejection, `err` for a throw. */
+  onError?: (info: { status?: number; detail?: string; err?: unknown }) => void;
 }
 export interface TelegramAlertOptions {
   throttle?: ThrottleStore;
@@ -156,15 +163,26 @@ export async function telegramAlert(cfg: TelegramConfig, alert: AlertMessage, op
       const res = await (cfg.fetch ?? fetch)(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: cfg.chatId, text: buildAlertText({ ...alert, suppressed }) }),
+        body: JSON.stringify({ chat_id: cfg.chatId, text: buildAlertText({ ...alert, suppressed }), ...(cfg.disableWebPagePreview ? { disable_web_page_preview: true } : {}) }),
         signal: controller.signal,
       });
-      await res.text().catch(() => undefined);
-      return res.ok ? 'sent' : 'failed';
+      const detail = await res.text().catch(() => '');
+      if (!res.ok) {
+        notify(cfg, { status: res.status, detail: detail.slice(0, 500) });
+        return 'failed';
+      }
+      return 'sent';
     } finally {
       clearTimeout(timer);
     }
-  } catch {
+  } catch (err) {
+    notify(cfg, { err });
     return 'failed';
   }
+}
+
+function notify(cfg: TelegramConfig, info: { status?: number; detail?: string; err?: unknown }): void {
+  try {
+    cfg.onError?.(info);
+  } catch { /* a broken logger must not break the sender */ }
 }
