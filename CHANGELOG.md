@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## v0.4.3
+- BINDING-LIST-1 (packages/foundation/src/smart-layer/rails/binding-claims.ts, binding-claims.test.ts): an unsourced sentence on a numbered/bulleted line drops that line and renumbers the block instead of becoming the pointer text (#173)
+
 ## v0.4.2
 - SMART-EMPTY-1 (packages/foundation/src/smart-layer/loop.ts, loop.test.ts): an empty model reply or empty render is no longer reported as a provider failure; it gets its own message and rail marker (#171)
 
