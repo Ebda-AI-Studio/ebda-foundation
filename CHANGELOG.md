@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.1
+- FDN-BUMP-1 (.github/workflows/foundation-bump.yml, docs/rulings/FDN-BUMP-1.md): a missing EBDA_FOUNDATION_BUMP_TOKEN now warns (summary + one Telegram alert) instead of failing main red; real errors with a token still fail
+- ERASABLE-TS-1 (packages/foundation/src/request-guard.ts, identity-claims.ts, instapay-dedupe.ts, smart-layer/plan/budget.ts, smart-layer/provider.ts, tsconfig.json, test/erasable-syntax.test.ts): v0.4.0 shipped TypeScript parameter properties that Node strip-only mode rejects (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX), so consumers running vendored foundation under type stripping could not start; rewritten as explicit fields (behaviour identical), `erasableSyntaxOnly` enabled in tsconfig and a test strips every vendored file with node:module
+
 ## v0.4.0
 - AI-REVIEW-SIZE-1 (.github/workflows/ai-review.yml, ci/ai-review/size-stamp.mjs): a diff over 400 KB passes the AI review check only with a success `controller/review` or `controller/money-review` commit status on the head from an allowed account (AI_REVIEW_STAMP_CREATORS, default voidengineer-911); otherwise it fails; re-run the job after stamping
 - F8-F10 (packages/foundation/src/studio-pages.ts, legal/, ops/, lib/foundation.mjs): studio pages as `createStudioPages(brand, mark)`, counsel-approved legal fragments moved byte for byte (`legal/`, vendored under `<dir>/legal`), ops scripts (merge-gate, pre-push-gate, deploy-verify, cron-lint, logpush-setup) vendored with `sync --ops`
