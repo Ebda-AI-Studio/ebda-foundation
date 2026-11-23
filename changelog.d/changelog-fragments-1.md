@@ -1,1 +1,0 @@
-- CHANGELOG-FRAGMENTS-1 (`changelog.d/`, `os/ops/changelog-assemble.sh`, `os/ops/tests/changelog-assemble.test.sh`, CI PR sanity): unreleased changes are one fragment file each and `## Unreleased` stays empty; a release folds them in. A hand-written Unreleased bullet or a malformed fragment fails PR sanity.

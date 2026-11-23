@@ -1,1 +1,0 @@
-- MAIN-RED-FREEZE-1 review fixes: only a 409 is recorded as a ghost (any other cancel failure is retried next cycle); a thaw drops the frozen runs of closed PRs and PRs whose head moved (never re-runs them).

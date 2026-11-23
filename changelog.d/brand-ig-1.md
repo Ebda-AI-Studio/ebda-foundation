@@ -1,1 +1,0 @@
-- BRAND-IG-1 (`packages/foundation/src/brand.ts`): the Ebda Instagram is `https://www.instagram.com/ebdaai.studio/` (Meta closed `ebdaaistudio`; `ebdaai_studio` with an underscore is a third party and must appear nowhere). Facebook and TikTok keep the `ebdaaistudio` handle. Consumers pick it up on the next foundation tag + `sync`.
