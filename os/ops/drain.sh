@@ -113,14 +113,15 @@ for p in json.load(sys.stdin):
 ' ${PRLIST[@]+"${PRLIST[@]}"} 2>/dev/null || return 3
 }
 
-# MAIN-RED STOP: latest COMPLETED push run of the main CI workflow. Prints "<conclusion> <sha9>"; rc 0 only when success.
-# Unreadable, or no completed run, is "unknown" and not green (fail closed).
+# MAIN-RED STOP: latest COMPLETED push run of the main CI workflow that was not CANCELLED. Prints "<conclusion> <sha9>"; rc 0 only when success.
+# A cancelled run (a newer push superseded it, concurrency cancel-in-progress) says nothing about main's health, so it is skipped and the latest success/failure
+# decides. Unreadable, or no completed non-cancelled run in the last 20, is "unknown" and not green (fail closed).
 main_state() {
   local raw out
-  raw="$(gh run list --repo "$REPO" --branch main --event push --workflow "$MAIN_WF" --status completed --limit 1 --json conclusion,headSha 2>/dev/null)" || { echo "unreadable -"; return 1; }
+  raw="$(gh run list --repo "$REPO" --branch main --event push --workflow "$MAIN_WF" --status completed --limit 20 --json conclusion,headSha 2>/dev/null)" || { echo "unreadable -"; return 1; }
   out="$(printf '%s' "$raw" | python3 -I -c '
 import json, sys
-r = json.load(sys.stdin)
+r = [x for x in json.load(sys.stdin) if (x.get("conclusion") or "").lower() != "cancelled"]
 print((r[0].get("conclusion") or "none") + " " + (r[0].get("headSha") or "-")[:9]) if r else print("no-completed-run -")
 ' 2>/dev/null)" || { echo "unreadable -"; return 1; }
   echo "$out"; case "$out" in "success "*) return 0 ;; *) return 1 ;; esac

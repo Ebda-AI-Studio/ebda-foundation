@@ -108,7 +108,10 @@ reset; on; run --bogus >/dev/null 2>&1; [ $? = 2 ] && ok "unknown flag exits 2" 
 # main red: merge nothing, say so
 reset; on; prs "$(pr 1 a1 green)"; main failure abc123456789
 out="$(run)"; [ "$(calls)" = 0 ] && printf '%s' "$out" | grep -q 'MAIN NOT GREEN failure abc123456 - paused' && ok "main CI red: no merge, 'MAIN NOT GREEN <sha> - paused'" || no "merged or silent on red main ($out)"
-reset; on; prs "$(pr 1 a1 green)"; main cancelled; run >/dev/null; [ "$(calls)" = 0 ] && ok "main CI cancelled is not green" || no "merged on cancelled main"
+reset; on; prs "$(pr 1 a1 green)"; main cancelled; run >/dev/null; [ "$(calls)" = 0 ] && ok "main CI cancelled (and nothing else) is not green" || no "merged on cancelled main"
+# a cancelled newest run is skipped: the latest success/failure behind it decides
+reset; on; prs "$(pr 1 a1 green)"; echo '[{"conclusion":"cancelled","headSha":"c1c1c1c1c1c1"},{"conclusion":"success","headSha":"5a5a5a5a5a5a"}]' > "$MAIN_FILE"; run >/dev/null; [ "$(calls)" -ge 1 ] && ok "cancelled newest main run skipped: green behind it lets the drain merge" || no "cancelled main run still pauses the drain"
+reset; on; prs "$(pr 1 a1 green)"; echo '[{"conclusion":"cancelled","headSha":"c1c1c1c1c1c1"},{"conclusion":"failure","headSha":"f1f1f1f1f1f1"},{"conclusion":"success","headSha":"5a5a5a5a5a5a"}]' > "$MAIN_FILE"; out="$(run)"; [ "$(calls)" = 0 ] && printf '%s' "$out" | grep -q 'MAIN NOT GREEN failure f1f1f1f1f - paused' && ok "cancelled skipped, the failure behind it still pauses" || no "red main hidden behind a cancelled run ($out)"
 reset; on; prs "$(pr 1 a1 green)"; echo '[]' > "$MAIN_FILE"; out="$(run)"; [ "$(calls)" = 0 ] && printf '%s' "$out" | grep -q 'MAIN NOT GREEN' && ok "no completed main run = unknown = paused" || no "merged with no main run on record"
 reset; on; prs "$(pr 1 a1 green)"; GH_FAIL=1 run >/dev/null; [ "$(calls)" = 0 ] && ok "unreadable main state merges nothing" || no "merged on unreadable main"
 reset; on; prs "$(pr 1 a1 green)"; run >/dev/null; [ "$(calls)" = 1 ] && ok "main CI green: merges" || no "green main did not merge"
