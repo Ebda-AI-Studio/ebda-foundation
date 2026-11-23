@@ -92,7 +92,7 @@ function caseInsensitiveReplaceAll(text: string, needle: string, by: string): st
  * addresses only when every comma/semicolon-separated piece is either free of "@" or, once its
  * wrapping punctuation (`<>()[]"'`, `mailto:`, a trailing `.`/`:`) is set aside, a CLEAN_ADDRESS.
  * Anything a mail parser could read differently (two "@", a quoted or commented local part,
- * `a(x)@b.com`, `x<a@b.com>`, an "@" with no dotted domain) is replaced WHOLE by `***`, so no
+ * `a(x)@example.invalid`, `x<a@example.invalid>`, an "@" with no dotted domain) is replaced WHOLE by `***`, so no
  * local-part character beyond the first survives a split we are not sure of.
  */
 function maskAddressToken(tok: string): string {
