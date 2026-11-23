@@ -23,6 +23,13 @@ describe('shared Arabic search (F7)', () => {
     }
     expect(highlightSegments('شنطة جلد', 'شنطه').filter((s) => s.match).map((s) => s.text)).toEqual(['شنطة']);
   });
+  it('highlights across hamza seats and a collapsed waw in the ORIGINAL spelling (F7-HAMZA-1)', () => {
+    const marked = (t: string, q: string) => highlightSegments(t, q).filter((x) => x.match).map((x) => x.text);
+    expect(marked('مسؤول الحسابات', 'مسئول')).toEqual(['مسؤول']);
+    expect(marked('مسئول الحسابات', 'مسؤول')).toEqual(['مسئول']);
+    expect(marked('سؤال عن الشحن', 'سئوال')).toEqual(['سؤال']);
+    expect(marked('جَزْمَة', 'جزمه')).toEqual(['جَزْمَة']);
+  });
   it('searchTokens caps at 8 words and drops punctuation-only input; escapeLike escapes % _ \\', () => {
     expect(searchTokens('a b c d e f g h i j')).toHaveLength(8);
     expect(searchTokens('   ')).toEqual([]);
