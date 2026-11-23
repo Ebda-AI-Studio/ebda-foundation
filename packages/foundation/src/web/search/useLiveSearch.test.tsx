@@ -36,6 +36,22 @@ describe('useLiveSearch', () => {
     expect(b.result.current.status).toBe('idle');
   });
 
+  it('refreshKey drops the cache and searches the same query again, showing loading meanwhile', async () => {
+    vi.useFakeTimers();
+    const search = vi.fn(async (q: string) => [q]);
+    const { result, rerender } = renderHook(({ k }) => useLiveSearch({ query: 'ح', search, refreshKey: k }), { initialProps: { k: 1 } });
+    await tick(160);
+    expect(search).toHaveBeenCalledTimes(1);
+    rerender({ k: 1 });
+    await tick(160);
+    expect(search).toHaveBeenCalledTimes(1);
+    rerender({ k: 2 });
+    expect(result.current.status).toBe('loading');
+    await tick(160);
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe('ready');
+  });
+
   it('aborts the superseded request and never shows its results', async () => {
     vi.useFakeTimers();
     const resolvers: Record<string, (v: string[]) => void> = {};

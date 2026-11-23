@@ -19,6 +19,8 @@ export interface UseLiveSearchOptions<T> {
   enabled?: boolean;
   /** Bounded per-instance cache of settled queries (0 disables). Default 30. */
   cacheSize?: number;
+  /** Anything the `search` function closes over (a filter, a reload tick): when it changes the cache is dropped and the SAME query searches again. */
+  refreshKey?: unknown;
 }
 
 export interface LiveSearchState<T> {
@@ -42,6 +44,7 @@ export function useLiveSearch<T>({
   maxChars = 100,
   enabled = true,
   cacheSize = 30,
+  refreshKey,
 }: UseLiveSearchOptions<T>): LiveSearchState<T> {
   const trimmed = query.trim().slice(0, maxChars);
   const active = enabled && trimmed.length >= minChars;
@@ -54,8 +57,14 @@ export function useLiveSearch<T>({
   const searchRef = useRef(search);
   searchRef.current = search;
   const cacheRef = useRef(new Map<string, T[]>());
+  const refreshRef = useRef(refreshKey);
 
   useEffect(() => {
+    if (!Object.is(refreshRef.current, refreshKey)) {
+      refreshRef.current = refreshKey;
+      cacheRef.current.clear();
+      setState(idle<T>()); // the visible results answer an older filter: show loading, not them
+    }
     if (!active) {
       setState(s => (s.status === 'idle' && s.settledQuery === '' ? s : idle<T>()));
       return;
@@ -85,7 +94,7 @@ export function useLiveSearch<T>({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [trimmed, active, debounceMs, cacheSize]);
+  }, [trimmed, active, debounceMs, cacheSize, refreshKey]);
 
   if (!active) return idle<T>();
   // Anything not answering the current query is "loading", never the older results.
