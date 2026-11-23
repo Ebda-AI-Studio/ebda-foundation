@@ -17,3 +17,21 @@ describe('text', () => {
     expect(phoneDigits('+٢٠ ١٠٠-١٢٣')).toBe('20100123');
   });
 });
+
+describe('edge trim stays linear on long whitespace (CodeQL js/polynomial-redos)', () => {
+  it('trims and collapses correctly', () => {
+    expect(foldArabic('   a   b   ')).toBe('a b');
+    expect(indexTokens('  hello,, world!!  ')).toBe('hello world');
+    expect(foldArabic('   ')).toBe('');
+  });
+
+  // Note: SPACES collapses runs before the trim, so the old regex was not reachable-quadratic through this API;
+  // this pins the behaviour and the time bound so a future change that trims before collapsing cannot regress.
+  it('is fast on 400k characters of whitespace around text', () => {
+    const hostile = ' '.repeat(200_000) + 'x' + ' '.repeat(200_000) + 'y';
+    const t0 = performance.now();
+    expect(foldArabic(hostile)).toBe('x y');
+    expect(indexTokens(hostile)).toBe('x y');
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
+});
