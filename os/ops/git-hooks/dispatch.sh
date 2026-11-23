@@ -61,7 +61,7 @@ case "$name" in
   pre-commit|pre-merge-commit|post-merge)
     RCG="${ROOT_GUARD_BIN:-$HOME/.claude/scripts/root-checkout-guard.sh}"
     if [ -f "$RCG" ]; then
-      OS_PROJECTS_DIR="${OS_PROJECTS_DIR:-$HOME/Desktop/projects}" bash "$RCG" "$name" || exit 1
+      bash "$RCG" "$name" || exit 1
     fi ;;
 esac
 

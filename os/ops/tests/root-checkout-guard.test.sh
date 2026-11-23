@@ -11,7 +11,7 @@ pass=0; fail=0
 ok(){ if [ "$2" = "$3" ]; then echo "PASS: $1"; pass=$((pass+1)); else echo "FAIL: $1 - got '$2' want '$3'"; fail=$((fail+1)); fi; }
 TMP="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"; mkdir -p "$HOME"
-P="$HOME/Desktop/projects"; export OS_PROJECTS_DIR="$P"
+P="$HOME/projects-root"; export OS_PROJECTS_DIR="$P"
 HK="$TMP/hooks"; mkdir -p "$HK"; cp "$OPS/git-hooks/dispatch.sh" "$HK/dispatch.sh"
 for h in pre-commit pre-merge-commit post-merge; do ln -s dispatch.sh "$HK/$h"; done
 export ROOT_GUARD_BIN="$OPS/root-checkout-guard.sh"
@@ -31,7 +31,7 @@ g() { local d="$1"; shift; ( cd "$d" && env -u GIT_DIR -u GIT_WORK_TREE -u GIT_I
 commit() { echo "$RANDOM" > "$1/f"; g "$1" git add f >/dev/null; g "$1" git commit -q -m x "${@:2}" 2>&1; }
 
 IN="$P/Ebda-AI-Studio/internal-projects/r1"; mkrepo "$IN"
-CL="$P/Force-AI/clients/acme/r2"; mkrepo "$CL"
+CL="$P/Acme-Co/clients/acme/r2"; mkrepo "$CL"
 OUT="$P/Personal/elsewhere/r3"; mkrepo "$OUT"
 # the hooksPath config must not itself trip anything while setting up; start clean logs
 rm -f "$LOG"
@@ -60,10 +60,13 @@ ok "refused merge left main where it was" "$(g "$IN" git rev-parse main)" "$befo
 g "$IN" git merge --abort >/dev/null 2>&1
 g "$IN" git reset -q --hard origin/main
 # advance origin (via a clone) then ff root main from origin/main
-CLN="$TMP/clone"; git clone -q -b main "$IN.origin.git" "$CLN"; echo o > "$CLN/o"; sandbox_git "$CLN" add o; sandbox_git "$CLN" commit -q -m up; sandbox_git "$CLN" push -q origin main
+CLN="$TMP/clone"; git clone -q -b main "$IN.origin.git" "$CLN"
+sandbox_git "$CLN" config user.email t@t; sandbox_git "$CLN" config user.name t; sandbox_git "$CLN" config commit.gpgsign false  # a clone has no identity (no global config here)
+echo o > "$CLN/o"; sandbox_git "$CLN" add o; sandbox_git "$CLN" commit -q -m up; sandbox_git "$CLN" push -q origin main
 g "$IN" git fetch -q origin
+tip0="$(g "$IN" git rev-parse HEAD)"
 g "$IN" git merge --ff-only -q origin/main >/dev/null 2>&1; ok "ff merge of origin/main on root main: allowed" "$?" "0"
-ok "ff merge actually advanced root main past the old tip" "$([ "$(g "$IN" git rev-parse main)" != "$before" ] && echo moved)" "moved"
+ok "ff merge actually advanced root main past the old tip" "$([ "$(g "$IN" git rev-parse HEAD)" != "$tip0" ] && echo moved || echo stuck)" "moved"
 ok "ff merge landed on origin/main" "$(g "$IN" git rev-parse main)" "$(g "$IN" git rev-parse origin/main)"
 # ff of a LOCAL unpushed branch moves main ahead of origin: not refused (documented), but warned post-merge
 g "$IN" git checkout -q -b side2; echo t > "$IN/t"; g "$IN" git add t; EBDA_ALLOW_ROOT_COMMIT=1 g "$IN" git commit -q -m side2; g "$IN" git checkout -q main
