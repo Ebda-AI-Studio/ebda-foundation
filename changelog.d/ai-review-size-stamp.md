@@ -1,0 +1,1 @@
+- AI-REVIEW-SIZE-1 (.github/workflows/ai-review.yml, ci/ai-review/size-stamp.mjs): a diff over 400 KB passes the AI review check only with a success `controller/review` or `controller/money-review` commit status on the head from an allowed account (AI_REVIEW_STAMP_CREATORS, default voidengineer-911); otherwise it fails; re-run the job after stamping
