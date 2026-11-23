@@ -86,7 +86,10 @@ while IFS='|' read -r name url expect _; do
 done <<< "$PROBES"
 
 mark() { # mark <name...> alerted now (only after a delivered alert)
-  for n in "$@"; do n="${n%% *}"; [ -f "$SD/$n.state" ] && sed -i '' "s/^alerted=.*/alerted=$NOW/" "$SD/$n.state"; done
+  for n in "$@"; do n="${n%% *}"; [ -f "$SD/$n.state" ] || continue
+    # portable rewrite: `sed -i ''` is BSD-only (GNU sed reads '' as the script and the s/// as a file)
+    sed "s/^alerted=.*/alerted=$NOW/" "$SD/$n.state" > "$SD/$n.state.tmp" && mv "$SD/$n.state.tmp" "$SD/$n.state"
+  done
 }
 if [ "${#newly[@]}" -gt 0 ]; then
   if "$NOTIFY" "PROD DOWN (outside Cloudflare, 2 checks)" "$(printf '%s\n' ${newly[@]+"${newly[@]}"})"; then mark ${newly[@]+"${newly[@]}"}; else log "alert delivery FAILED, will retry next tick"; fi
