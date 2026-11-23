@@ -23,6 +23,22 @@ const green = {
 };
 const byName = (r: { name: string; ok: boolean | null; detail: string }[], n: string) => r.find((x) => x.name === n)!;
 
+describe('deploy-verify argv is never a pattern or a URL fragment', () => {
+  it.each(['.*', '(a+)+$', '[', '\\'])('hostile --workflow %j is a literal substring, so it matches nothing and cannot hang', async (w) => {
+    const t0 = Date.now();
+    const r = await runChecks({ ...base, workflow: w, fetchImpl: fakeFetch(green) });
+    expect(byName(r, 'deploy job green')).toMatchObject({ ok: false, detail: expect.stringContaining('contains') });
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+  it('rejects a non-hex --expect and a malformed --repo before any request', async () => {
+    let calls = 0;
+    const spy = (async () => { calls++; return new Response('{}'); }) as unknown as typeof fetch;
+    await expect(runChecks({ ...base, expectCommit: '.*', fetchImpl: spy })).rejects.toThrow(/hex commit/);
+    await expect(runChecks({ ...base, repo: 'a/b/../../x', fetchImpl: spy })).rejects.toThrow(/OWNER\/NAME/);
+    expect(calls).toBe(0);
+  });
+});
+
 describe('deploy-verify', () => {
   it('all four checks pass when the deploy is green, live and ticking', async () => {
     const r = await runChecks({ ...base, fetchImpl: fakeFetch(green) });
