@@ -61,8 +61,15 @@ export function escapeLike(token: string): string {
 // SQL twin: `ebda_ar_norm_h` (Store migration 20261123000100_search_fold_hamza) does the same steps in the same order.
 const STRIP_H = /[\u064B-\u065F\u0670\u0640]/g;
 const WAWS = /و{2,}/g;
-const FOLD_H = new Map(FOLD);
-for (const c of 'ءئؤ') FOLD_H.set(c, 'و');
+/** Fold A's translate table, the SQL twin's `translate(x, FROM, TO)` strings byte for byte: B's table with ئ -> و instead of ي, plus ء -> و (ؤ is already -> و). */
+export const AR_FOLD_H_FROM = AR_FOLD_FROM + 'ء';
+export const AR_FOLD_H_TO = [...AR_FOLD_TO].map((c, i) => (i === [...AR_FOLD_FROM].indexOf('ئ') ? 'و' : c)).join('') + 'و';
+const FOLD_H = new Map<string, string>();
+{
+  const from = [...AR_FOLD_H_FROM];
+  const to = [...AR_FOLD_H_TO];
+  from.forEach((c, i) => FOLD_H.set(c, to[i]!));
+}
 /** The hamza fold of `input` (fold A). Use it beside `foldArabic` (fold B), never instead of it: see the header. */
 export function foldArabicHamza(input: string): string {
   if (!input) return '';

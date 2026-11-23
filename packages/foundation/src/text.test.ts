@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { foldArabic, foldArabicHamza, indexTextBoth, indexTokens, indexTokensHamza, phoneDigits, sameSearchTerm, searchTokens, searchTokensHamza, searchWordPairs } from './text';
+import { AR_FOLD_FROM, AR_FOLD_H_FROM, AR_FOLD_H_TO, AR_FOLD_TO, foldArabic, foldArabicHamza, indexTextBoth, indexTokens, indexTokensHamza, phoneDigits, sameSearchTerm, searchTokens, searchTokensHamza, searchWordPairs } from './text';
 
 const v = JSON.parse(readFileSync(new URL('../../../vectors/arabic.json', import.meta.url), 'utf8')) as { cases: Array<{ in: string; out: string }> };
 
@@ -50,5 +50,12 @@ describe('text', () => {
   it('index text keeps both forms only when they differ', () => {
     expect(indexTextBoth('شنطة جلد')).toBe(indexTokens('شنطة جلد'));
     expect(indexTextBoth('مسئول الحسابات')).toBe(`${indexTokens('مسئول الحسابات')} ${indexTokensHamza('مسئول الحسابات')}`);
+  });
+  it('fold A translate strings are B plus ء, aligned 1:1, with ئ and ؤ and ء all mapping to و', () => {
+    expect([...AR_FOLD_H_FROM].length).toBe([...AR_FOLD_H_TO].length);
+    const m = new Map([...AR_FOLD_H_FROM].map((c, i) => [c, [...AR_FOLD_H_TO][i]!]));
+    for (const c of 'ءئؤ') expect(m.get(c), c).toBe('و');
+    expect(m.get('ى')).toBe('ي');
+    expect([...AR_FOLD_FROM].length).toBe([...AR_FOLD_TO].length);
   });
 });
