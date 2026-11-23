@@ -191,3 +191,14 @@ Order: 0 → 1 → (2 ∥ 8-early) → 3 → 4 → 5 → 6 → 7 → 9 → 8-res
 - Footprint target: Workers + cron + DO + KV inside the $5 plan; one container run/day ≈ well inside the included 375 vCPU-min / 25 GiB-h per month; GitHub minutes used by the OS: 0.
 
 **Amendment A.1 (Ahmad, 2026-11-05): urgent jobs get an immediate container.** The brain starts an on-demand container run at once (not waiting for the nightly batch) only for an URGENT job, defined strictly as one of: (1) a production outage or broken money path (checkout, payment webhook, payout) that the self-heal recipes did not fix within their retry budget; (2) a security issue in deployed code or a deployed dependency that is critical (CVSS ≥ 9.0) or listed as known-exploited (CISA KEV); (3) a data exposure (PII/secret leak) detected by a watcher. Guards: max 3 urgent runs per day and 1 at a time (further urgent jobs queue behind it); each run handles that one job with a 30-minute cap; the usage guard still applies; the job's outcome (PR / fix deployed / could not fix) is sent as ONE Telegram message. Anything not matching (1)-(3) waits for the nightly batch. The urgency classifier is unit-tested with examples of each class and of near-misses (a CVSS 8.8 dev-only dependency → nightly).
+
+### Task 10: Fleet tools OS-M1 / OS-C1 / OS-F1 (register row 43, Ruling LAUNCH-SCOPE-ALL-1)
+
+Source spec: `business/ebda/plans/2026-10-26-whisky-os-umbra-hardening.md` sections M1, C1, F1, adapted 2026-11-23 to hosted ubuntu CI (Mac runners offline, org on Free, per-repo `main-protection` rulesets, ~20 concurrent jobs). Umbra/guest/usage-snapshot checks dropped (Umbra retired).
+
+**Files:** `os/ops/merge-train.sh`, `os/ops/lib/merge_train.py`, `os/ops/capacity.sh`, `os/ops/fleet-doctor.sh`, `os/ops/hooks/block-pkill-pattern.sh` (+ `install-hooks.sh` row), tests in `os/ops/tests/`.
+
+- [x] **M1:** merge train: state JSON, order by wave/prio/`after`, `rebase-needed` label + one notification, cancel non-head runs, re-run train-cancelled head runs once, migration-number registry, unreadable state refused (30 assertions; dropping the cancel step fails 3).
+- [x] **C1:** capacity: hosted in-progress/queued/oldest-queued per repo, STARVED/SATURATED/BUSY/OK/UNKNOWN (fail closed), runner availability, host disk tiers, report only (15 assertions). NOT built: the tier-1/tier-2 delete classes and approved-plan matching (the old Umbra-era disk cleaner; `workspace-hygiene.sh` still owns deletes).
+- [x] **F1:** fleet doctor: 7 check kinds with healthy + broken fixtures, notify once per distinct FAIL set (29 assertions); PreToolUse deny for `pkill`/`killall`/`lockf|flock ... git push` (14 assertions).
+- [ ] **Follow-up (not built):** launchd schedules for `fleet-doctor.sh` (15 min) and `merge-train.sh run` (2 min); usage-snapshot and throttle-hook checks (need S2 usage sentinel).
