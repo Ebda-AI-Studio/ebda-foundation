@@ -53,6 +53,18 @@ if [ "$name" = "post-checkout" ]; then
   fi
 fi
 
+# --- root-checkout guard (2026-11-23) ---
+# Logic lives in ops/root-checkout-guard.sh (standalone, also vendored into husky repos that bypass this dispatcher).
+# pre-commit / pre-merge-commit: it exits 1 in a repo's main checkout on main under the business-folder slots; post-merge
+# only warns. Missing script = fail open (install.sh copies both). See standard/worktree-process-hygiene.md s5.
+case "$name" in
+  pre-commit|pre-merge-commit|post-merge)
+    RCG="${ROOT_GUARD_BIN:-$HOME/.claude/scripts/root-checkout-guard.sh}"
+    if [ -f "$RCG" ]; then
+      bash "$RCG" "$name" || exit 1
+    fi ;;
+esac
+
 # --- chain to the repo's own hook (exec: keeps stdin + exit status) ---
 # SECURITY (2026-10-25 review): this file runs for EVERY repo on the machine, including a freshly cloned UNTRUSTED
 # one, so it must never execute anything that arrives inside a repo checkout.
