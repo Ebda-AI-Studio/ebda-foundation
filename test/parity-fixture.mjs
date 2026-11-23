@@ -1,7 +1,7 @@
 // Runs the parity template inside a freshly synced consumer fixture: it must pass, then fail after one byte of vendored data changes.
 // A separate process (not a vitest test): vitest inside vitest hangs.
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, cpSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { appendFileSync, cpSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ for (const p of ['packages', 'vectors', 'parity']) cpSync(join(ROOT, p), join(sr
 git(src, 'init', '-q'); git(src, 'add', '.'); git(src, 'commit', '-qm', 'fixture');
 const target = mkdtempSync(join(tmpdir(), 'fnd-par-'));
 sync({ target, dir: 'vendor/foundation', parity: 'test/foundation-parity.test.ts', root: src });
+writeFileSync(join(target, 'package.json'), JSON.stringify({ name: 'fixture', private: true, devDependencies: { zod: '4.6.7' } }));
 symlinkSync(join(ROOT, 'node_modules'), join(target, 'node_modules'));
 const vitest = join(ROOT, 'node_modules/.bin/vitest');
 const run = () => execFileSync(vitest, ['run'], { cwd: target, encoding: 'utf8', stdio: 'pipe' });

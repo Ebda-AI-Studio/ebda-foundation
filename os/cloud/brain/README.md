@@ -76,6 +76,17 @@ Code `src/tg-inbox.ts`, tests `test/tg-inbox.test.ts` + `test/send-only.test.ts`
 
 No new secret or binding (`TELEGRAM_INBOX_ACK` is an optional var). Cost: free Telegram, a few KV ops per message. The tg-relay files (`~/.claude/channels/telegram/relay/RELAY.md`, the `tgrelay` screen) are left in place; remove them once the webhook is confirmed.
 
+## InstaPay bridge (auto-confirm digest + one-tap "not received")
+Code `src/instapay-bridge.ts`, tests `test/instapay-bridge.test.ts`; shared codec/signature in `packages/foundation/src/instapay-digest.ts`. Same Telegram door as decisions (no new consumer); rulings INSTAPAY-6 and INSTAPAY-7 in `docs/RULINGS.md`.
+
+| Piece | Where | Rule |
+|---|---|---|
+| Notify | `POST /api/instapay/notify` | headers `X-Bridge-Product: store\|chat`, `X-Bridge-Ts` (epoch ms, +-5 min), `X-Bridge-Sig` = HMAC-SHA256 hex over `notify.<ts>.<raw body>` (the revert call the other way uses the label `revert`, so one secret never signs both directions) with `INSTAPAY_BRIDGE_SECRET_STORE\|CHAT`; checked before parsing (401), single-use (409 on replay), 503 when that product's secret is unset. Body `{kind:'digest', items:[{product,id,ownerLabel,amountMinor,kind,confirmedAt}]}` (<= 200; empty -> `{sent:false,empty:true}`, nothing sent) or `{kind:'waiting', items:[... + reasons[]]}` (1-5). `item.product` must equal the signing product. |
+| Caps | KV `EVENTS` | 1 digest per product per UTC day (429), 20 waiting messages per product per hour (429); a failed Telegram send releases the claim (502, the product retries). Does not use `admit()` or the OS message budget. |
+| Digest message | `sendMessage` (plain text, no parse mode) | one message, one button row per item (`Not received: EGP 1,200.50 <shop>`, callback `ip:<s\|c>:<id>`), paged: 20 buttons per message, every payment gets a button, all pages sent in order (a failure on any page releases the day claim and returns 502 so the product retries the whole digest). Waiting messages carry the reason codes and no buttons. |
+| Tap | `POST /telegram/webhook` (owner + chat checks as for decisions) | `ip:<s\|c>:<id>` -> `POST INSTAPAY_REVERT_URL_STORE\|CHAT` (https only, 8 s timeout) with `{id, actor:'telegram-owner', tappedAt}` signed the same way with the `revert` label. Answer text: `reverted`, `already reverted`, `refused: <code>` (401/404/409), `product unreachable, try again` (5xx or network; nothing is kept, the tap is retryable), `refused: bridge not configured`. Audit key `instapay:tap:<product>:<id>:<ms>` (180 d). |
+| Secrets | Worker secrets | `INSTAPAY_BRIDGE_SECRET_STORE`, `INSTAPAY_BRIDGE_SECRET_CHAT` (>= 16 chars, one per product), `INSTAPAY_REVERT_URL_STORE`, `INSTAPAY_REVERT_URL_CHAT` (set with `wrangler secret put` after the products ship their endpoints; unset = that product's calls are refused, never passed). |
+
 ## Decisions (one-tap approvals in Telegram)
 Code `src/decisions.ts`, tests `test/decisions.test.ts`. The controller POSTs approval questions; Ahmad answers with one tap; the controller reads the answers.
 
@@ -243,8 +254,8 @@ All on the **personal** Cloudflare account. Never put an id or secret in the rep
    ```
    - `HANDS_TOKEN` is the HMAC key for the per-run container tokens (never a bearer); `HANDS_MAC_TOKEN` is the Mac's own bearer (put the same value in the Mac's `OS_SERVICES_ENV`, NOT `HANDS_TOKEN`). The hands key: `HANDS_ANTHROPIC_API_KEY` (a Console key with a hard spend limit; `HANDS_API_SPEND_LIMIT_USD` declares that limit, committed as 200), plus `OS_BRAIN_CONTAINERS=1` at deploy to merge the containers block. Never put `ANTHROPIC_API_KEY` on the Mac.
    - Dashboard (ruling RR-dash-auth): `DASH_BASIC_PASSWORD` from the Keychain without printing it:
-     `security find-generic-password -s ebda-os-brain-dash-password -a ahmad -w | npx wrangler secret put DASH_BASIC_PASSWORD --config wrangler.deploy.jsonc`.
-     Create it once with `security add-generic-password -s ebda-os-brain-dash-password -a ahmad -w "$(openssl rand -base64 32)"`. Without it (and without Access) `/dash/*` and `/api/*` answer 503.
+     `security find-generic-password -s ebda-os-brain-dash-password -w | npx wrangler secret put DASH_BASIC_PASSWORD --config wrangler.deploy.jsonc`.
+     Create it once with `security add-generic-password -s ebda-os-brain-dash-password -a "$USER" -w "$(openssl rand -base64 32)"`. Without it (and without Access) `/dash/*` and `/api/*` answer 503.
    - `RELAY_SECRET` must equal the Mac listener's relay secret (in `OS_SERVICES_ENV`). Leave it unset to run brain-only (no `/pending` copy).
    - `GITHUB_TOKEN`: fine-grained PAT per org (resource owner = the org), read-only **Dependabot alerts**. Until set, the advisory watcher records `GITHUB_TOKEN secret unset` and does nothing.
    - Telegram (ruling RR-tg-brain-owns): the brain REUSES `@EbdaAIStudiobot` and is its single consumer (a webhook, never `getUpdates`). Load the secrets from the Keychain without printing them:

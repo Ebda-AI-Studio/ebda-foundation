@@ -13,6 +13,7 @@ pass=0; fail=0
 ok(){ if [ "$2" = "$3" ]; then echo "PASS: $1"; pass=$((pass+1)); else echo "FAIL: $1 - got '$2' want '$3'"; fail=$((fail+1)); fi; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"; P="$HOME/Desktop/projects"
+export OS_SSD_ROOT="$TMP/no-ssd"   # never touch the real /Volumes/Ebda (lib/wt-roots.sh)
 mkdir -p "$P/Ebda-AI-Studio/internal-projects/ebda-store/.git" "$P/_worktrees" "$HOME/.whisky-os-state"
 export HYGIENE_LIVE_CWDS="" OS_LOCK_DIR="$TMP/locks" HYGIENE_QUEUE="$TMP/queue" OS_SHIM_DIR="$TMP/shim" CALLS="$TMP/calls"
 mkdir -p "$OS_SHIM_DIR" "$TMP/ops"; cp "$OPS/workspace-hygiene.sh" "$TMP/ops/"; cp -R "$OPS/lib" "$TMP/ops/lib"
@@ -21,7 +22,7 @@ mk() { # shim <name> <real-path>: log, optionally sleep $SHIM_<NAME>_SLEEP, then
   printf '#!/bin/bash\necho "%s $*" >> "$CALLS"\ns="${SHIM_%s_SLEEP:-0}"; [ "$s" != 0 ] && sleep "$s"\nexec %s "$@"\n' "$n" "$up" "$real" > "$OS_SHIM_DIR/$n"
   chmod +x "$OS_SHIM_DIR/$n"
 }
-mk df /bin/df; mk du /usr/bin/du; mk rm /bin/rm; mk umbra /usr/bin/true; mk gh /usr/bin/true
+mk df /bin/df; mk du /usr/bin/du; mk rm /bin/rm; mk gh /usr/bin/true
 H() { bash "$TMP/ops/workspace-hygiene.sh" "$@"; }
 
 # ---- 1. seven parallel sweeps
@@ -40,7 +41,7 @@ ok "2 the queue was drained by the running sweep" "$([ -s "$HYGIENE_QUEUE" ] && 
 
 # ---- 3. --help acts on nothing
 mkdir -p "$P/_worktrees/victim__orphan"
-for s in workspace-hygiene mac-maintenance post-merge-cleanup anomaly-watch cf-workers-watch drift-watch guest-wedge-watch os-watch sentry-stale-watch world-watch; do
+for s in workspace-hygiene mac-maintenance post-merge-cleanup anomaly-watch cf-workers-watch drift-watch os-watch sentry-stale-watch world-watch; do
   : > "$CALLS"; out="$(bash "$OPS/$s.sh" --help 2>&1)"; rc=$?
   ok "3 $s --help: exit 0, prints its header, zero shimmed calls" "$rc/$(grep -c . "$CALLS")/$([ -n "$out" ] && echo text)" "0/0/text"
 done
@@ -58,11 +59,11 @@ ok "5 hung du: sweep still finishes (<40 s)" "$([ "$el" -lt 40 ] && echo fast)" 
 ok "5 hung du: the orphan is removed, size shows ?" "$(echo "$out" | grep -c 'victim__orphan (?)')/$([ -d "$P/_worktrees/victim__orphan" ] && echo kept || echo gone)" "1/gone"
 mkdir -p "$P/_worktrees/victim__orphan2"; rm -rf "$OS_LOCK_DIR"
 out="$(SHIM_DF_SLEEP=100 HYGIENE_DF_TIMEOUT=1 H 2>&1)"
-ok "5 hung df: UNKNOWN, dry run, nothing deleted" "$(echo "$out" | grep -q UNKNOWN && echo unknown)/$([ -d "$P/_worktrees/victim__orphan2" ] && echo kept)" "unknown/kept"
+ok "5 hung df: UNKNOWN, dry run, nothing deleted" "$(grep -q UNKNOWN <<<"$out" && echo unknown)/$([ -d "$P/_worktrees/victim__orphan2" ] && echo kept)" "unknown/kept"
 
 # ---- 6. held / stale lock
 sleep 30 & holder=$!
-for s in anomaly-watch cf-workers-watch drift-watch guest-wedge-watch os-watch sentry-stale-watch world-watch mac-maintenance; do
+for s in anomaly-watch cf-workers-watch drift-watch os-watch sentry-stale-watch world-watch mac-maintenance; do
   rm -rf "$OS_LOCK_DIR"; mkdir -p "$OS_LOCK_DIR/$s"; echo "$holder" > "$OS_LOCK_DIR/$s/pid"
   out="$(bash "$OPS/$s.sh" 2>&1)"; rc=$?
   ok "6 $s: live holder -> already running, exit 0" "$rc/$(echo "$out" | grep -c 'already running')" "0/1"

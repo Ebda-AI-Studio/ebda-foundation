@@ -1,12 +1,12 @@
 {
-  "_comment": "Targets for os/ops/ebda-prod-watch.mjs (run from GitHub-hosted runners by .github/workflows/prod-watch.yml: off Cloudflare and off the Egyptian ISP). expect = HTTP status; contains = a body regex; commitRepo = owner/name whose main tip the /health commit is compared with (needs EBDA_GH_READ_TOKEN).",
+  "_comment": "Targets for os/ops/ebda-prod-watch.mjs (run from GitHub-hosted runners by .github/workflows/prod-watch.yml: off Cloudflare and off the Egyptian ISP). expect = HTTP status; contains = a body regex; fxMaxAgeHours + fxNoDataUntil = alert when /health fxAgeHours > the limit; null = no data yet, alerts only from fxNoDataUntil on (the worker's own FX alarm cannot fire if its cron is dead); commitRepo = owner/name whose main tip the /health commit is compared with (needs EBDA_GH_READ_TOKEN).",
   "timeoutMs": 10000,
   "probes": [
     { "name": "marketing", "url": "https://ebda.app/", "expect": 200, "contains": "ebda|ابدأ" },
     { "name": "store-app", "url": "https://store.ebda.app/health", "expect": 200, "contains": "\"status\":\\s*\"ok\"", "commitRepo": "Ebda-AI-Studio/ebda-store" },
     { "name": "api", "url": "https://api.ebda.app/health", "expect": 200, "contains": "\"status\":\\s*\"ok\"", "commitRepo": "Ebda-AI-Studio/ebda-store" },
     { "name": "accounts", "url": "https://accounts.ebda.app/health", "expect": 200, "contains": "\"status\":\\s*\"ok\"", "commitRepo": "Ebda-AI-Studio/ebda-store" },
-    { "name": "wa", "url": "https://wa.ebda.app/health", "expect": 200, "contains": "\"ok\":\\s*true", "commitRepo": "Ebda-AI-Studio/ebda-whatsapp" },
+    { "name": "wa", "url": "https://wa.ebda.app/health", "expect": 200, "contains": "\"ok\":\\s*true", "commitRepo": "Ebda-AI-Studio/ebda-whatsapp", "fxMaxAgeHours": 48, "fxNoDataUntil": "2026-11-14T00:00:00Z" },
     { "name": "orders", "url": "https://orders.ebda.app/health", "expect": 200, "contains": "\"status\":\\s*\"ok\"", "commitRepo": "Ebda-AI-Studio/ebda-store" },
     { "name": "help", "url": "https://help.ebda.app/", "expect": 200 },
     { "name": "docs", "url": "https://docs.ebda.app/", "expect": 200 },

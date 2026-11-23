@@ -14,7 +14,7 @@ export const PROD_WATCH_INTERVAL_MS = 10 * 60_000;
 const STATE_KEY = 'pw:state';
 const LAST_KEY = 'pw:last';
 
-interface ProbeCfg { name: string; url: string; expect?: number; contains?: string }
+interface ProbeCfg { name: string; url: string; expect?: number; contains?: string; fxMaxAgeHours?: number; fxNoDataUntil?: string }
 interface Sink {
   ingestMany(fs: Finding[], now: number): Promise<unknown>;
   reconcileSource(source: string, openKeys: string[], keepPrefixes: string[], now: number, seenAs?: string): Promise<number>;
@@ -31,7 +31,13 @@ export async function probeOne(p: ProbeCfg, timeoutMs: number, fetchImpl: typeof
       ok = false;
       error = 'body check failed';
     }
-    return { name: p.name, url: p.url, ok, status: r.status, ms: Date.now() - t0, ...(error ? { error } : {}) };
+    let fx: { ageHours: number | null; maxHours: number; noDataUntil?: string } | undefined;
+    if (p.fxMaxAgeHours) {
+      let json: { fxAgeHours?: number | null } | null = null;
+      try { json = JSON.parse(body); } catch { /* not json: reads as no data */ }
+      fx = { ageHours: json?.fxAgeHours ?? null, maxHours: p.fxMaxAgeHours, noDataUntil: p.fxNoDataUntil };
+    }
+    return { name: p.name, url: p.url, ok, status: r.status, ms: Date.now() - t0, ...(error ? { error } : {}), ...(fx ? { fx } : {}) };
   } catch (e) {
     return { name: p.name, url: p.url, ok: false, status: 0, ms: Date.now() - t0, error: (e as Error).name === 'TimeoutError' ? `timeout after ${timeoutMs}ms` : `network: ${(e as Error).message}` };
   }
@@ -45,9 +51,9 @@ export async function runProdWatch(env: Env, sink: Sink, now: number, fetchImpl:
   await env.EVENTS.put(LAST_KEY, String(now));
   const probes = await Promise.all((cfg.probes as ProbeCfg[]).map((p) => probeOne(p, cfg.timeoutMs ?? 10000, fetchImpl)));
   const state = JSON.parse((await env.EVENTS.get(STATE_KEY)) ?? '{}') as WatchState;
-  const pr = evaluateProbeAlerts(probes, state, 2);
+  const pr = evaluateProbeAlerts(probes, state, 2, now);
   // the brain reads no logs: log-rule keys are owned by the GitHub run and never resolved from here
-  const d = decide(pr.alerts, { ...state, streaks: pr.streaks }, now, { unknownPrefixes: LOG_ALERT_PREFIXES });
+  const d = decide(pr.alerts, { ...state, streaks: pr.streaks }, now, { unknownPrefixes: LOG_ALERT_PREFIXES, unknownKeys: pr.unknownKeys });
   for (const m of d.messages) {
     await sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, { dedupeKey: `pw:${m.slice(0, 60)}`, kind: 'p1-unhealed', text: `${m}\n(prod-watch, brain cron)` }, fetchImpl).catch(() => undefined);
   }

@@ -15,27 +15,44 @@
 # A failed/cancelled check or a moved head ends the run at once (exit 1). Pending checks are waited on, up to
 # --max-wait-min (default 180); running out of time exits 2 and merges nothing.
 #
-# options: --repo OWNER/NAME (default: this checkout's repo, via gh)  --polls N (3)  --interval S (30)  --max-wait-min M (180)
+# options: --repo OWNER/NAME (default: this checkout's repo, via gh)  --workflows DIR (default <toplevel>/.github/workflows)
+#          --polls N (3)  --interval S (30)  --max-wait-min M (180)
 #          --dry-run (evaluate, never merge)
+# CROSS-REPO: the required list comes from the TARGET repo's workflows. When --repo is not the repo that owns this script's
+# checkout, pass --workflows <target checkout>/.github/workflows (or run from the target checkout via the installed gate);
+# without it the gate refuses (exit 2) rather than demand this repo's checks from another repo's PR (2026-11-12: ebda-whatsapp
+# #72 waited 90 min for ebda-foundation's "OS brain Worker" / "PR sanity").
 # test seams: MERGE_GATE_VIEW_CMD (prints the `gh pr view --json headRefOid,mergeable,statusCheckRollup` JSON),
 #             MERGE_GATE_MERGE_CMD (replaces the final gh pr merge), MERGE_GATE_REQUIRED_JSON, MERGE_GATE_MAX_WAIT_S, MERGE_GATE_MAX_TICKS.
 set -uo pipefail
 pr="${1:?usage: merge-gate.sh <pr> <expected-head-sha> [--repo R] [--polls N] [--interval S] [--max-wait-min M] [--dry-run]}"
 want="${2:?expected head sha required}"; shift 2
-repo=""; polls=3; interval=30; maxmin=180; dry=0
+repo=""; wfdir=""; polls=3; interval=30; maxmin=180; dry=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --repo) repo="$2"; shift 2 ;; --polls) polls="$2"; shift 2 ;; --interval) interval="$2"; shift 2 ;;
+    --repo) repo="$2"; shift 2 ;; --workflows) wfdir="$2"; shift 2 ;; --polls) polls="$2"; shift 2 ;; --interval) interval="$2"; shift 2 ;;
     --max-wait-min) maxmin="$2"; shift 2 ;; --dry-run) dry=1; shift ;;
     *) echo "merge-gate: unknown option $1" >&2; exit 64 ;;
   esac
 done
 [ "${#want}" -ge 7 ] || { echo "merge-gate: expected sha must be at least 7 chars" >&2; exit 64; }
 here="$(cd "$(dirname "$0")" && pwd)"
-root="$(git -C "$here" rev-parse --show-toplevel)"   # works in this repo (ops/) and in a vendored copy (scripts/foundation/)
+root="$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$here" rev-parse --show-toplevel)"   # works in this repo (ops/) and in a vendored copy (scripts/foundation/)
 [ -n "$repo" ] || repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" || true
 [ -n "$repo" ] || { echo "merge-gate: could not tell which repo (pass --repo OWNER/NAME)" >&2; exit 64; }
-required="${MERGE_GATE_REQUIRED_JSON:-$(node "$here/merge-gate-required.mjs" "$root/.github/workflows")}"
+if [ -n "${MERGE_GATE_REQUIRED_JSON:-}" ]; then required="$MERGE_GATE_REQUIRED_JSON"
+else
+  if [ -z "$wfdir" ]; then
+    # no explicit dir: $root's workflows are only right when --repo IS the repo that owns $root; fail closed otherwise
+    origin="$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$root" remote get-url origin 2>/dev/null | sed -E 's#/+$##; s#^.*[:/]([^/:]+/[^/]+)$#\1#; s#\.git$##')"
+    if [ -z "$origin" ] || [ "$(printf %s "$origin" | tr 'A-Z' 'a-z')" != "$(printf %s "$repo" | tr 'A-Z' 'a-z')" ]; then
+      echo "merge-gate: --repo $repo is not the checkout at $root (origin: ${origin:-unknown}); its workflows would give the wrong required checks. Pass --workflows <$repo checkout>/.github/workflows; refusing" >&2; exit 2
+    fi
+    wfdir="$root/.github/workflows"
+  fi
+  [ -d "$wfdir" ] || { echo "merge-gate: no workflows dir at $wfdir (pass --workflows <checkout>/.github/workflows); refusing" >&2; exit 2; }
+  required="$(node "$here/merge-gate-required.mjs" "$wfdir")"
+fi
 [ -n "$required" ] && [ "$(echo "$required" | jq 'length')" -gt 0 ] || { echo "merge-gate: could not derive the required checks; refusing" >&2; exit 2; }
 
 view() {

@@ -2,7 +2,7 @@
 # build-landlock.sh — compile vendor/landlock-run for this host and install it.
 #
 # Linux only, by construction: Landlock is a Linux LSM. Run this at guest-image
-# time on the umbra runners. Static musl build so it has no runtime deps.
+# time on Linux runners. Static musl build so it has no runtime deps.
 # Verifies with --probe before installing: a binary that builds but cannot enforce
 # is exactly the fail-open shape ops/lib/sandbox.sh exists to avoid.
 set -euo pipefail

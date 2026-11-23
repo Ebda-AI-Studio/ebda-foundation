@@ -40,7 +40,7 @@ Step 1 without step 2 is the dead-gate bug. The marker line `# claude-hook: <Eve
 `exec`s the wrapped command. The ruleset is inherited across `execve`, so the command
 and everything it spawns run confined while the caller stays unrestricted. Landlock is
 an independent syscall family — no root, no user namespaces, no bwrap — which is why it
-is the rung available on the umbra guests.
+is the rung available on a Linux host.
 
 This was originally deferred as unverifiable while the fleet was down. It was then
 verified in a Linux container instead, which is a better test anyway because it is

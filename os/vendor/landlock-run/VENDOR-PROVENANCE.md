@@ -28,7 +28,7 @@ an unlisted difference is indistinguishable from an accident.
 
 ## Why it is here
 
-`ops/lib/sandbox.sh` wraps it so unattended agent shell on the umbra Linux guests
+`ops/lib/sandbox.sh` wraps it so unattended agent shell on Linux hosts
 runs under a filesystem allow-list instead of with the launching account's full
 privileges. See `standard/agent-containment.md`.
 

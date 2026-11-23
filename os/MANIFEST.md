@@ -14,7 +14,7 @@ The AI OS layer of ebda-foundation: the operating tooling that every business (E
 | `ops/lib/keychain.sh` | `keychain_get <service>`: Keychain read with the hex-decode rule (same rule as ebda-store `scripts/cf/lib/keychain.mjs`). | new (Task 2) |
 | `ops/tests/`, `ops/lib/__tests__/`, `tests/remediation/` | The ported suites. Run all: `bash os/tests/run-all.sh`. | ported (Task 2) |
 | `tests/no-force-strings.test.sh`, `tests/linux-smoke.test.sh`, `tests/run-all.sh` | Predecessor-string guard, Linux `bash -n` + `--help` smoke, one-command runner. | new (Task 2) |
-| `standard/` (242 files: the 95-file base set, the 111+ Ebda 2026-10 graded lens standards, `umbra-guest-integrity`, `rules/`), `agents/` (25), `skills/` (benchmark-vet, blast-radius, correct, ebda-loop, THIRD-PARTY.md), `schemas/hooks.schema.json`, `vendor/landlock-run/`, `audit/lenses/` (source packs), `template/VENDOR-PROVENANCE.md` | Standards, lens packs, agents, skills, hook schema, vendored Landlock launcher, vendor-provenance template. `skills/force-audit` is NOT ported (open decision in `docs/history/standards/incidents.md`). | ported (Task 3) |
+| `standard/` (242 files: the 95-file base set, the 111+ Ebda 2026-10 graded lens standards, `rules/`), `agents/` (25), `skills/` (benchmark-vet, blast-radius, correct, ebda-loop, THIRD-PARTY.md), `schemas/hooks.schema.json`, `vendor/landlock-run/`, `audit/lenses/` (source packs), `template/VENDOR-PROVENANCE.md` | Standards, lens packs, agents, skills, hook schema, vendored Landlock launcher, vendor-provenance template. `skills/force-audit` is NOT ported (open decision in `docs/history/standards/incidents.md`). | ported (Task 3) |
 | `config/local.example.json`, `tests/os-local-list.test.sh` | Placeholder shape of the gitignored per-machine `~/.ebda-os.local.json` (repo lists, health domains, originality entities, deploy-drift services) and the test for its reader `os_local_list`. | new (Task 3 fix 1) |
 | `tests/standard-links.test.mjs` | Every relative link in `standard/` and `audit/lenses/` resolves. | new (Task 3) |
 | `ops/ebda-logs.mjs`, `ops/lib/ebda-logs-core.mjs`, `ops/lib/ebda-logs-r2.mjs`, `ops/ebda-prod-watch.mjs`, `config/prod-watch.json`, `ops/tests/ebda-logs.test.mjs` | Production log reader (R2 `ebda-logs` via api.cloudflare.com, works where `wrangler tail` is ISP-blocked) and the off-Cloudflare prod watch run by `.github/workflows/prod-watch.yml`. Plan + rulings: `docs/plans/2026-11-10-observability.md`. | new (2026-11-10) |
@@ -66,7 +66,7 @@ Applied to the ported files (all generic): #279 guard rebuild backoff, #278 hygi
 
 ## Config contract
 
-`config/os.env` is the single source; `ops/lib/os-config.sh` (`os_config_load`) reads it, then `~/.ebda-os.local.env`, then falls back to built-in defaults that `tests/os-config-parity.test.sh` keeps identical. Every script that needs an identity value (primary org `$OS_ORG`, owners `$OS_ORGS`, `$OS_REPO_SLUG`, `$OS_PROJECTS_DIR`, `$OS_HOME`, `$OS_LAUNCHD_PREFIX`, `$OS_UMBRA_VMS` / `$OS_VM`, `$OS_SENTRY_ORG`, `$OS_PERSONAL_OWNER`, `$OS_SERVICES_ENV`) sources it and reads the key. `tests/no-literal-config.test.sh` fails when a literal of those values appears in `ops/` outside tests, fixtures, launchd templates, docs, comments and `os-config.sh`.
+`config/os.env` is the single source; `ops/lib/os-config.sh` (`os_config_load`) reads it, then `~/.ebda-os.local.env`, then falls back to built-in defaults that `tests/os-config-parity.test.sh` keeps identical. Every script that needs an identity value (primary org `$OS_ORG`, owners `$OS_ORGS`, `$OS_REPO_SLUG`, `$OS_PROJECTS_DIR`, `$OS_HOME`, `$OS_LAUNCHD_PREFIX`, `$OS_SENTRY_ORG`, `$OS_PERSONAL_OWNER`, `$OS_SERVICES_ENV`) sources it and reads the key. `tests/no-literal-config.test.sh` fails when a literal of those values appears in `ops/` outside tests, fixtures, launchd templates, docs, comments and `os-config.sh`.
 
 ## Secret scanning
 
@@ -74,7 +74,7 @@ Applied to the ported files (all generic): #279 guard rebuild backoff, #278 hygi
 
 ## CI footprint added
 
-One job (`os`) in `ci.yml`: a checkout plus one `git diff` on every PR (about 10 s). When `os/` or the workflow changed (and on every push to main) it also runs shellcheck and `os/tests/run-all.sh --quiet` (string and identity-literal guards, config parity, the ops suites, Linux smoke). Measured locally about 9 min on macOS for the suites; budget 25 min per run, so roughly 10 to 15 billable minutes on a hosted runner, or none on the Umbra runner (`EBDA_RUNS_ON`). PRs that do not touch `os/` pay only the diff step.
+One job (`os`) in `ci.yml`: a checkout plus one `git diff` on every PR (about 10 s). When `os/` or the workflow changed (and on every push to main) it also runs shellcheck and `os/tests/run-all.sh --quiet` (string and identity-literal guards, config parity, the ops suites, Linux smoke). Measured locally about 9 min on macOS for the suites; budget 25 min per run, so roughly 10 to 15 billable minutes on a hosted runner, or none on the native Mac runners (`EBDA_RUNS_ON`). PRs that do not touch `os/` pay only the diff step.
 
 ## macOS-only scripts
 
@@ -92,7 +92,7 @@ Layering and cost-if-wrong: `docs/rulings/FDN-OS-1.md`.
 
 ## Installer and the launchd set (Task 5, Amendment A)
 
-`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (35 jobs, counted from the file; hands-mac-local is opt-in via the third column `optin=OS_HANDS_LOCAL` and skipped unless `OS_HANDS_LOCAL=1`, ruling INSTALL-1; table below). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
+`os/install.sh [--dry-run] [--home DIR]` installs the Mac-local part only; the job list is `launchd/mac-local.list` (36 jobs, counted from the file; hands-mac-local is opt-in via the third column `optin=OS_HANDS_LOCAL` and skipped unless `OS_HANDS_LOCAL=1`, ruling INSTALL-1; table below). It copies `ops/**` to `~/.claude/scripts`, `config/os.env` to `~/.claude/os.env`, renders the plists, links `agents/*.md` and `skills/*` from a main-branch checkout, sets `core.hooksPath` and the `OS_GIT_CHAIN_KEY` flag on trusted husky repos, and registers the hooks (`ops/install-hooks.sh`). It refuses while any previous-prefix label is loaded (`run os/cutover.sh`) and removes its own plists that are no longer in the set. `ops/install.sh` is now a one-line shim to it.
 
 
 ## Old-job dispositions (Task 5 fix round 1)
@@ -108,7 +108,8 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | social-content | KEEP-MAC | social-content | daily Facebook + LinkedIn drafts for both brands (claude -p + headless Chrome render); the brain gates and publishes (docs/plans/2026-11-11-social-posting.md) |
 | cf-workers-watch | PORT-BRAIN | cf-workers | HTTP/API poll of Cloudflare Workers state; brain health.ts covers only 2 URLs |
 | ci-alert | REPLACED-BY | cloud/brain/src/relay.ts | CI failures arrive as signed webhooks into the brain relay inbox |
-| ci-runner-guard | KEEP-MAC | ci-runner-guard | drives Umbra and the runner service |
+| ci-runner-guard | KEEP-MAC | ci-runner-guard | reports native Mac runner fleet health from the GitHub API |
+| main-first | KEEP-MAC | main-first | cancels superseded main CI runs + queued PR runs so a starved main CI gets a heavy runner (+ batch-first: only the drain's next PRs keep their queued runs) (gh API, local ledger, every 5 min) |
 | claude-home-export | DROP | - | Ahmad 2026-11-09 turned it off: it wrote a 300 MB tgz to the Desktop every day |
 | cost-guard | PORT-BRAIN | cost-guard | billing API poll |
 | dead-gate-detect | KEEP-MAC | dead-gate-detect | inspects locally installed hooks and gates |
@@ -126,20 +127,21 @@ Every job the previous OS ran (the 34 plist templates plus `launchd/unported-job
 | gate-guard | KEEP-MAC | gate-guard | checks gates against local runner and checkouts |
 | ghas-guard | DROP | - | Ahmad 2026-11-06: GitHub Advanced Security is never used |
 | graph-backfill | KEEP-MAC | graph-backfill | runs graphify and claude over local files |
-| guest-wedge-watch | KEEP-MAC | guest-wedge-watch | Umbra guest wedge detection |
-| hung-job-guard | KEEP-MAC | hung-job-guard | kills hung runner jobs via Umbra |
+| hung-job-guard | KEEP-MAC | hung-job-guard | kills hung scheduled jobs |
 | instinct-extract | KEEP-MAC | instinct-extract | claude CLI over local sessions |
 | journey-monitor | PORT-BRAIN | journey-monitor | synthetic HTTP journey checks |
-| mac-maintenance | KEEP-MAC | mac-maintenance | local disk and Umbra upkeep |
+| mac-maintenance | KEEP-MAC | mac-maintenance | local disk upkeep |
 | os-selftest | KEEP-MAC | os-selftest | checks the local install |
-| os-watch | KEEP-MAC | os-watch | self-check of the local OS runtime and Umbra |
+| os-watch | KEEP-MAC | os-watch | self-check of the local OS runtime and runner status |
+| outside-watch | KEEP-MAC | outside-watch | every 5 min curl probe of the public Ebda hosts from the Mac (off Cloudflare), 2-failure rule, alerts via notify.sh (replaces the disabled hosted prod-watch workflow, F-OBS-1) |
 | claude-bundle-sync | KEEP-MAC | claude-bundle-sync | keeps the Claude Code app bundle linked to the newest build so macOS keeps one permission identity; Mac-only by nature (ruling INSTALL-1) |
 | pr-shepherd | KEEP-MAC | pr-shepherd | the brain watcher shepherds the brain's orgs; the Mac job covers ONE other org set per machine (`OS_PR_SHEPHERD_ORG`), skips when unset or equal to the brain's org (ruling INSTALL-1) |
+| sched-fail-watch | KEEP-MAC | sched-fail-watch | every 10 min: a launchd job (2 consecutive failing runs) or a GitHub scheduled workflow that fails opens ONE review-finding fixer issue per job/day + one Telegram line via notify.sh; no tokens when nothing failed; reads launchctl + the gh API (Cloudflare cron triggers not covered, see the script header) |
 | sentry-stale-watch | KEEP-MAC | sentry-stale-watch | stays on the Mac until the brain's `sentry-stale` is configured for the same Sentry org; then a later PR may drop it (ruling INSTALL-1) |
 | services-watch | PORT-BRAIN | services | HTTP probes; brain health.ts covers only 2 URLs |
 | session-mining | KEEP-MAC | session-mining | claude CLI over local session files |
 | usage-sentinel | KEEP-MAC | usage-sentinel | reads local Claude usage |
-| workspace-hygiene | KEEP-MAC | workspace-hygiene | local worktrees, disk and Umbra prune |
+| workspace-hygiene | KEEP-MAC | workspace-hygiene | local worktrees and disk |
 | world-watch | PORT-BRAIN | world-watch | HTTP poll of external sources |
 | dream | KEEP-MAC | dream | dream cycle runs the Claude CLI over local memory; findings go to the brain job queue, no messages |
 | dream-scan | KEEP-MAC | dream | Ebda product scan (deps, npm audit, untested paths, failing CI, live probes) runs as the first phase of the dream job; `ops/dream-scan.sh`, targets from `dream_products` (fields name, path, url, owner/name; repos in the brain orgs skip npm audit + CI, which the brain already watches) |

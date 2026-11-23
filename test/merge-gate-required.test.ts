@@ -147,4 +147,56 @@ describe('merge-gate-required', () => {
       expect(spawnSync('test', ['-f', join(d, 'merged')]).status).toBe(1);
     }
   });
+
+  // 2026-11-12: `--repo Ebda-AI-Studio/ebda-whatsapp` made the gate require THIS repo's checks (OS brain Worker, PR sanity...) and
+  // wait 90 min. The required list must come from the target repo's workflows, or the gate must refuse.
+  describe('cross-repo required list', () => {
+    const gate = (args: string[], d: string) => spawnSync('bash', ['ops/merge-gate.sh', '1', 'abcdef1', ...args, '--polls', '1', '--interval', '0', '--dry-run'], {
+      encoding: 'utf8',
+      env: { ...process.env, MERGE_GATE_VIEW_CMD: `echo viewed > ${join(d, 'viewed')}; cat ${join(d, 'pr.json')}`, MERGE_GATE_MAX_TICKS: '2', MERGE_GATE_REQUIRED_JSON: '' },
+    });
+    const setup = (checkName: string) => {
+      const d = mkdtempSync(join(tmpdir(), 'mgx-'));
+      writeFileSync(join(d, 'pr.json'), JSON.stringify({ headRefOid: SHA, mergeable: 'MERGEABLE', statusCheckRollup: [run(checkName, 'COMPLETED', 'SUCCESS', T1)] }));
+      return d;
+    };
+    it('refuses (exit 2, never reads the PR) when --repo is not this checkout and no --workflows is given', () => {
+      const d = setup('Job a');
+      const r = gate(['--repo', 'Some-Other-Org/some-other-repo'], d);
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain('is not the checkout');
+      expect(r.stderr).toContain('--workflows');
+      expect(spawnSync('test', ['-f', join(d, 'viewed')]).status).toBe(1);
+    });
+    it('--workflows makes the target repo\'s own always-run checks the required list', () => {
+      const d = setup('Job a');
+      const r = gate(['--repo', 'Some-Other-Org/some-other-repo', '--workflows', dir(wf({ a: null }))], d);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain('DRY RUN, would merge');
+    });
+    it('--workflows still demands the target repo\'s check: a green PR without it does not pass', () => {
+      const d = setup('OS brain Worker');
+      const r = gate(['--repo', 'Some-Other-Org/some-other-repo', '--workflows', dir(wf({ a: null }))], d);
+      expect(r.status).toBe(2);
+      expect(r.stdout).toContain('required check(s) without an explicit SUCCESS: Job a');
+    });
+    it('an exported GIT_DIR at another repo cannot change which checkout the gate trusts', () => {
+      const d = setup('Job a');
+      const other = mkdtempSync(join(tmpdir(), 'mgo-'));
+      spawnSync('env', ['-u', 'GIT_DIR', '-u', 'GIT_WORK_TREE', 'git', 'init', '-q', other]);
+      spawnSync('env', ['-u', 'GIT_DIR', '-u', 'GIT_WORK_TREE', 'git', '-C', other, 'remote', 'add', 'origin', 'https://github.com/Some-Other-Org/some-other-repo.git']);
+      const r = spawnSync('bash', ['ops/merge-gate.sh', '1', 'abcdef1', '--repo', 'Some-Other-Org/some-other-repo', '--polls', '1', '--interval', '0', '--dry-run'], {
+        encoding: 'utf8',
+        env: { ...process.env, GIT_DIR: join(other, '.git'), MERGE_GATE_REQUIRED_JSON: '', MERGE_GATE_VIEW_CMD: `cat ${join(d, 'pr.json')}` },
+      });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain('is not the checkout');
+    });
+    it('refuses when the --workflows dir is missing', () => {
+      const d = setup('Job a');
+      const r = gate(['--repo', 'Some-Other-Org/some-other-repo', '--workflows', join(d, 'nope')], d);
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain('no workflows dir');
+    });
+  });
 });

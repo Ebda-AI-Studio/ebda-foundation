@@ -136,6 +136,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, out 
       cfg.gitName = 'dry-run';
       cfg.gitEmail = 'dry-run@invalid';
       cfg.gitleaks = '';
+      // test-isolation: a dry run never reads host usage state (~/.claude snapshot, OS_STATE_DIR); only an explicit USAGE_STATE / USAGE_SNAPSHOT
+      cfg.usageState = env.USAGE_STATE ?? '';
+      cfg.usageSnapshot = env.USAGE_SNAPSHOT ?? '';
       brain = recordingBrain(batch);
       exec = dryRunExec({ batch, log }).exec;
       creds.ghToken = undefined;

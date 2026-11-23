@@ -13,6 +13,7 @@ import { isoWeek, watchDrDrill } from '../src/watchers/dr-drill';
 import { forbiddenPath, isStep, watchJourneys } from '../src/watchers/journey-monitor';
 import { median, watchPageLoad } from '../src/watchers/page-load';
 import { watchLoopStall } from '../src/watchers/loop-stall';
+import { watchCiPool } from '../src/watchers/ci-pool';
 import { watchPrShepherd } from '../src/watchers/pr-shepherd';
 import { GROUPS, runWatchers } from '../src/watchers/run';
 import { watchSentryStale } from '../src/watchers/sentry-stale';
@@ -518,17 +519,17 @@ describe('runner + real Durable Object', () => {
   it('every group member exists and ids are unique', () => {
     const ids = Object.values(GROUPS).flat().map((w) => w.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.sort()).toEqual(['cf-usage', 'cf-workers', 'ci-catchup', 'cost-guard', 'deploy-drift', 'dr-drill', 'journey-monitor', 'loop-stall', 'page-load', 'pr-shepherd', 'sentry-stale', 'services', 'world-watch']);
+    expect(ids.sort()).toEqual(['cf-usage', 'cf-workers', 'ci-catchup', 'ci-pool', 'cost-guard', 'deploy-drift', 'dr-drill', 'journey-monitor', 'loop-stall', 'page-load', 'pr-shepherd', 'sentry-stale', 'services', 'world-watch']);
   });
-  it('a quarter run with nothing configured raises the four monitor-unconfigured findings in the brain, and does not rerun within its cadence', async () => {
-    await fresh('wd:last:services', 'wd:last:page-load', 'wd:last:journey-monitor', 'wd:last:loop-stall');
+  it('a quarter run with nothing configured raises the five monitor-unconfigured findings in the brain, and does not rerun within its cadence', async () => {
+    await fresh('wd:last:services', 'wd:last:page-load', 'wd:last:journey-monitor', 'wd:last:loop-stall', 'wd:last:ci-pool');
     const brain = brainStub(env);
     const e = { ...env, SERVICE_TARGETS: undefined, PAGE_LOAD_TARGETS: undefined, JOURNEY_CONFIG: undefined } as Env;
     const r = await runWatchers('quarter', e, brain, NOW);
-    expect(r).toEqual({ services: 'ran', 'page-load': 'ran', 'journey-monitor': 'ran', 'loop-stall': 'ran' });
+    expect(r).toEqual({ services: 'ran', 'page-load': 'ran', 'journey-monitor': 'ran', 'loop-stall': 'ran', 'ci-pool': 'ran' });
     const titles = (await brain.state()).findings.recent.filter((f) => f.kind === 'monitor-unconfigured').map((f) => f.title);
-    expect(titles).toHaveLength(4);
-    expect(await runWatchers('quarter', e, brain, NOW + 60000)).toEqual({ services: 'skipped', 'page-load': 'skipped', 'journey-monitor': 'skipped', 'loop-stall': 'skipped' });
+    expect(titles).toHaveLength(5);
+    expect(await runWatchers('quarter', e, brain, NOW + 60000)).toEqual({ services: 'skipped', 'page-load': 'skipped', 'journey-monitor': 'skipped', 'loop-stall': 'skipped', 'ci-pool': 'skipped' });
   });
   it('a watcher that hits an API failure is reported and the rest of the group still runs', async () => {
     await fresh('wd:last:cf-workers', 'wd:last:sentry-stale', 'wd:last:cost-guard', 'wd:last:world-watch');
@@ -548,5 +549,62 @@ describe('runner + real Durable Object', () => {
     await brain.recordDrill('pass', undefined, t0 + 2000);
     expect(await brain.lastPassAt('watcher', 'dr-drill')).toBe(t0 + 2000);
     expect((await brain.state(t0 + 3000)).findings.recent.find((f) => f.kind === 'dr-drill-stale')).toMatchObject({ status: 'resolved' });
+  });
+});
+
+describe('ci-pool (ruling NO-HOSTED-RUNNERS-1): the Cloudflare-side signal that the Mac runner pool is down', () => {
+  const R = 'Ebda-AI-Studio/ebda-store';
+  const base = { HANDS_CONFIG_JSON: JSON.stringify({ repos: { [R]: {} } }), GITHUB_TOKEN: 'tok' };
+  const ago = (min: number) => new Date(NOW - min * 60000).toISOString();
+  const queued = (...mins: number[]): Route => ['status=queued', () => json({ workflow_runs: mins.map((m, i) => ({ id: 500 + i, created_at: ago(m) })) })];
+  const running = (n: number): Route => ['status=in_progress', () => json({ total_count: n, workflow_runs: [] })];
+  it('unconfigured', async () => {
+    const h = harness({ GITHUB_TOKEN: 'tok' }, []);
+    await watchCiPool(h.ctx);
+    unconfigured(h, 'ci-pool');
+  });
+  it('a run queued 90 min with NOTHING running raises ONE P1 ci-pool-stall keyed by the oldest queued run (must fire)', async () => {
+    const h = harness(base, [queued(90, 30), running(0)]);
+    expect(await watchCiPool(h.ctx)).toEqual({ repos: 1, stalled: 1 });
+    expect(h.ingested).toMatchObject([{ kind: 'ci-pool-stall', key: `ci-pool:${R}:queued-500`, severity: 'P1', detail: { queued: 2, oldestRun: 500 } }]);
+    expect(classifyFinding(h.ingested[0]!)).toMatchObject({ alert: true });
+  });
+  it('a long queue while runs ARE in progress is saturation, not an outage (must not fire)', async () => {
+    const h = harness(base, [queued(240), running(2)]);
+    expect(await watchCiPool(h.ctx)).toEqual({ repos: 1, stalled: 0 });
+    expect(h.ingested).toEqual([]);
+    expect(h.reconciled.map((x) => x.kind)).toEqual(['ci-pool-stall']);
+  });
+  it('a run queued only 20 min, or an empty queue, raises nothing and never asks for the in-progress count', async () => {
+    let asked = 0;
+    const counting: Route = ['status=in_progress', () => { asked++; return json({ total_count: 0 }); }];
+    for (const q of [queued(20), queued()]) {
+      const h = harness(base, [q, counting]);
+      expect(await watchCiPool(h.ctx)).toMatchObject({ stalled: 0 });
+      expect(h.ingested).toEqual([]);
+    }
+    expect(asked).toBe(0);
+  });
+  it('a missing in_progress count is a watcher-error and resolves nothing (unknown is not healthy)', async () => {
+    const h = harness(base, [queued(90), ['status=in_progress', () => json({ workflow_runs: [] })]]);
+    await watchCiPool(h.ctx);
+    expect(h.ingested).toMatchObject([{ kind: 'watcher-error', key: `ci-pool:${R}:error` }]);
+    expect(h.reconciled).toEqual([]);
+  });
+  it('a GHOST run queued 7 h with nothing running does not alert (HELD-RERUN-1: runs no runner ever takes); a real 90 min one behind it still does', async () => {
+    const quiet = harness(base, [queued(420), running(0)]);
+    expect(await watchCiPool(quiet.ctx)).toEqual({ repos: 1, stalled: 0 });
+    expect(quiet.ingested).toEqual([]);
+    const both = harness(base, [queued(420, 90), running(0)]);
+    expect(await watchCiPool(both.ctx)).toEqual({ repos: 1, stalled: 1 });
+    expect(both.ingested).toMatchObject([{ kind: 'ci-pool-stall', detail: { queued: 1, oldestRun: 501 } }]);
+  });
+  it('CI_QUEUE_MAX_MIN moves the ghost cut-off', async () => {
+    const h = harness({ ...base, CI_QUEUE_MAX_MIN: '600' }, [queued(420), running(0)]);
+    expect(await watchCiPool(h.ctx)).toMatchObject({ stalled: 1 });
+  });
+  it('CI_QUEUE_MIN moves the threshold', async () => {
+    const h = harness({ ...base, CI_QUEUE_MIN: '10' }, [queued(20), running(0)]);
+    expect(await watchCiPool(h.ctx)).toMatchObject({ stalled: 1 });
   });
 });

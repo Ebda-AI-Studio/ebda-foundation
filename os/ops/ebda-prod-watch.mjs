@@ -93,8 +93,11 @@ async function probe(p) {
     let error = ok ? undefined : `HTTP ${r.status}`;
     if (ok && p.contains && !new RegExp(p.contains).test(body)) { ok = false; error = 'body check failed'; }
     let commit;
-    if (p.commitRepo) { try { commit = JSON.parse(body).commit; } catch { /* not json */ } }
-    return { name: p.name, url: p.url, ok, status: r.status, ms, error, commit, commitRepo: p.commitRepo };
+    let json = null;
+    if (p.commitRepo || p.fxMaxAgeHours) { try { json = JSON.parse(body); } catch { /* not json */ } }
+    if (p.commitRepo) commit = json?.commit;
+    const fx = p.fxMaxAgeHours ? { ageHours: json?.fxAgeHours ?? null, maxHours: p.fxMaxAgeHours, noDataUntil: p.fxNoDataUntil } : undefined;
+    return { name: p.name, url: p.url, ok, status: r.status, ms, error, commit, commitRepo: p.commitRepo, fx };
   } catch (e) {
     return { name: p.name, url: p.url, ok: false, status: 0, ms: Date.now() - t0, error: e.name === 'TimeoutError' ? `timeout after ${cfg.timeoutMs || 10000}ms` : `network: ${e.message}` };
   }
@@ -180,7 +183,7 @@ if (mode === 'drill') {
   const brainUp = await brainHealthy();
   const scope = messageScope(alerts, { brainUp, logsRead });
   say(`brain: ${brainUp ? 'up, it messages the probe alerts' : 'NOT answering: this run messages the probe alerts too'}`);
-  const d = decide(scope.alerts, state, now, { unknownPrefixes: scope.unknownPrefixes });
+  const d = decide(scope.alerts, state, now, { unknownPrefixes: scope.unknownPrefixes, unknownKeys: pr.unknownKeys });
   Object.assign(state, d.state);
   for (const m of d.messages) {
     const r = await telegram(`${m}\n${runUrl}`);

@@ -2,7 +2,7 @@
   "name": "ebda-os-brain",
   "version": "0.1.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "description": "Ebda OS brain: always-on Cloudflare Worker (relay, cron watchers, finding to job pipeline, Telegram policy, dashboard).",
   "engines": {
