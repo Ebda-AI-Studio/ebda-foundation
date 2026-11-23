@@ -25,4 +25,4 @@ trap 'git -C "$FOUNDATION" worktree remove --force "$wt" >/dev/null 2>&1; rm -rf
 git -C "$FOUNDATION" worktree add -q --detach "$wt/f" "$latest" || { log "cannot check out $latest"; exit 1; }
 args=(--tag "$latest"); [ "$APPLY" = 1 ] || args+=(--dry-run)
 log "$latest ${args[*]}"
-node "$wt/f/ops/bump-consumers.mjs" "${args[@]}"
+node "$wt/f/ops/bump-consumers.mjs" ${args[@]+"${args[@]}"}
