@@ -52,7 +52,7 @@ WT2="$TMP/wt2"; g "$IN" git worktree add -q -b main2 "$WT2" >/dev/null 2>&1; g "
 commit "$WT2" >/dev/null; ok "linked worktree on master: allowed" "$?" "0"
 
 # merges in the root: non-ff refused, ff allowed
-g "$IN" git checkout -q -b side; echo s > "$IN/s"; g "$IN" git add s; FORCEAI_ALLOW_ROOT_COMMIT=1 g "$IN" git commit -q -m side
+g "$IN" git checkout -q -b side; echo s > "$IN/s"; g "$IN" git add s; EBDA_ALLOW_ROOT_COMMIT=1 g "$IN" git commit -q -m side
 g "$IN" git checkout -q main
 before="$(g "$IN" git rev-parse main)"
 g "$IN" git merge --no-ff -q -m m side >/dev/null 2>&1; ok "non-ff merge on root main: refused (pre-merge-commit)" "$?" "1"
@@ -66,7 +66,7 @@ g "$IN" git merge --ff-only -q origin/main >/dev/null 2>&1; ok "ff merge of orig
 ok "ff merge actually advanced root main past the old tip" "$([ "$(g "$IN" git rev-parse main)" != "$before" ] && echo moved)" "moved"
 ok "ff merge landed on origin/main" "$(g "$IN" git rev-parse main)" "$(g "$IN" git rev-parse origin/main)"
 # ff of a LOCAL unpushed branch moves main ahead of origin: not refused (documented), but warned post-merge
-g "$IN" git checkout -q -b side2; echo t > "$IN/t"; g "$IN" git add t; FORCEAI_ALLOW_ROOT_COMMIT=1 g "$IN" git commit -q -m side2; g "$IN" git checkout -q main
+g "$IN" git checkout -q -b side2; echo t > "$IN/t"; g "$IN" git add t; EBDA_ALLOW_ROOT_COMMIT=1 g "$IN" git commit -q -m side2; g "$IN" git checkout -q main
 w="$(g "$IN" git merge --ff-only side2 2>&1)"; rc=$?
 ok "ff merge of a local branch: not refused" "$rc" "0"
 case "$w" in *"AHEAD of origin"*) ok "post-merge warns that root main is ahead of origin" 1 1 ;; *) ok "post-merge warns that root main is ahead of origin" "$w" "warning" ;; esac
@@ -74,8 +74,8 @@ g "$IN" git reset -q --hard origin/main
 
 # escape hatch: allowed and logged
 ok "no log before any override" "$([ -e "$LOG" ] && echo present || echo absent)" "absent"
-FORCEAI_ALLOW_ROOT_COMMIT=1 commit "$IN" >/dev/null; ok "escape hatch: commit allowed" "$?" "0"
-ok "escape hatch use is logged" "$(grep -c 'pre-commit ALLOWED via FORCEAI_ALLOW_ROOT_COMMIT=1' "$LOG" 2>/dev/null)" "1"
+EBDA_ALLOW_ROOT_COMMIT=1 commit "$IN" >/dev/null; ok "escape hatch: commit allowed" "$?" "0"
+ok "escape hatch use is logged" "$(grep -c 'pre-commit ALLOWED via EBDA_ALLOW_ROOT_COMMIT=1' "$LOG" 2>/dev/null)" "1"
 
 # a repo-local hook still chains when the guard passes (and is skipped when it refuses)
 printf '#!/bin/sh\necho chained >> "%s/chain.out"\n' "$TMP" > "$OUT/.git/hooks/pre-commit"; chmod +x "$OUT/.git/hooks/pre-commit"
