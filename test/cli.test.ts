@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 // @ts-expect-error plain .mjs without types
-import { check, sync } from '../lib/foundation.mjs';
+import { OPS_FILES, check, sync } from '../lib/foundation.mjs';
 
 const ROOT = resolve(__dirname, '..');
 const g = (cwd: string, ...a: string[]) => execFileSync('git', a, { cwd, encoding: 'utf8' });
@@ -12,7 +12,7 @@ const g = (cwd: string, ...a: string[]) => execFileSync('git', a, { cwd, encodin
 // sync needs a clean committed foundation checkout (the lock records its commit): make a throwaway clone of the working tree's files.
 function fixtureFoundation(): string {
   const d = mkdtempSync(join(tmpdir(), 'fnd-src-'));
-  for (const p of ['packages', 'vectors', 'parity']) cpSync(join(ROOT, p), join(d, p), { recursive: true, filter: (s) => !s.includes('node_modules') });
+  for (const p of ['packages', 'vectors', 'parity', 'legal', 'ops']) cpSync(join(ROOT, p), join(d, p), { recursive: true, filter: (s) => !s.includes('node_modules') });
   g(d, 'init', '-q');
   g(d, '-c', 'user.name=t', '-c', 'user.email=t@t', 'add', '.');
   g(d, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'fixture');
@@ -108,5 +108,55 @@ describe('ebda-foundation capabilities', () => {
   it('bad usage exits 2', () => {
     expect(node('seed', '--product', 'store').status).toBe(2);
     expect(node('nope').status).toBe(2);
+  });
+});
+
+describe('sync --ops and legal (F8/F10)', () => {
+  const src = fixtureFoundation();
+  const target = mkdtempSync(join(tmpdir(), 'fnd-ops-'));
+  const opts = { target, dir: 'vendor/foundation', parity: 'test/foundation-parity.test.ts', ops: 'scripts/foundation', root: src };
+  const lock = sync(opts);
+
+  it('vendors the ops scripts byte for byte with their mode, records opsDir, and check passes', () => {
+    for (const f of OPS_FILES) {
+      expect(lock.files[`scripts/foundation/${f}`]).toMatch(/^[0-9a-f]{64}$/);
+      expect(readFileSync(join(target, 'scripts/foundation', f))).toEqual(readFileSync(join(ROOT, 'ops', f)));
+      expect(statSync(join(target, 'scripts/foundation', f)).mode & 0o777).toBe(statSync(join(ROOT, 'ops', f)).mode & 0o777);
+    }
+    expect(lock.opsDir).toBe('scripts/foundation');
+    expect(Object.keys(lock.files).some((k) => k.endsWith('workflow-lint.mjs') || k.endsWith('host-lock.sh'))).toBe(false);
+    expect(check(target)).toEqual([]);
+  });
+  it('vendors the legal fragments byte for byte under <dir>/legal, and a 1-byte edit fails check naming the file', () => {
+    const rel = 'vendor/foundation/legal/clauses/VAT-0-clause.md';
+    expect(Object.keys(lock.files)).toContain(rel);
+    expect(readFileSync(join(target, rel))).toEqual(readFileSync(join(ROOT, 'legal/clauses/VAT-0-clause.md')));
+    appendFileSync(join(target, rel), ' ');
+    expect(check(target)).toEqual([`modified: ${rel}`]);
+    sync(opts);
+    expect(check(target)).toEqual([]);
+  });
+  it('an edited, missing or extra ops script fails check', () => {
+    const f = join(target, 'scripts/foundation/merge-gate.sh');
+    appendFileSync(f, '\n# local tweak\n');
+    expect(check(target)).toEqual(['modified: scripts/foundation/merge-gate.sh']);
+    writeFileSync(join(target, 'scripts/foundation/extra.sh'), 'x');
+    expect(check(target)).toContain('extra file not in the lock: scripts/foundation/extra.sh');
+    rmSync(join(target, 'scripts/foundation/extra.sh'));
+    rmSync(join(target, 'scripts/foundation/cron-lint.mjs'));
+    expect(check(target)).toEqual(['modified: scripts/foundation/merge-gate.sh', 'missing: scripts/foundation/cron-lint.mjs']);
+    sync(opts);
+    expect(check(target)).toEqual([]);
+  });
+  it('a later sync without --ops keeps vendoring the ops dir the lock already names', () => {
+    const again = sync({ target, dir: 'vendor/foundation', parity: 'test/foundation-parity.test.ts', root: src });
+    expect(again.opsDir).toBe('scripts/foundation');
+    expect(check(target)).toEqual([]);
+  });
+  it('a product that never asked for ops gets no ops files and no opsDir', () => {
+    const t = mkdtempSync(join(tmpdir(), 'fnd-noops-'));
+    const l = sync({ target: t, dir: 'vendor/foundation', parity: 'test/foundation-parity.test.ts', root: src });
+    expect(l.opsDir).toBeUndefined();
+    expect(Object.keys(l.files).some((k) => k.startsWith('scripts/'))).toBe(false);
   });
 });

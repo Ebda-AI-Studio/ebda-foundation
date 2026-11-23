@@ -23,6 +23,7 @@ Why one repo: Ruling FDN-OS-1 (`docs/rulings/FDN-OS-1.md`). The OS port is in pr
 | `buyer` | `buyerKey`, `buyerKeyProbe` (HMAC-SHA256 of the E.164, lowercase hex) | `await buyerKey(secret, '+201001234567')` |
 | `text` | `foldArabic`, `indexTokens`, `phoneDigits` | `foldArabic('أحذية')` |
 | `slugs` | `RESERVED_SLUGS`, `isReservedSlug`, `isDemoShowroomSlug`, `slugFormatError` | `isReservedSlug('wa')` |
+| `studio-pages` | `createStudioPages(brand, markSvg)` -> `renderStudioPage` (the shared 404 / coming-soon / reserved shell, ar + en), `studioHostPlan`, `STUDIO_PAGE_HEADERS`; `pickStudioLang`, `HSTS_VALUE`, `StudioBrand` | `createStudioPages(BRAND, brandMarkSvg).renderStudioPage({ lang: 'ar', kind: 'not-found' })` |
 | `capability` + `capability-registry`, `capability-coverage`, `self-service-routes`, `smart-layer-bypass`, `help-article`, `ratchet` | `capabilitySchema`, `normalizeApi`, `checkRegistry`, `checkCoverage`, `checkSelfServiceRoutes`, `checkModelBypass`, `checkHelp`, `applyBaseline` (lens 192 guards; `docs/standard/capability-registry.md`) | `checkRegistry(files, cfg)` |
 | `smart-layer` (`@ebda/foundation/smart-layer`) | `runTurn`, the rails (`detectSecrets`, `maskForModel`, `scopeCheck`, `fence`, `checkBindingClaims`, `renderReply`, `allowLinks`), the execution gates (`validateCall`, `effectivePolicy`, `applyPreview`, `undoApplied`, `issueApproval`, `confirmApproval`), `resolveControls`, `computeReleaseId`, the eval harness (`releaseGate`, `passHatK`, `cohensKappa`) | `runTurn(adapter, ctx, { text })` (`docs/smart-layer.md`) |
 | `instapay-extract` | `parseReceiptExtraction`, `parseAmountMinor`, `cairoWallTimeToEpoch`, `normalizeReference`, `INSTAPAY_EXTRACT_PROMPT`, `INSTAPAY_EXTRACT_JSON_SCHEMA` | `parseAmountMinor('١٬٢٠٠٫٥٠') === 120050`; `'1.200'` is `null` (ambiguous), never guessed |
@@ -31,7 +32,7 @@ Why one repo: Ruling FDN-OS-1 (`docs/rulings/FDN-OS-1.md`). The OS port is in pr
 | `instapay-dedupe` | `DuplicateIndex`, `D1DuplicateIndex`, `MemoryDuplicateIndex`, `DEDUPE_SCHEMA_SQL`, `duplicateIndexContract` | platform-global reference + image index; each product runs the contract on its real D1 |
 | `instapay-digest` | `formatDigestPages` (every payment gets a tap button, 20 per message), `formatDigest`, `formatWaiting`, `encodeTap`, `decodeTap`, `signBridge(secret, body, ts, 'notify'\|'revert')`, `verifyBridge` | digest text, `ip:` Telegram tap codec, direction-labelled HMAC bridge signature with a 5 minute window |
 
-`vectors/*.json` are the shared test vectors (phone, buyer-key, buyer-key-probe, arabic, slugs, instapay-decision, instapay-extract). Not shared yet (planned, see the program plan): search hooks, studio pages, legal clauses, contracts, identity, observe, erasure, guard, ops scripts.
+`vectors/*.json` are the shared test vectors (phone, buyer-key, buyer-key-probe, arabic, slugs, instapay-decision, instapay-extract). `legal/` holds the counsel-approved clauses and Chat legal texts, vendored byte for byte under `<dir>/legal/` (Ruling FDN-LEGAL-1). `ops/` holds the shared gate scripts, vendored with `--ops` (Ruling FDN-OPS-1). Not shared yet (planned, see the program plan): search hooks, contracts, identity, observe, erasure, guard, ops scripts.
 
 **Not shared:** anything that imports a product's DB, env or domain types (tenants, checkout, payments, schema, migrations, flags, `wrangler.jsonc`, full legal documents, product copy).
 
@@ -41,7 +42,7 @@ Why one repo: Ruling FDN-OS-1 (`docs/rulings/FDN-OS-1.md`). The OS port is in pr
 
 ## Commands
 
-- `sync --target <repo> --dir <dir> --parity <path>` (needs a clean, committed foundation checkout; the lock records its commit)
+- `sync --target <repo> --dir <dir> --parity <path> [--ops <dir>]` (`--ops scripts/foundation` also vendors `merge-gate.sh`, `merge-gate-required.mjs`, `pre-push-gate.sh`, `deploy-verify.mjs`, `cron-lint.mjs`, `logpush-setup.sh`; once the lock names an ops dir, later syncs keep it) (needs a clean, committed foundation checkout; the lock records its commit)
 - `check [--target <repo>]` lock vs files, naming the offending file
 - `status <repo>...` locks of the repos, the latest tag (`git ls-remote`) and whether the vendored content is identical
 - `new ebda-<x> [--display "Ebda X"] [--display-ar "…"] [--no-remote] [--no-install] [--out <dir>]` scaffold a Hono + D1 + Durable Object Worker, vendor the foundation, `git init`, and (unless `--no-remote`) create `Ebda-AI-Studio/ebda-<x>` privately and set `EBDA_RUNS_ON`
