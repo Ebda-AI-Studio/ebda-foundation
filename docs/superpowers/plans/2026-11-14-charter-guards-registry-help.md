@@ -199,7 +199,7 @@ Each product: `capabilities/<id>.capability.json`, `capabilities/guard.config.js
 - [ ] **Step 1: Failing tests:** each mapping bullet above as one `it` against the fixtures (slug mapping for both help formats, `;` split, `pr` vs `plan`, role keywords, the five undo branches, reason keyword mapping, invalid reason flag); every written file passes `capabilitySchema`; `it('a second run skips every id and leaves file bytes identical')`; `it('catalogue counts: store 71 and chat 23 need help')` using the real catalogues when env `EBDA_CATALOGUE_DIR` is set (otherwise `it.skip`), asserting `report.counts.needsHelp` equals 71 for Store and 23 for Chat (Chat's 28 live-without-article merchant-facing entries minus the 5 in area `system`, which `helpExemptAreas` excludes).
 - [ ] **Step 2: Run** `npx vitest run test/capability-seed.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Implement `seed` in `lib/capability-seed.mjs`** (plain Node, no dependencies except importing the schema through a `tsx`-free path: compile-free validation is done in the test, not the module). Write files with 2-space JSON and a trailing newline, keys in schema order so diffs stay reviewable.
-- [ ] **Step 4: Run** the test, then once for real with `EBDA_CATALOGUE_DIR=/Users/ahmadsharaf/Desktop/projects/Ebda-AI-Studio/business/ebda/audits` to confirm the counts. Expected: PASS.
+- [ ] **Step 4: Run** the test, then once for real with `EBDA_CATALOGUE_DIR=~/Desktop/projects/Ebda-AI-Studio/business/ebda/audits` to confirm the counts. Expected: PASS.
 - [ ] **Step 5: Commit** `feat(capability): seed generator from the 2026-11-14 catalogues`.
 
 ### Task 9: Backfill planner and article scaffold
@@ -244,7 +244,7 @@ Each product: `capabilities/<id>.capability.json`, `capabilities/guard.config.js
 - Consumes: foundation v0.2.0. Produces: the Store registry and config the later Store tasks read.
 
 - [ ] **Step 1: Sync** the vendored foundation and run `npx vitest run tests/unit/foundation-parity.test.ts`. Expected: PASS.
-- [ ] **Step 2: Seed:** `node <foundation>/bin/ebda-foundation.mjs capabilities seed --product store --catalogue /Users/ahmadsharaf/Desktop/projects/Ebda-AI-Studio/business/ebda/audits/2026-11-14-store-capability-catalogue.json --out capabilities --today 2026-11-14`. Expected: 185 written, report printed.
+- [ ] **Step 2: Seed:** `node <foundation>/bin/ebda-foundation.mjs capabilities seed --product store --catalogue ~/Desktop/projects/Ebda-AI-Studio/business/ebda/audits/2026-11-14-store-capability-catalogue.json --out capabilities --today 2026-11-14`. Expected: 185 written, report printed.
 - [ ] **Step 3: Write `capabilities/guard.config.json`:** `product: 'store'`; `routeKinds` mapping mount prefixes `^/(public|internal|realtime)(/|$)` and `webhook` paths to `public`/`internal`; `mustConfirm` for money routes (payments, refunds, payouts, billing charge, wallet, store credit adjust), customer messaging (campaign send, email send, broadcast) and every `DELETE`; `helpExemptAreas: ['platform']`; `smartLayerPaths: []`.
 - [ ] **Step 4: Human review of the seed report,** the only manual step: set `undo.class` for each `unclassified` id, set `operatorReason.code` where the catalogue text gave none, fix `roles` flagged "unverified" against `apps/api/src/middleware/rbac.ts`. Commit the reviewed files; the remaining `unclassified` ids become the `registry` baseline (shrink-only debt).
 - [ ] **Step 5: Commit** `feat(capabilities): sync foundation v0.2.0 and seed the store registry`.
