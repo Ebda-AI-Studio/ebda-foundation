@@ -26,6 +26,7 @@
     "./request-guard": "./src/request-guard.ts",
     "./self-service-routes": "./src/self-service-routes.ts",
     "./slugs": "./src/slugs.ts",
+    "./studio-pages": "./src/studio-pages.ts",
     "./smart-layer": "./src/smart-layer/index.ts",
     "./smart-layer-bypass": "./src/smart-layer-bypass.ts",
     "./text": "./src/text.ts",

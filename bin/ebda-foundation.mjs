@@ -51,7 +51,7 @@ async function main(argv) {
   const [cmd, ...rest] = argv;
   if (cmd === 'sync') {
     const target = resolve(arg(rest, '--target', '.'));
-    const lock = sync({ target, dir: arg(rest, '--dir'), parity: arg(rest, '--parity') });
+    const lock = sync({ target, dir: arg(rest, '--dir'), parity: arg(rest, '--parity'), ops: arg(rest, '--ops') });
     console.log(`synced ${Object.keys(lock.files).length} files to ${lock.tag} (${lock.commit.slice(0, 9)}) in ${target}`);
   } else if (cmd === 'check') {
     const problems = check(resolve(arg(rest, '--target', '.')));
@@ -68,7 +68,7 @@ async function main(argv) {
   } else if (cmd === 'capabilities') {
     await capabilities(rest);
   } else {
-    console.error('usage: ebda-foundation sync --target <repo> --dir <vendored dir> --parity <test path> | check [--target <repo>] | status <repo>... | new <ebda-name> [--no-remote] [--out <dir>] | capabilities seed|backfill-plan|scaffold (see docs/standard/capability-registry.md)');
+    console.error('usage: ebda-foundation sync --target <repo> --dir <vendored dir> --parity <test path> [--ops <scripts dir, e.g. scripts/foundation>] | check [--target <repo>] | status <repo>... | new <ebda-name> [--no-remote] [--out <dir>] | capabilities seed|backfill-plan|scaffold (see docs/standard/capability-registry.md)');
     process.exit(2);
   }
 }
