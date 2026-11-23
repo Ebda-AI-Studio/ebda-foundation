@@ -41,10 +41,44 @@ describe('rate limiting', () => {
     expect(b.take('k', 0)).toBe(1);
     expect(b.take('k', 1000)).toBe(0);
   });
-  it('clientKey folds IPv6 to /64', () => {
-    expect(clientKey('1.2.3.4')).toBe('1.2.3.4');
-    expect(clientKey(null)).toBe('unknown');
-    expect(clientKey('2001:db8:0:1:aaaa::1')).toBe(clientKey('2001:db8:0:1:bbbb::2'));
+  it('clientKey table: IPv4, mapped, compatible, IPv6 forms, zone, garbage', () => {
+    const rows: Array<[string | null, string]> = [
+      [null, 'unknown'],
+      ['1.2.3.4', '1.2.3.4'],
+      [' 1.2.3.4 ', '1.2.3.4'],
+      ['::ffff:1.2.3.4', '1.2.3.4'],
+      ['::FFFF:1.2.3.4', '1.2.3.4'],
+      ['::ffff:0102:0304', '1.2.3.4'],
+      ['0:0:0:0:0:ffff:1.2.3.4', '1.2.3.4'],
+      ['::1.2.3.4', '1.2.3.4'],
+      ['::0102:0304', '1.2.3.4'],
+      ['::ffff:5.6.7.8', '5.6.7.8'],
+      ['::', '0:0:0:0::/64'],
+      ['::1', '0:0:0:0::/64'],
+      ['2001:db8:0:1:aaaa::1', '2001:db8:0:1::/64'],
+      ['2001:DB8:0:1:bbbb::2', '2001:db8:0:1::/64'],
+      ['2001:0db8:0000:0001:0000:0000:0000:0001', '2001:db8:0:1::/64'],
+      ['2001:db8::1', '2001:db8:0:0::/64'],
+      ['64:ff9b::1.2.3.4', '64:ff9b:0:0::/64'],
+      ['fe80::1%eth0', 'fe80:0:0:0::/64'],
+      ['1.2.3.4%eth0', '1.2.3.4'],
+      ['::ffff:1.2.3.4%eth0', '1.2.3.4'],
+      ['not-an-ip', 'raw:not-an-ip'],
+      ['1.2.3', 'raw:1.2.3'],
+      ['1.2.3.256', 'raw:1.2.3.256'],
+      ['01.2.3.4', 'raw:01.2.3.4'],
+      ['::ffff:1.2.3', 'raw:::ffff:1.2.3'],
+      ['1:2:3:4:5:6:7:8:9', 'raw:1:2:3:4:5:6:7:8:9'],
+      ['1::2::3', 'raw:1::2::3'],
+      ['2001:db8:0:1:2:3:4:5:6::', 'raw:2001:db8:0:1:2:3:4:5:6::'],
+      ['gggg::1', 'raw:gggg::1'],
+    ];
+    for (const [ip, want] of rows) expect(clientKey(ip), String(ip)).toBe(want);
+  });
+  it('distinct mapped clients and distinct garbage never share a bucket', () => {
+    expect(clientKey('::ffff:1.2.3.4')).not.toBe(clientKey('::ffff:1.2.3.5'));
+    expect(clientKey('junk-a')).not.toBe(clientKey('junk-b'));
+    expect(clientKey('::ffff:1.2.3.4')).toBe(clientKey('1.2.3.4'));
   });
   const counting = (): RateLimitStore => { const m = new Map<string, number>(); return { async hit(k) { const c = (m.get(k) ?? 0) + 1; m.set(k, c); return { count: c, resetAtMs: 10_000 }; } }; };
   const broken: RateLimitStore = { async hit() { throw new Error('down'); } };
