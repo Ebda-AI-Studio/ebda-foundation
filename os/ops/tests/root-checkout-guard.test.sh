@@ -14,6 +14,7 @@ export HOME="$TMP/home"; mkdir -p "$HOME"
 P="$HOME/Desktop/projects"; export OS_PROJECTS_DIR="$P"
 HK="$TMP/hooks"; mkdir -p "$HK"; cp "$OPS/git-hooks/dispatch.sh" "$HK/dispatch.sh"
 for h in pre-commit pre-merge-commit post-merge; do ln -s dispatch.sh "$HK/$h"; done
+export ROOT_GUARD_BIN="$OPS/root-checkout-guard.sh"
 LOG="$HOME/Library/Logs/root-commit-guard.log"
 
 mkrepo() { # <dir>: repo with origin, one commit on main, global-style hooksPath
