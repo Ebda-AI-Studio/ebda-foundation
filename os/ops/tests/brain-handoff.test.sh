@@ -82,7 +82,7 @@ S
 printf 'OS_BRAIN_URL=http://127.0.0.1:%s\nINGEST_TOKEN=tok123\n' "$PORT" > "$T/services.env"
 out="$("${E[@]}" DREAM_PHASES_DIR="$T/phases" bash "$OPS/dream.sh" --weekly --notify 2>&1)"; rc=$?
 [ "$rc" = 0 ] && pass "dream.sh exits 0 with absent phases" || { fail "dream rc=$rc"; echo "$out"; }
-echo "$out" | grep -q "dream-research.sh not installed - absent" && pass "an absent phase is reported absent" || fail "absent phase not reported"
+grep -q "dream-research.sh not installed - absent" <<<"$out" && pass "an absent phase is reported absent" || fail "absent phase not reported"
 [ "$(python3 -I -c "import json,sys; print(sum(len(json.loads(l)['body']) for l in open(sys.argv[1])))" "$T/brain.log")" = 2 ] && pass "dream findings reached the brain" || fail "no findings at the brain"
 [ ! -e "$T/notify.called" ] && pass "no notify.sh call" || fail "notify was called"
 python3 -I -c "

@@ -35,7 +35,8 @@ SORG="${SENTRY_ORG:-}"
 [ -z "$SORG" ] && [ -f "$OS_SERVICES_ENV" ] && SORG="$(grep -E '^SENTRY_ORG=' "$OS_SERVICES_ENV" 2>/dev/null | cut -d= -f2- | tr -d '"')"
 [ -n "$STOK" ] && [ -n "$SORG" ] || { echo "sentry-stale-watch: sentry not configured — skip"; exit 0; }
 
-PROJECTS="${SENTRY_PROJECTS:-ebda-api ebda-web ebda-admin}"
+# SENTRY_STALE_PROJECTS (per machine, ~/.ebda-os.local.env) scopes this job without changing alert-triage/anomaly-watch
+PROJECTS="${SENTRY_STALE_PROJECTS:-${SENTRY_PROJECTS:-ebda-api ebda-web ebda-admin}}"
 STALE_DAYS="${SENTRY_STALE_DAYS:-5}"
 MIN_COUNT="${SENTRY_STALE_MIN_COUNT:-10}"
 RECENT_DAYS="${SENTRY_STALE_RECENT_DAYS:-3}"

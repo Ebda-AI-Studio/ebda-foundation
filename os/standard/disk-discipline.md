@@ -1,19 +1,19 @@
-# disk-discipline — two controls that keep the host disk (and the Umbra CI VM) alive
+# disk-discipline — two controls that keep the host disk (and the native CI runners on it) alive
 
 tags: [BOTH]
-sources: `feedback-umbra-sparse-disk-host-full-corrupts-guest`, `host-capacity-one-heavy-suite-and-guarded-umbra`
+sources: `feedback-umbra-sparse-disk-host-full-corrupts-guest`, `host-capacity-one-heavy-suite-and-guarded-umbra` (history; Umbra retired 2026-11-14)
 
 Born from three disk-full incidents (2026-10-16, 2026-10-24, and a near miss 2026-10-25): the Mac's internal disk
-filled, and because the Umbra CI VM's `disk.img` is a **sparse** file on that disk, a full host corrupted the guest's
-ext4 (`emergency_ro`, every runner dead, `umbra rebuild` required). Two things filled the disk, so there are two controls.
+filled. The native macOS CI runners share that disk (`_work` checkouts, `node_modules`), so a full host fails CI jobs
+and degrades everything else. (Until 2026-11-14 a full host also corrupted the sparse disk image of the Umbra CI VM;
+Umbra is retired, Ruling UMBRA-RETIRE-1.) The main thing that filled the disk was per-worktree installs, so the control is:
 
 **The rule:** *every worktree gets its dependencies from `wt-deps.sh` (APFS clones of one cached install), by whatever
-tool created it; and the sweep trims the CI VM's disk before the host runs out.* A rule only in CLAUDE.md is a
+tool created it; and the hourly sweep removes merged worktrees and alerts before the host runs out.* A rule only in CLAUDE.md is a
 preference, so each half is enforced in code.
 
 **Tradeoff:** a worktree's `node_modules` is a copy-on-write clone — near-free until a file is written, but it is
-not a symlink and a `npm install <pkg>` in it still costs real bytes. The VM trim runs `umbra prune` (apt cache,
-docker prune, journal vacuum, fstrim) which forces cold caches on the next CI job.
+not a symlink and a `npm install <pkg>` in it still costs real bytes.
 
 ## 1. Worktree dependencies come from the cache, never from a per-worktree install
 
@@ -46,17 +46,17 @@ multi-GB install — and `new-task-worktree.sh` refuses outright (`WT_FORCE=1` o
 **Known residual:** a non-Claude tool (Codex) doing a raw `git worktree add` inside a husky-style repo is not seen by
 any git hook, only by the AGENTS.md rule. Settles with a PATH `git` wrapper if it ever happens.
 
-## 2. The CI VM's disk is trimmed automatically
+## 2. Low host disk is alerted, not trimmed
 
-`workspace-hygiene.sh` (hourly) runs `umbra prune <vm>` for each **running** Umbra machine when host free is under
-`UMBRA_PRUNE_FREE_GB` (40) **or** its `disk.img` allocation grew more than `UMBRA_PRUNE_GROWTH_GB` (10) since the last
-prune. State: `~/.cache/wt-deps/umbra-prune.tsv` (`vm<TAB>epoch<TAB>allocated_kb after prune`); the first sighting only
-records a baseline. Log: `~/Library/Logs/ebda-os-umbra-prune.log`.
+`workspace-hygiene.sh` (hourly) removes merged + clean worktrees; when host free is under `WT_MIN_FREE_GB` (30) it sends
+the Telegram alert (6 h cooldown) and `new-task-worktree.sh` refuses new worktrees. `ci-runner-guard.sh` also reads the
+data volume every 30 min (note at 88% used, finding at 94%). `DRY_RUN=1` reports and removes nothing.
 
-- **Idle guests only, no fstrim (2026-10-25):** `umbra prune` runs `fstrim`, which stalls guest I/O ~80 s and made CI tests time out; the automatic prune therefore runs `--if-idle --no-fstrim` (#255, umbra #63). CPU/RAM/I-O overload is the other guest killer: `host-capacity.md`.
-- **Never during a stop/rebuild:** `lib/umbra-provisioning.sh` (`~/.umbra/provisioning/<vm>`, expiry-based) skips the VM.
-- Host free is re-read after pruning; still under 30 GB sends the Telegram alert (6 h cooldown) naming what was pruned.
-- `DRY_RUN=1` reports "would prune" and prunes nothing.
+### Where worktrees live (2026-11-19)
+New worktrees and the wt-deps cache are placed by `ops/lib/wt-roots.sh`: the external SSD (`/Volumes/Ebda`) when mounted and
+writable, else the internal disk; `OS_WORKTREE_ROOT` / `OS_DEPS_CACHE` override. The free-space floor is measured on the chosen
+volume. Hygiene, cleanup, report and the post-merge hook walk BOTH roots and skip a missing one. Runners stay internal (TCC).
+`ops/migrate-worktrees-to-ssd.sh` is the one-shot mover for existing idle trees. Tests: `ops/tests/wt-roots.test.sh`.
 
 ## 3. Grading (what an auditor checks)
 
@@ -64,4 +64,4 @@ records a baseline. Log: `~/Library/Logs/ebda-os-umbra-prune.log`.
 - A raw `git worktree add` in a node repo leaves a populated `node_modules` of MBs of real bytes (`du`), not GBs.
 - `block-worktree-install.sh` and `post-worktree-deps.sh` are registered in `~/.claude/settings.json` (dead-gate-detect enforces).
 - Negative controls live in `ops/lib/__tests__/disk-discipline.test.sh` (miss allowed, `npm install <pkg>` allowed,
-  provisioning VM never pruned, repo pre-commit exit code propagates).
+  repo pre-commit exit code propagates; workspace-hygiene has no VM step).

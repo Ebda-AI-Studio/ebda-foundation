@@ -2,7 +2,7 @@
 # Host-wide mutex for the HEAVY part of the pre-push gate: only ONE full unit suite runs on this Mac at a time.
 #
 # WHY (2026-10-25). Several agents push in parallel and each pre-push runs the whole vitest suite (~15 k tests,
-# measured 105 concurrent vitest processes). Together with the Umbra CI VM they starved the host (16 GB RAM,
+# measured 105 concurrent vitest processes). Together with the CI runners they starved the host (16 GB RAM,
 # swap 3 of 4 GB used) and the guest wedged on I/O. The gate is NEVER skipped; it queues.
 #
 # ONE lock for everything heavy: ~/.claude/locks/heavy-test.lock, taken with macOS lockf(1) (no flock(1) on macOS).

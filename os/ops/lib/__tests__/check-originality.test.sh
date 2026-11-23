@@ -22,8 +22,8 @@ printf 'Arabic right to left typography needs a font fallback stack and logical 
 
 bash "$SCRIPT" --dir "$H" >/dev/null 2>&1 && no "fails on a near-duplicate pair" || ok "fails on a near-duplicate pair"
 out="$(bash "$SCRIPT" --dir "$H" 2>&1)"
-echo "$out" | grep -q 'a.md' && echo "$out" | grep -q 'b.md' && ok "names the duplicate pair" || no "names the duplicate pair"
-echo "$out" | grep -q 'FAIL' && ok "marks the pair FAIL" || no "marks the pair FAIL"
+grep -q 'a.md' <<<"$out" && grep -q 'b.md' <<<"$out" && ok "names the duplicate pair" || no "names the duplicate pair"
+grep -q 'FAIL' <<<"$out" && ok "marks the pair FAIL" || no "marks the pair FAIL"
 echo "$out" | grep -E 'FAIL.*c\.md' >/dev/null && no "does not FAIL an unrelated file" || ok "does not FAIL an unrelated file"
 
 # entity neutralisation: identical prose differing ONLY by product name must be caught

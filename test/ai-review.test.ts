@@ -287,14 +287,14 @@ describe('label-fresh: a stale label fails (the drain\'s rule)', () => {
 describe('the Claude CLI install produces a working binary before the review runs', () => {
   const wf6 = readFileSync(join(__dirname, '../.github/workflows/ai-review.yml'), 'utf8');
   const review6 = wf6.slice(wf6.indexOf('  review:'), wf6.indexOf('  not-risky:'));
-  it('installs the pinned package without scripts, then runs its install.cjs explicitly, then checks claude --version', () => {
-    expect(review6).toMatch(/npm install --global --ignore-scripts @anthropic-ai\/claude-code@\d+\.\d+\.\d+/);
-    expect(review6).toMatch(/node "\$\(npm root --global\)\/@anthropic-ai\/claude-code\/install\.cjs"/);
-    expect(review6).toMatch(/\n\s+claude --version/);
+  it('installs the pinned package without scripts into the job temp dir, links the platform binary, then checks claude --version', () => {
+    expect(review6).toMatch(/npm install --prefix "\$RUNNER_TEMP\/claude-cli" --no-save --ignore-scripts @anthropic-ai\/claude-code@\d+\.\d+\.\d+/);
+    expect(review6).toMatch(/ln -sf "\$bin" "\$RUNNER_TEMP\/claude-cli\/bin\/claude"/);
+    expect(review6).toMatch(/\n\s+"\$RUNNER_TEMP\/claude-cli\/bin\/claude" --version/);
   });
   it('the install and version check come before the review step; install scripts stay off for every other install', () => {
-    expect(review6.indexOf('claude --version')).toBeLessThan(review6.indexOf('- name: Review the diff'));
-    for (const m of wf6.matchAll(/npm (?:install|ci)[^\n]*/g)) expect(m[0]).toMatch(/--ignore-scripts/);
+    expect(review6.indexOf('claude-cli/bin/claude" --version')).toBeLessThan(review6.indexOf('- name: Review the diff'));
+    for (const l of wf6.split('\n').filter((x) => !/^\s*#/.test(x))) for (const m of l.matchAll(/npm (?:install|ci)\s[^\n]*/g)) expect(m[0]).toMatch(/--ignore-scripts/);
   });
 });
 

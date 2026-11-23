@@ -24,7 +24,7 @@ chmod +x "$T/bin/launchctl"
 mkdir -p "$T/loaded"; export LOADED_DIR="$T/loaded"
 export PATH="$T/bin:$PATH"
 export EBDA_OS_LOCAL_ENV="$T/none.env"
-want="$(grep -vcE '^(#|$)' "$ROOT/os/launchd/mac-local.list")"
+want="$(grep -vE '^(#|$)' "$ROOT/os/launchd/mac-local.list" | grep -vc $'\toptin=')"   # opt-in jobs are off by default (INSTALL-1)
 
 H1="$T/h1"; mkdir -p "$H1"
 out="$(bash "$INSTALL" --dry-run --home "$H1" 2>&1)"; rc=$?
@@ -55,7 +55,7 @@ OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H2" >/dev/null 2>&1
 
 H3="$T/h3"; mkdir -p "$H3"
 msg="$(FAKE_LOADED="com.for""ceai.os-watch" bash "$INSTALL" --home "$H3" 2>&1)"; rc=$?
-[ "$rc" != 0 ] && printf '%s' "$msg" | grep -q 'os/cutover.sh' && ok "refuses with 'run os/cutover.sh' while an old-prefix label is loaded" || no "no refusal (rc=$rc)"
+[ "$rc" != 0 ] && grep -q 'os/cutover.sh' <<<"$msg" && ok "refuses with 'run os/cutover.sh' while an old-prefix label is loaded" || no "no refusal (rc=$rc)"
 [ -z "$(find "$H3" -type f 2>/dev/null)" ] && ok "refusal wrote nothing" || no "refusal wrote files"
 # a literal /Users/ path in any installed template breaks other users and --home installs
 lit=""; for t in $(grep -vE '^(#|[[:space:]]*$)' "$ROOT/os/launchd/mac-local.list" | cut -f2); do lit="$lit$(grep -Hn '/Users/' "$ROOT/os/$t")"; done
@@ -90,5 +90,31 @@ FAKE_BOOTOUT_ERR="Boot-out failed: 5: Input/output error" OS_LINK_ANY_CHECKOUT=1
 [ "$rc" != 0 ] && grep -q "could not unload com.ebda.os.stale-job" "$T/h6.out" && ok "  ...and the install fails loudly (rc=$rc)" || no "bootout failure not reported (rc=$rc)"
 FAKE_BOOTOUT_ERR="Boot-out failed: 3: No such process" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H6" >/dev/null 2>&1; rc=$?
 [ ! -e "$H6/Library/LaunchAgents/com.ebda.os.stale-job.plist" ] && [ "$rc" = 0 ] && ok "a job that was not loaded: plist removed, install clean" || no "not-loaded stale plist mishandled (rc=$rc)"
-[ "$fail" = 0 ] && echo "install-dryrun: PASS" || echo "install-dryrun: FAIL"
+# INSTALL-1: an opt-in job (hands-mac-local) is skipped by default, installed with its flag, and removed again when the flag goes
+grep -q $'^hands-mac-local\t.*\toptin=OS_HANDS_LOCAL$' "$ROOT/os/launchd/mac-local.list" && ok "hands-mac-local is opt-in (optin=OS_HANDS_LOCAL)" || no "hands-mac-local is not opt-in"
+for j in claude-bundle-sync pr-shepherd sentry-stale-watch; do
+  cut -f1 "$ROOT/os/launchd/mac-local.list" | grep -qxF "$j" && ok "$j is in the Mac-local set (not removed)" || no "$j missing from the Mac-local set"
+done
+H8="$T/h8"; mkdir -p "$H8" "$T/loaded8"
+out8="$(LOADED_DIR="$T/loaded8" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H8" 2>&1)"
+[ ! -e "$H8/Library/LaunchAgents/com.ebda.os.hands-mac-local.plist" ] && grep -q 'skip   com.ebda.os.hands-mac-local (opt-in' <<<"$out8" && ok "hands-mac-local skipped without OS_HANDS_LOCAL" || no "hands-mac-local installed by default"
+LOADED_DIR="$T/loaded8" OS_HANDS_LOCAL=1 OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H8" >/dev/null 2>&1
+[ -e "$H8/Library/LaunchAgents/com.ebda.os.hands-mac-local.plist" ] && [ -f "$T/loaded8/com.ebda.os.hands-mac-local" ] && ok "OS_HANDS_LOCAL=1 installs and loads hands-mac-local" || no "opt-in did not install hands-mac-local"
+LOADED_DIR="$T/loaded8" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$H8" >/dev/null 2>&1
+[ ! -e "$H8/Library/LaunchAgents/com.ebda.os.hands-mac-local.plist" ] && [ ! -f "$T/loaded8/com.ebda.os.hands-mac-local" ] && ok "dropping the opt-in unloads and removes hands-mac-local" || no "hands-mac-local kept after opt-out"
+H9="$T/h9"; mkdir -p "$H9/os/launchd"
+# a malformed flag column fails loudly instead of silently installing or skipping
+cp -R "$ROOT/os" "$T/r9" 2>/dev/null; mkdir -p "$T/repo9"; mv "$T/r9" "$T/repo9/os"
+printf 'x\tops/launchd/com.ebda.os.pr-shepherd.plist\tbogus\n' >> "$T/repo9/os/launchd/mac-local.list"
+bash "$T/repo9/os/install.sh" --dry-run --home "$H9" >"$T/h9.out" 2>&1; rc=$?
+[ "$rc" != 0 ] && grep -q "unknown flag 'bogus'" "$T/h9.out" && ok "unknown mac-local.list flag fails the install (rc=$rc)" || { no "unknown flag accepted (rc=$rc)"; tail -2 "$T/h9.out"; }
+# install.sh never drives the REAL launchd from a --home dir (2026-11-17: an unstubbed --home loop re-pointed every real com.ebda.os job at a deleted temp HOME)
+HG="$T/hg"; mkdir -p "$HG"
+og="$(PATH="/usr/bin:/bin:/usr/sbin:/sbin" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$HG" 2>&1)"; rcg=$?
+if [ -x /bin/launchctl ] || [ -x /usr/bin/launchctl ]; then
+  [ "$rcg" = 2 ] && grep -q "refusing" <<<"$og" && [ ! -d "$HG/Library/LaunchAgents" ] && ok "--home with the real launchctl on PATH is refused before anything is touched" || no "real launchctl + --home not refused (rc=$rcg)"
+  PATH="/usr/bin:/bin:/usr/sbin:/sbin" OS_LINK_ANY_CHECKOUT=1 bash "$INSTALL" --home "$HG" --dry-run >/dev/null 2>&1 && ok "--dry-run is allowed with the real launchctl" || no "--dry-run refused"
+fi
+[ "$fail" = 0 ] && echo "install-dryrun: PASS" || 
+echo "install-dryrun: FAIL"
 exit "$fail"

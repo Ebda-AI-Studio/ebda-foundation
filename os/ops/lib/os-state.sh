@@ -191,22 +191,20 @@ require_projects_access_critical() {
 # ── wall clock ────────────────────────────────────────────────────────────────
 # _ut <seconds> <cmd...> — run a command under a hard wall clock, portably.
 #
-# Every scheduled job that shells out to the network (umbra, ssh, gh, curl) can
+# Every scheduled job that shells out to the network (ssh, gh, curl) can
 # block forever on a half-open socket or a wedged guest. Two such hangs were
-# found on 2026-08-02: ci-runner-guard wedged 4h07m on a stale-port `umbra
-# shell`, and gate-guard wedged 24 DAYS. hung-job-guard.sh is the backstop, but
+# found on 2026-08-02: ci-runner-guard wedged 4h07m on a stale-port guest
+# ssh probe, and gate-guard wedged 24 DAYS. hung-job-guard.sh is the backstop, but
 # a job should bound its own calls rather than wait to be reaped.
 #
 # Defined here (not per-script) so every job that sources this lib gets it.
-# ci-runner-guard.sh keeps its own identical copy — it predates this one and is
-# defined after the source, so it simply wins; ops/tests/ci-runner-guard.test.sh
-# fails if the two copies drift apart.
+# ci-runner-guard.sh uses this copy (it only defines a pass-through when the lib is missing).
 #
 # ONE supervisor on every host, deliberately (2026-09-15). It used to prefer
 # gtimeout/timeout, but launchd's PATH has neither, so production only ever ran
 # the hand-rolled fallback, and it had two holes:
 #   - STDIN. bash 3.2 without job control gives a backgrounded `"$@" &` /dev/null
-#     as stdin, so `printf script | _ut N umbra shell m -- bash` ran an EMPTY
+#     as stdin, so `printf script | _ut N ssh host bash` ran an EMPTY
 #     script. `<&0` is an explicit redirection, which bash honours.
 #   - DESCENDANTS. Killing only the direct child leaves any grandchild that still
 #     holds stdout, and `$(_ut …)` waits for EOF on that pipe forever. gtimeout

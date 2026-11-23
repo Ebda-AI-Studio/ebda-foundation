@@ -1,0 +1,312 @@
+[
+ {
+  "id": "access.signin",
+  "area": "access",
+  "title_en": "Sign in with the Ebda AI Studio account",
+  "title_ar": "تسجيل الدخول بحساب ابدأ ستوديو",
+  "screen": "web SignInGate (route /, callback /auth/callback)",
+  "api": [
+   "GET /auth/callback",
+   "GET /api/v1/stores/:storeId/me"
+  ],
+  "roles": [
+   "owner",
+   "staff",
+   "super_admin"
+  ],
+  "plan_gate": null,
+  "assistant_policy": "free",
+  "undo_possible": false,
+  "help_article": null,
+  "merchant_questions_ar": [
+   "ازاي ادخل على ابدأ شات؟",
+   "مش عارف اسجل دخول",
+   "ليه بيقولي تسجيل الدخول فشل؟"
+  ],
+  "merchant_questions_en": [
+   "How do I sign in to Ebda Chat?"
+  ],
+  "steps": [
+   "Open wa.ebda.app",
+   "Press Sign in",
+   "Use the same Ebda AI Studio account as Ebda Store",
+   "You land in the inbox for your store"
+  ],
+  "edge_cases": [
+   "Sign-in error codes: denied, state, nonce, token, discovery, missing_id_token, claims (SignInError screen lists a reason)"
+  ],
+  "gaps": [
+   "No help article for sign-in problems"
+  ],
+  "status": "live",
+  "assistant_note": "Assistant can explain only; it never handles credentials"
+ },
+ {
+  "id": "templates.sync",
+  "area": "templates",
+  "title_en": "Sync templates and review status from Meta",
+  "title_ar": "مزامنة القوالب من ميتا",
+  "screen": null,
+  "api": [
+   "POST /stores/:storeId/templates/sync"
+  ],
+  "roles": [
+   "owner",
+   "staff"
+  ],
+  "plan_gate": null,
+  "assistant_policy": "free",
+  "undo_possible": false,
+  "help_article": "docs/help/{ar,en}/04-templates-and-the-24-hour-window.md",
+  "merchant_questions_ar": [
+   "القالب لسه Pending",
+   "ازاي اعمل sync؟",
+   "القوالب مش بتظهر"
+  ],
+  "merchant_questions_en": [
+   "My template status did not update, how do I sync?"
+  ],
+  "steps": [
+   "API only: no caller in web or cron (no periodic sync)",
+   "Status also updates via webhook message_template_status_update"
+  ],
+  "edge_cases": [
+   "Meta unreachable or rate-limited: 503 rate_limited, retry shortly; nothing is lost"
+  ],
+  "gaps": [
+   "NO caller (audit #2): nothing triggers sync on connect or periodically",
+   "Staff may call it (no owner check)"
+  ],
+  "status": "live",
+  "assistant_note": "full replace: absent templates are deleted locally"
+ },
+ {
+  "id": "templates.list",
+  "area": "templates",
+  "title_en": "List templates and their status",
+  "title_ar": "قايمة القوالب وحالتها",
+  "screen": "none (inbox picker and CampaignForm list only APPROVED)",
+  "api": [
+   "GET /stores/:storeId/templates"
+  ],
+  "roles": [
+   "owner",
+   "staff"
+  ],
+  "plan_gate": null,
+  "assistant_policy": "free",
+  "undo_possible": false,
+  "help_article": "docs/help/{ar,en}/04-templates-and-the-24-hour-window.md",
+  "merchant_questions_ar": [
+   "فين القوالب بتاعتي؟",
+   "القالب اتقبل ولا اترفض؟",
+   "امتى القالب هيتفعل؟"
+  ],
+  "merchant_questions_en": [
+   "Where are my templates?"
+  ],
+  "steps": [
+   "No templates page: approved ones appear in the chat template picker and the campaign form"
+  ],
+  "edge_cases": [
+   "Empty list for an own-number merchant until templates are submitted by API"
+  ],
+  "gaps": [
+   "NO merchant Templates screen (help 04 describes one that does not exist)",
+   "Status and rejectedReason exist in TemplateDto but no screen renders them for merchants"
+  ],
+  "status": "live"
+ },
+ {
+  "id": "agent.connectors",
+  "area": "agent",
+  "title_en": "Connect the agent to your own systems (webhook / Odoo)",
+  "title_ar": "ربط المساعد بسيستم الشركة",
+  "screen": null,
+  "api": [
+   "GET /stores/:storeId/connectors",
+   "PUT /stores/:storeId/connectors/:id",
+   "DELETE /stores/:storeId/connectors/:id",
+   "POST /stores/:storeId/connectors/:id/test"
+  ],
+  "roles": [
+   "owner"
+  ],
+  "plan_gate": null,
+  "assistant_policy": "confirm",
+  "undo_possible": true,
+  "help_article": "docs/connectors.md (developer doc only)",
+  "merchant_questions_ar": [
+   "ينفع المساعد يشوف الحجوزات بتاعتي؟",
+   "عايز اربطه بـ Odoo",
+   "webhook للسيستم بتاعي"
+  ],
+  "merchant_questions_en": [
+   "Can the agent call my own system or Odoo?"
+  ],
+  "steps": [
+   "API only: kind webhook or odoo, https:443 only, HMAC-signed calls, secret write-only, one test per 5 s"
+  ],
+  "edge_cases": [
+   "SSRF rules on every call"
+  ],
+  "gaps": [
+   "NO merchant UI and NO merchant help article"
+  ],
+  "status": "live",
+  "assistant_note": "gives the agent tool access to external systems"
+ },
+ {
+  "id": "templates.status-webhook",
+  "area": "templates",
+  "title_en": "Template approval, rejection and category-change updates (webhook)",
+  "title_ar": "تحديث حالة القالب تلقائي من ميتا",
+  "screen": null,
+  "api": [
+   "POST /meta/webhook (message_template_status_update, template_category_update)"
+  ],
+  "roles": [
+   "system"
+  ],
+  "plan_gate": null,
+  "assistant_policy": "forbidden",
+  "undo_possible": false,
+  "help_article": null,
+  "merchant_questions_ar": [
+   "القالب اتقبل؟",
+   "امتى هيجيلي رد من ميتا؟",
+   "ازاي تحديث حالة القالب تلقائي من ميتا؟"
+  ],
+  "merchant_questions_en": [
+   "When will Meta review my template?"
+  ],
+  "steps": [
+   "Meta pushes APPROVED/REJECTED/PAUSED/DISABLED with reason; stored on the template"
+  ],
+  "edge_cases": [
+   "Approval takes minutes to about a day"
+  ],
+  "gaps": [
+   "Status is not shown to merchants anywhere"
+  ],
+  "status": "live",
+  "assistant_note": "system path, not an action"
+ },
+ {
+  "id": "templates.create-submit",
+  "area": "templates",
+  "title_en": "Create and submit a template to Meta (own WABA)",
+  "title_ar": "عمل قالب وتقديمه لميتا",
+  "screen": "none (planned Templates screen)",
+  "api": [
+   "POST /stores/:storeId/templates {name,language,category,components}"
+  ],
+  "roles": [
+   "owner",
+   "super_admin"
+  ],
+  "plan_gate": "package in good standing + active number",
+  "assistant_policy": "confirm",
+  "undo_possible": false,
+  "help_article": "docs/help/{ar,en}/04-templates-and-the-24-hour-window.md",
+  "merchant_questions_ar": [
+   "عايز اعمل رسالة بلغ بيها العميل إن الأوردر اتشحن",
+   "ازاي اعمل template؟",
+   "عايز قالب للعروض"
+  ],
+  "merchant_questions_en": [
+   "How do I create a message template?"
+  ],
+  "steps": [
+   "Today: raw API only (name [a-z0-9_], language, category MARKETING/UTILITY/AUTHENTICATION, BODY required)",
+   "Planned: Templates screen + assistant template-writer (spec section 6.7)"
+  ],
+  "edge_cases": [
+   "Meta may require example values for variables; our schema is permissive so Meta may reject (unverified)"
+  ],
+  "gaps": [
+   "NO merchant UI (BLOCKER #1 in audit)",
+   "No template edit/delete endpoint (gap #17)",
+   "No rejection reason screen",
+   "No quality-rating tracking",
+   "Help 04 doc/code mismatch"
+  ],
+  "status": "planned",
+  "plan": "business/ebda/audits/2026-11-14-self-service-and-ai-assistant-audit.md #1 + spec 2026-11-14-self-service-and-ebda-assistant-design.md section 7.2 (register row: NOT BUILT)",
+  "assistant_note": "a submission to Meta on the merchant account; cannot be withdrawn, edit not supported by our API"
+ },
+ {
+  "id": "agent.tone",
+  "area": "agent",
+  "title_en": "Agent tone presets",
+  "title_ar": "نبرة المساعد",
+  "screen": "AgentScreen (pr 79)",
+  "api": [
+   "PUT /stores/:storeId/agent {tone: warm|professional|playful}"
+  ],
+  "roles": [
+   "owner"
+  ],
+  "plan_gate": null,
+  "assistant_policy": "preview",
+  "undo_possible": true,
+  "help_article": "docs/help/{ar,en}/07-ai-agent.md",
+  "merchant_questions_ar": [
+   "عايز المساعد رسمي أكتر",
+   "نبرة مرحة",
+   "ازاي نبرة المساعد؟"
+  ],
+  "merchant_questions_en": [
+   "Make the agent more formal"
+  ],
+  "steps": [
+   "Pick warm / professional / playful; added to the reply style"
+  ],
+  "edge_cases": [],
+  "gaps": [],
+  "status": "in-pr",
+  "pr": "ebda-whatsapp#79 (open, stacked on #78)"
+ },
+ {
+  "id": "operator.instapay-review",
+  "area": "operator",
+  "title_en": "Review InstaPay proofs (view, confirm, release hold, reject)",
+  "title_ar": "مراجعة إيصالات انستاباي",
+  "screen": "OperatorScreen (operator console)",
+  "api": [
+   "GET /api/v1/operator/instapay",
+   "GET /api/v1/operator/instapay/:id/proof-link",
+   "POST /api/v1/operator/instapay/:id/confirm",
+   "POST /api/v1/operator/instapay/:id/release",
+   "POST /api/v1/operator/instapay/:id/reject"
+  ],
+  "roles": [
+   "super_admin"
+  ],
+  "plan_gate": null,
+  "assistant_policy": "forbidden",
+  "undo_possible": false,
+  "help_article": null,
+  "merchant_questions_ar": [
+   "مين بيعمل مراجعة إيصالات انستاباي؟",
+   "ليه مش لاقي مراجعة إيصالات انستاباي عندي؟",
+   "عايز مراجعة إيصالات انستاباي اكلم مين؟"
+  ],
+  "merchant_questions_en": [
+   "Why can I not do this myself: Review InstaPay proofs (view, confirm, release hold, reject)?"
+  ],
+  "steps": [
+   "Super admin only; every write re-checks the session (fails closed) and is audited with actor and reason"
+  ],
+  "edge_cases": [
+   "Assistant refuses and offers the merchant-facing alternative or a handoff to Ebda"
+  ],
+  "gaps": [
+   "Self-service gap: BLOCKER #4: confirmation should become AI auto-confirm when the receipt matches (spec 7.4), human only on flags; duplicate/hold release stays human (fraud)"
+  ],
+  "status": "live",
+  "operator_replaces": "wallet.instapay (activation waits for staff)",
+  "operator_reason_valid": "gap",
+  "operator_reason": "BLOCKER #4: confirmation should become AI auto-confirm when the receipt matches (spec 7.4), human only on flags; duplicate/hold release stays human (fraud)"
+ }
+]

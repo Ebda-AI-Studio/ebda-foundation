@@ -55,7 +55,8 @@ if command -v require_projects_access >/dev/null 2>&1; then require_projects_acc
 
 GH_USER="$OS_ORG"
 PROJECTS_ROOT="$OS_PROJECTS_DIR"
-WORKTREES_ROOT="$PROJECTS_ROOT/_worktrees"
+WORKTREES_ROOT="$PROJECTS_ROOT/_worktrees"   # internal root; sweep_repo also walks the SSD root
+. "$(dirname "${BASH_SOURCE[0]}")/lib/wt-roots.sh" 2>/dev/null || . "$HOME/.claude/scripts/lib/wt-roots.sh" 2>/dev/null || true
 
 # Common test-infra files that MUST exist in every Force repo (see
 # standard/common-test-files.md). The canonical one is the destructive-reset
@@ -271,7 +272,9 @@ sweep_repo() {
 
   # every worktree dir for this repo under _worktrees
   local any=0 wt br pr_line pr
-  for wt in "$WORKTREES_ROOT/${dir}__"* "$WORKTREES_ROOT/${repo_only}__"*; do
+  local _roots _rt
+  _roots="$(command -v wt_all_roots >/dev/null 2>&1 && wt_all_roots || true)"; [ -n "$_roots" ] || _roots="$WORKTREES_ROOT"
+  for wt in $(for _rt in $_roots; do printf '%s\n' "$_rt/${dir}__"* "$_rt/${repo_only}__"*; done); do
     [ -d "$wt" ] || continue
     br=$(git -C "$wt" symbolic-ref --short HEAD 2>/dev/null) || continue
     pr_line=$(printf '%s\n' "$merged" | awk -F'\t' -v b="$br" '$1==b{print $2; exit}')

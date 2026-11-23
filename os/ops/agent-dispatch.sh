@@ -3,7 +3,7 @@
 # agent-dispatch.sh — run a free-text request from Telegram as a real agent job.
 #
 # NOTE (2026-11-09): its only caller, the Telegram polling daemon, was removed: the OS shares one bot with the tg-relay session, which is
-# the only consumer of the bot's inbound updates (ruling RR-tg-send-only). Inbound text now reaches an agent only through that relay.
+# the only consumer of the bot's inbound updates. SUPERSEDED (RR-tg-brain-owns): the brain owns the webhook and stores Ahmad's texts in its inbox (os/ops/brain-inbox.sh).
 #
 # THE GAP THIS CLOSES
 # -------------------
@@ -45,6 +45,9 @@ JOBS_LOG="$STATE_DIR/agent-jobs.jsonl"
 TG_ENV="${TG_ENV:-$OS_SERVICES_ENV}"
 # shellcheck source=/dev/null
 [ -f "$TG_ENV" ] && { set -a; . "$TG_ENV"; set +a; }
+# F-TG-1: the credentials moved to the macOS Keychain (same services notify.sh reads); the env file stays a fallback.
+: "${TELEGRAM_BOT_TOKEN:=$(security find-generic-password -s ebda-telegram-bot -w 2>/dev/null || true)}"
+: "${TELEGRAM_ALERT_CHAT_ID:=$(security find-generic-password -s ebda-telegram-alert-chat-id -w 2>/dev/null || true)}"
 : "${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN unset — put it in $TG_ENV}"
 : "${TELEGRAM_ALERT_CHAT_ID:?TELEGRAM_ALERT_CHAT_ID unset — put it in $TG_ENV}"
 

@@ -10,15 +10,20 @@
 //   POST /drill           the Mac's weekly restore drill result {result:'pass'|'fail'} (Bearer INGEST_TOKEN, ruling F-I6).
 //   GET  /hands/leases[?run=id]  live controller leases for the hands (run token or HANDS_MAC_TOKEN)
 //   GET  /hands/runs/:id  POST /hands/jobs/:id/outcome  POST /hands/usage  POST /hands/claim  POST /hands/refused   (Bearer HANDS_TOKEN)
-//   POST /telegram/webhook  inline-button answers FORWARDED BY THE tg-relay SESSION (it polls @EbdaAIStudiobot; the brain is send-only and
-//                           never registers this URL with Telegram). Auth: X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
+//   POST /telegram/webhook  Telegram's own webhook (the brain is the single consumer of @EbdaAIStudiobot; register it with
+//                           POST /api/telegram/webhook/set). Taps + replies + the owner's inbox text. Auth: X-Telegram-Bot-Api-Secret-Token = TELEGRAM_WEBHOOK_SECRET.
+//   /api/telegram/webhook/{set,info,delete}  /api/telegram/send  /api/inbox  /api/inbox/ack   (Bearer INGEST_TOKEN, src/tg-inbox.ts)
+//   POST|GET /api/decisions  one-tap approval questions (Bearer INGEST_TOKEN): POST {id,question,why,default,cost_if_wrong,kind,link?}[] <= 10 ->
+//                         one Telegram message each; GET ?status=answered|pending reads the answers. Taps arrive via /telegram/webhook (src/decisions.ts).
+//   POST /api/instapay/notify  InstaPay auto-confirm digest + waiting messages from Store/Chat (HMAC-signed per product, src/instapay-bridge.ts);
+//                         its taps (`ip:<s|c>:<id>`) arrive via /telegram/webhook and call the product's signed revert endpoint.
 //   /social/*             social posting: drafts/edits/calendar (INGEST_TOKEN), decide/brands (SOCIAL_DECIDE_TOKEN), /social/d/:id signed
 //                         decision page (src/social/routes.ts)
 //   GET  /health
 // Human routes: GET /api/state, POST /api/halt, POST /api/questions/:id/answer, and the static dashboard at /dash/ (Workers Static
 // Assets, run Worker-first so the HTML/JS/CSS are never served before the gate). All of them go through gateHuman()
 // (src/dash-auth.ts, ruling RR-dash-auth): the Cloudflare Access JWT when Access is configured, else the interim Basic Auth,
-// else 503. /health stays public and carries no data.
+// else 503. /health stays public and carries only the deploy commit.
 import type { BrainDO } from './brain-do';
 import { DASH_HEADERS, gateHuman } from './dash-auth';
 import { type Env } from './env';
@@ -28,7 +33,10 @@ import { runTokenValid } from './runtoken';
 import { checkBearerAuth, mapEvent, mapRunDetail, signEvent, timingSafeEqualStr, verifyGitHubSig, type RelayEvent } from './relay';
 import { cronName } from './schedule';
 import { validateAlert, type PlatformAlert } from './alerts';
+import { answerDecision, listDecisions, noteDecision, postDecisions, MAX_PER_CALL, validateDraft } from './decisions';
 import { handleSocial } from './social/routes';
+import { handleInstapayNotify, handleInstapayTap } from './instapay-bridge';
+import { ackInbox, handleSend, handleWebhookAdmin, listInbox, recordInbox } from './tg-inbox';
 import { validateUsage } from './usage';
 import { watchAdvisories } from './watchers/advisories';
 import { checkAll, parseTargets } from './watchers/health';
@@ -143,6 +151,17 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
     return new Response('bad json', { status: 400 });
   }
   const cb = update?.callback_query;
+  // decisions: a free-text reply to a decision message (from the owner, in the configured chat) is stored as that decision's note
+  const msg = update?.message;
+  if (!cb && msg?.reply_to_message?.message_id && typeof msg.text === 'string') {
+    if (String(msg.chat?.id ?? '') === String(env.TELEGRAM_CHAT_ID ?? '') && String(msg.from?.id ?? '') === String(env.TELEGRAM_OWNER_ID || env.TELEGRAM_CHAT_ID || '')) await noteDecision(env, Number(msg.reply_to_message.message_id), msg.text);
+    return new Response(null, { status: 200 });
+  }
+  // inbox: any other text/file message from the owner in the configured chat is stored for the controller (src/tg-inbox.ts)
+  if (!cb && msg) {
+    await recordInbox(env, update);
+    return new Response(null, { status: 200 });
+  }
   // only button answers from the configured chat are accepted; everything else is acknowledged and ignored
   if (!cb || String(cb?.message?.chat?.id ?? '') !== String(env.TELEGRAM_CHAT_ID ?? '')) return new Response(null, { status: 200 });
   // M-2: in a group chat any member could press a button; the presser must be the owner (TELEGRAM_OWNER_ID, default the chat id,
@@ -150,8 +169,14 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
   if (String(cb?.from?.id ?? '') !== String(env.TELEGRAM_OWNER_ID || env.TELEGRAM_CHAT_ID || '')) return new Response(null, { status: 200 });
   const m = String(cb.data ?? '').match(/^q:([\w-]+):([\w-]+)$/);
   const sm = String(cb.data ?? '').match(/^s:([\w-]+):([aek])$/);
+  const dm = String(cb.data ?? '').match(/^d:([\w-]+):([ynlk])$/);
   let text = 'not understood';
-  if (sm) {
+  const ipText = String(cb.data ?? '').startsWith('ip:') ? await handleInstapayTap(env, String(cb.data)) : null;
+  if (ipText !== null) {
+    text = ipText;
+  } else if (dm) {
+    text = (await answerDecision(env, dm[1]!, dm[2]!, cb.from)).text;
+  } else if (sm) {
     const decision = sm[2] === 'a' ? 'approve' : sm[2] === 'e' ? 'edit' : 'skip';
     const r = await brainStub(env).socialDecide(sm[1]!, decision, 'telegram-button');
     text = r.ok ? `recorded: ${r.status}` : r.reason ?? 'refused';
@@ -320,7 +345,8 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
-      if (path === '/health') return json({ ok: true, service: 'ebda-os-brain' });
+      // the commit is not a secret (a deploy stamp, same as the store and whatsapp /health); anything that is not a sha reads 'unknown'
+      if (path === '/health') return json({ ok: true, service: 'ebda-os-brain', commit: /^[0-9a-f]{7,40}(\+dirty)?$/.test(env.GIT_COMMIT ?? '') ? env.GIT_COMMIT : 'unknown' });
       if (request.method === 'POST' && (path === '/github/webhook' || path === '/')) return await handleGitHub(request, env, ctx);
       if (request.method === 'GET' && path === '/pending') return await handlePending(request, env);
       if (path === '/telegram/webhook' && request.method === 'POST') return await handleTelegram(request, env);
@@ -350,6 +376,52 @@ export default {
         if (!rec) return json(out);
         const resolved = await brainStub(env).reconcileSource(rec.source, (list as Finding[]).map((f) => f.key), rec.keep ?? []);
         return json({ ...out, resolved });
+      }
+      if (path.startsWith('/api/telegram/') || path === '/api/inbox' || path === '/api/inbox/ack') {
+        if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });
+        if (path === '/api/telegram/send' && request.method === 'POST') return await handleSend(request, env);
+        const wh = path.match(/^\/api\/telegram\/webhook\/(set|info|delete)$/);
+        if (wh) return await handleWebhookAdmin(wh[1]!, request.method, env);
+        if (path === '/api/inbox' && request.method === 'GET') {
+          const since = Number(url.searchParams.get('since') ?? 0);
+          if (!Number.isFinite(since) || since < 0) return json({ error: 'since must be a ms timestamp' }, 400);
+          return json({ items: await listInbox(env, since) });
+        }
+        if (path === '/api/inbox/ack' && request.method === 'POST') {
+          let b: any;
+          try {
+            b = await readJson(request);
+          } catch {
+            return json({ error: 'bad json' }, 400);
+          }
+          const ids = Array.isArray(b?.ids) ? b.ids : [];
+          if (!ids.length || ids.length > 100 || !ids.every((i: unknown) => typeof i === 'string' && /^inbox:\d{13}:\d+$/.test(i))) return json({ error: 'ids: 1-100 inbox keys' }, 400);
+          return json(await ackInbox(env, ids));
+        }
+        return json({ error: 'not found' }, 404);
+      }
+      if (path === '/api/instapay/notify') return await handleInstapayNotify(request, env);
+      if (path === '/api/decisions' && (request.method === 'POST' || request.method === 'GET')) {
+        if (!checkBearerAuth(request, env.INGEST_TOKEN)) return new Response('unauthorized', { status: 401 });
+        if (request.method === 'GET') {
+          const st = url.searchParams.get('status');
+          if (st !== null && st !== 'answered' && st !== 'pending') return json({ error: 'status must be answered or pending' }, 400);
+          return json({ decisions: await listDecisions(env, st) });
+        }
+        let body: unknown;
+        try {
+          body = await readJson(request);
+        } catch {
+          return json({ error: 'bad json' }, 400);
+        }
+        const list = Array.isArray(body) ? body : [body];
+        if (list.length > MAX_PER_CALL) return json({ error: `at most ${MAX_PER_CALL} decisions per request` }, 400);
+        for (const d of list) {
+          const err = validateDraft(d);
+          if (err) return json({ error: err }, 400);
+        }
+        if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return json({ error: 'telegram not configured' }, 503);
+        return json(await postDecisions(env, list as Array<Record<string, any>>));
       }
       if (path === '/alerts' && request.method === 'POST') {
         // AIOS-8: the platform's Telegram alerts, mirrored (one alert or an array <= 20)

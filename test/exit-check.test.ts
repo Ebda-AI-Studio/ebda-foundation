@@ -26,6 +26,13 @@ case "$a" in
   */api/state*) echo '{"findings":{"open":'\${X_OPEN:-0}'}}';;
   */api/alerts*) echo '{"alerts":[]}';;
 esac`);
+  // A Keychain whose only item has account $USER (not a hard-coded name): a lookup that passes a different -a misses it.
+  stub('security', `[ "$1" = find-generic-password ] || exit 2
+acct=""; svc=""
+while [ $# -gt 0 ]; do case "$1" in -a) acct="$2"; shift;; -s) svc="$2"; shift;; esac; shift; done
+[ "$svc" = ebda-os-dash ] || exit 44
+[ -z "$acct" ] || [ "$acct" = "$USER" ] || exit 44
+echo "kc-secret"`);
   return spawnSync('bash', [SCRIPT, ...args], {
     env: { PATH: `${bin}:/usr/bin:/bin`, EBDA_OS_DASH_PASSWORD: 'x', EXIT_REPOS: 'o/r', EXIT_MAIN_REPO: 'o/r', EXIT_HEALTH: 'api|https://h/health|apps/api', ...env },
     encoding: 'utf8',
@@ -58,5 +65,22 @@ describe('loop/exit-check.sh', () => {
   it('4c needs three successes; 6 fails on any open finding', () => {
     expect(run({ X_RUNS: 'success,failure,success' }).stdout).toMatch(/FAIL {2}4c/);
     expect(run({ X_OPEN: '1' }).stdout).toMatch(/FAIL {2}6 brain: 1 open/);
+  });
+  it('6 reads the Keychain item by service, whatever its account (USER=ahmadsharaf, not "ahmad")', () => {
+    const r = run({ EBDA_OS_DASH_PASSWORD: '', USER: 'ahmadsharaf' });
+    expect(r.stdout).not.toMatch(/no dashboard password/);
+    expect(r.stdout).toMatch(/PASS {2}6 brain/);
+  });
+  it('4b web: a packages/repo change does not make web "behind"; packages/ui does', () => {
+    const live = 'b'.repeat(40);
+    const web = { X_LIVE: live, EXIT_HEALTH: 'web|https://h/health|apps/web packages/shared packages/ui' };
+    expect(run({ ...web, X_DIFF: 'packages/repo/x.ts' }).stdout).toMatch(/PASS {2}4b web/);
+    expect(run({ ...web, X_DIFF: 'packages/ui/x.ts' }).stdout).toMatch(/FAIL {2}4b web/);
+  });
+  it('the DEFAULT web/admin prefixes equal the deploy workflows filters (no bare "packages")', () => {
+    const r = run({ EXIT_HEALTH: '', X_LIVE: 'b'.repeat(40), X_DIFF: 'packages/repo/x.ts' });
+    expect(r.stdout).toMatch(/PASS {2}4b web/);
+    expect(r.stdout).toMatch(/PASS {2}4b admin/);
+    expect(r.stdout).toMatch(/FAIL {2}4b api/);
   });
 });

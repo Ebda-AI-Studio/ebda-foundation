@@ -29,16 +29,16 @@ run() { env HOME="$T/home" PATH="$T/bin:$PATH" GH_LOG="$T/gh.log" EBDA_OS_LOCAL_
 
 # 1. dry-run: plans a draft PR against the configured repo for the new lesson only
 out="$(DRY_RUN=1 run)"
-echo "$out" | grep -q "plan: draft PR on Ebda-AI-Studio/ebda-foundation for 'feedback-new-lesson'" && pass "dry-run plans a draft PR against \$OS_REPO_SLUG" || { fail "no plan line"; echo "$out"; }
-echo "$out" | grep -q "feedback-no-sentinel" && fail "no-sentinel file was a candidate" || pass "no-sentinel lesson ignored"
-echo "$out" | grep -q "feedback-already-in-standard" && fail "lesson already in os/standard was a candidate" || pass "lesson already in os/standard ignored"
-echo "$out" | grep -q "$OLD" && fail "output names the previous org" || pass "previous org never named"
+grep -q "plan: draft PR on Ebda-AI-Studio/ebda-foundation for 'feedback-new-lesson'" <<<"$out" && pass "dry-run plans a draft PR against \$OS_REPO_SLUG" || { fail "no plan line"; echo "$out"; }
+grep -q "feedback-no-sentinel" <<<"$out" && fail "no-sentinel file was a candidate" || pass "no-sentinel lesson ignored"
+grep -q "feedback-already-in-standard" <<<"$out" && fail "lesson already in os/standard was a candidate" || pass "lesson already in os/standard ignored"
+grep -q "$OLD" <<<"$out" && fail "output names the previous org" || pass "previous org never named"
 [ ! -s "$T/gh.log" ] && pass "dry-run made no gh call" || fail "dry-run called gh"
 [ ! -e "$T/state/standard-drift-proposed.json" ] && pass "dry-run wrote no ledger" || fail "dry-run wrote the ledger"
 
 # 2. OS_REPO_SLUG override is honoured
 out="$(OS_REPO_SLUG=acme/other-repo DRY_RUN=1 run)"
-echo "$out" | grep -q "draft PR on acme/other-repo" && pass "slug comes from config, not a literal" || fail "slug override ignored"
+grep -q "draft PR on acme/other-repo" <<<"$out" && pass "slug comes from config, not a literal" || fail "slug override ignored"
 
 # 3. real run without claude (issue fallback): gh targets the new repo, ledger records {at, repo}
 out="$(DRIFT_NO_LLM=1 run)"
@@ -46,18 +46,18 @@ grep -q "issue create --repo Ebda-AI-Studio/ebda-foundation" "$T/gh.log" && pass
 python3 -I -c "
 import json,sys; d=json.load(open(sys.argv[1])); e=d['feedback-new-lesson']
 sys.exit(0 if e.get('repo')=='Ebda-AI-Studio/ebda-foundation' else 1)" "$T/state/standard-drift-proposed.json" && pass "ledger entry carries the repo" || fail "ledger entry malformed"
-out="$(DRY_RUN=1 run)"; echo "$out" | grep -q "feedback-new-lesson" && fail "proposed slug re-proposed" || pass "proposed slug not re-proposed"
+out="$(DRY_RUN=1 run)"; grep -q "feedback-new-lesson" <<<"$out" && fail "proposed slug re-proposed" || pass "proposed slug not re-proposed"
 
 # 4. legacy ledger (string = proposed to the previous repo): quiet by default, re-proposed once with --reseed
 python3 -I -c "
 import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['reference-legacy-one']='2026-10-01T00:00:00'; json.dump(d,open(p,'w'))" "$T/state/standard-drift-proposed.json"
-out="$(DRY_RUN=1 run)"; echo "$out" | grep -q "reference-legacy-one" && fail "legacy entry re-proposed without --reseed" || pass "legacy entry untouched without --reseed"
-out="$(DRY_RUN=1 run --reseed)"; echo "$out" | grep -q "plan: draft PR on Ebda-AI-Studio/ebda-foundation for 'reference-legacy-one'" && pass "--reseed plans the legacy slug against the new repo (window ignored)" || { fail "--reseed did not plan it"; echo "$out"; }
+out="$(DRY_RUN=1 run)"; grep -q "reference-legacy-one" <<<"$out" && fail "legacy entry re-proposed without --reseed" || pass "legacy entry untouched without --reseed"
+out="$(DRY_RUN=1 run --reseed)"; grep -q "plan: draft PR on Ebda-AI-Studio/ebda-foundation for 'reference-legacy-one'" <<<"$out" && pass "--reseed plans the legacy slug against the new repo (window ignored)" || { fail "--reseed did not plan it"; echo "$out"; }
 : > "$T/gh.log"; DRIFT_NO_LLM=1 run --reseed >/dev/null
 python3 -I -c "
 import json,sys; e=json.load(open(sys.argv[1]))['reference-legacy-one']
 sys.exit(0 if isinstance(e,dict) and e.get('repo')=='Ebda-AI-Studio/ebda-foundation' else 1)" "$T/state/standard-drift-proposed.json" && pass "reseed records the slug against the new repo" || fail "reseed did not record"
-out="$(DRY_RUN=1 run --reseed)"; echo "$out" | grep -q "reference-legacy-one" && fail "slug re-proposed a second time" || pass "reseed proposes each slug once"
+out="$(DRY_RUN=1 run --reseed)"; grep -q "reference-legacy-one" <<<"$out" && fail "slug re-proposed a second time" || pass "reseed proposes each slug once"
 
 echo "── $_pass passed, $_fail failed ──"
 [ "$_fail" -eq 0 ]

@@ -23,7 +23,7 @@
 # shellcheck source=os-config.sh
 command -v os_config_load >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/os-config.sh" 2>/dev/null || true
 [ -n "${OS_ORG:-}" ] || ! command -v os_config_load >/dev/null 2>&1 || os_config_load
-WT_JUNK_RE='(^|/)(node_modules|dist|build|out|coverage|\.next|\.open-next|\.turbo|\.wrangler|\.vite|\.cache|\.parcel-cache|__pycache__|\.pytest_cache|\.vercel|target|\.tmp|tmp|graphify-out|\.husky/_)(/|$)|(^|/)\.DS_Store$|\.(log|tsbuildinfo|pyc)$|(^|/)\.env(\.[A-Za-z0-9_-]+)?$'
+WT_JUNK_RE='(^|/)(node_modules|dist|build|out|coverage|\.next|\.open-next|\.turbo|\.wrangler|\.vite|\.cache|\.parcel-cache|__pycache__|\.pytest_cache|\.vercel|target|\.tmp|tmp|graphify-out|\.generated|\.husky/_)(/|$)|(^|/)\.DS_Store$|\.(log|tsbuildinfo|pyc)$|(^|/)\.env(\.[A-Za-z0-9_-]+)?$'
 
 wt_dirty_count() {
   local wt="$1" n i
@@ -40,6 +40,36 @@ branch_has_own_commits() {
   # capture first, then grep a here-string: `git | grep -q` under `set -o pipefail` reports failure when grep closes the pipe early (SIGPIPE)
   local log; log=$(git -C "$1" reflog show --format=%gs "refs/heads/$2" 2>/dev/null) || return 1
   grep -qE '^(commit|rebase|cherry-pick|merge|revert|am|pull|reset: moving to [0-9a-f]{7,})' <<<"$log"
+}
+
+# wt_squash_integrated <wt> <owner/repo> <br> [<default-ref> [<rev>]]: 0 when every change this branch made is ALREADY in main although
+# `git branch --merged`/is-ancestor says no (squash or rebase merge rewrites history). Two independent proofs, each content-based so a
+# branch that gained commits after its PR merged is never reported as integrated (G13, 2026-11-15: 64 merged ebda-store worktrees
+# survived because the PR head moved after merge, e.g. update-branch or a follow-up commit, so the exact-tip rule never matched):
+#   1. TREE: HEAD's tree equals the tree of a recent commit on <default-ref> (the squash commit reproduced the branch exactly).
+#   2. PR:   a MERGED PR for the branch has a mergeCommit in the object store, and every file the branch changed (vs the merge-base)
+#            is byte-identical between HEAD and that mergeCommit. Zero changed files proves nothing -> not integrated.
+wt_squash_integrated() {
+  local wt="$1" slug="$2" br="$3" def="${4:-origin/main}" rev="${5:-HEAD}" tree trees base files mc gh_bin
+  gh_bin="${HYGIENE_GH:-gh}"
+  git -C "$wt" rev-parse --verify -q "$def" >/dev/null 2>&1 || return 1
+  # NEW-branch guard (2026-10-25 incident): a branch with nothing beyond main, or no commit of its own, is never integrated work
+  [ "$(git -C "$wt" rev-list --count "$def..$rev" 2>/dev/null || echo 0)" != "0" ] || return 1
+  branch_has_own_commits "$wt" "$br" || return 1
+  tree=$(git -C "$wt" rev-parse "${rev}^{tree}" 2>/dev/null) || return 1
+  trees=$(git -C "$wt" log -n "${HYGIENE_TREE_SCAN:-500}" --format=%T "$def" 2>/dev/null)   # capture first: grep -q in a pipe SIGPIPEs git under pipefail
+  if grep -qx "$tree" <<<"$trees"; then return 0; fi
+  [ -n "$slug" ] && [ -n "$br" ] || return 1
+  { command -v "$gh_bin" >/dev/null 2>&1 || [ -x "$gh_bin" ]; } || return 1
+  base=$(git -C "$wt" merge-base "$rev" "$def" 2>/dev/null) || return 1
+  files=$(git -C "$wt" diff --name-only "$base" "$rev" 2>/dev/null)
+  [ -n "$files" ] || return 1
+  while IFS= read -r mc; do
+    [ -n "$mc" ] && git -C "$wt" cat-file -e "${mc}^{commit}" 2>/dev/null || continue
+    # shellcheck disable=SC2046
+    if printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 git -C "$wt" diff --quiet "$mc" "$rev" -- 2>/dev/null; then return 0; fi
+  done < <(_ut "${OS_UT_FAST:-30}" "$gh_bin" pr list -R "$slug" --head "$br" --state merged --json mergeCommit --jq '.[].mergeCommit.oid // empty' 2>/dev/null)
+  return 1
 }
 
 wt_merge_verdict() {
@@ -59,6 +89,8 @@ wt_merge_verdict() {
       if grep -qx "$head" <<<"$heads"; then echo merged; return; fi
     fi
   fi
+  # squash/rebase merge whose PR head moved after merge: content already in main (see wt_squash_integrated)
+  if [ "${ahead:-1}" != "0" ] && wt_squash_integrated "$wt" "$slug" "$br" "$def"; then echo merged; return; fi
   if [ "${ahead:-1}" = "0" ]; then echo new; return; fi   # no commit of its own and no merged PR at this tip: just created
   [ "$pr_ok" = 1 ] && echo unmerged || echo unknown
 }

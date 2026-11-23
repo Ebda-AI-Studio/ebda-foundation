@@ -9,12 +9,14 @@
 #   - drain dead                                   (no <OS_LAUNCHD_PREFIX>.drain-* launchd job loaded AND no ops/drain*.sh process)
 #   - alert listener dead                          (no alert-wait.sh process)
 #   - a ROOT checkout under $OS_PROJECTS_DIR with core.bare=true (silently breaks merge-gate: 2026-10-25, 2026-11-11)
-#   - no merge for --stall-min (40) min while approved PRs wait (label ai-review-passed, not hold, not draft)
+#   - no merge for --stall-min (40) min while drain-ELIGIBLE PRs wait (lib/drain_eligible.py: ai-review-passed, not hold, not draft, checks not failed, mergeable)
 #
 #   loop-watchdog.sh [--interval SEC] [--stall-min MIN] [--once] [--ack-file FILE]
 #     --once       check once: exit 0 + report when something new is wrong, 1 when healthy or already acked
 #     --ack-file   default $OS_STATE_DIR/loop-watchdog.ack
-# Ack: the report prints the line that silences those reason kinds (echo "<sig>" > ack file). A known issue then does not wake again;
+# Ack: the report prints the line that silences those reason kinds (echo "<sig>" > ack file). Matching is by SUBSET (G40a): silent while every
+# current reason kind is in the ack, so a cleared reason never re-wakes. alert-wait gets a grace window ($ALERT_WAIT_GRACE s, default 15) because it
+# restarts for 1-3 s after each alert (G39); the last merge is the max mergedAt of the last 50 merged PRs (G40b). A known issue then does not wake again;
 # the ack clears itself as soon as the loop is healthy, so the next problem of the same kind wakes you.
 # Repos: $OS_LOOP_REPOS (space-separated owner/name), else every commitRepo of config/prod-watch.json + $OS_REPO_SLUG.
 # Identity (orgs, launchd prefix, state dir) comes from lib/os-config.sh; nothing here names an org or repo.
@@ -70,23 +72,31 @@ check() { # prints one reason per line
     [ -n "$r" ] || continue
     c="$(gh run list -R "$r" --branch main --workflow CI --limit 1 --json conclusion,status,headSha --jq '.[0]|"\(.status)/\(.conclusion)/\(.headSha[0:7])"' 2>/dev/null)"
     case "$c" in completed/failure*|completed/cancelled*|completed/timed_out*) echo "main CI red: $r $c" ;; esac
-    last="$(gh pr list -R "$r" --state merged --limit 1 --json mergedAt --jq '.[0].mergedAt' 2>/dev/null)"
-    ready="$(gh pr list -R "$r" --limit 80 --json labels,isDraft --jq '[.[]|select(.isDraft|not)|select([.labels[].name]|any(.=="ai-review-passed"))|select([.labels[].name]|any(.=="hold")|not)]|length' 2>/dev/null)"
+    # G40b: `gh pr list` orders by PR CREATION time, not merge time, so `--limit 1` returned the newest-CREATED merged PR, whose
+    # merge can be hours older than the real last merge (store: "no merge for 272 min" while #805 had merged minutes earlier).
+    # Read a page of merged PRs and take the MAX mergedAt.
+    last="$(gh pr list -R "$r" --state merged --limit 50 --json mergedAt 2>/dev/null | python3 -I -c 'import sys,json; print(max((p.get("mergedAt") or "" for p in json.load(sys.stdin)), default=""))' 2>/dev/null)"
+    # drain-ELIGIBLE only (lib/drain_eligible.py, the drain's own rule): approved, not draft/hold, checks not failed, risky-path reviewed
+    ready="$(gh pr list -R "$r" --limit 80 --json number,mergeable,statusCheckRollup,isDraft,labels 2>/dev/null | python3 -I "$HERE/lib/drain_eligible.py" --mode stall 2>/dev/null)"
     if [ -n "$last" ] && [ "${ready:-0}" -gt 0 ] 2>/dev/null; then
       age="$(python3 -I -c 'import sys,time,calendar; print(int(time.time()-calendar.timegm(time.strptime(sys.argv[1],"%Y-%m-%dT%H:%M:%SZ"))))' "$last" 2>/dev/null || echo 0)"
-      [ "$age" -gt $((STALL_MIN * 60)) ] && echo "no merge for $((age / 60)) min: $r with $ready approved PRs"
+      [ "$age" -gt $((STALL_MIN * 60)) ] && echo "no merge for $((age / 60)) min: $r with $ready drain-eligible PRs"
     fi
   done < <(repos)
   bare_roots
   drain_alive || echo "drain not running (no $PREFIX.drain-* job, no drain process)"
-  pgrep -f 'alert-wait\.sh' >/dev/null 2>&1 || echo "alert-wait not running"
+  # G39: alert-wait restarts itself for 1-3 s after every alert; report it only when it is still gone after a grace window
+  pgrep -f 'alert-wait\.sh' >/dev/null 2>&1 || { sleep "${ALERT_WAIT_GRACE:-15}"; pgrep -f 'alert-wait\.sh' >/dev/null 2>&1 || echo "alert-wait not running"; }
 }
 
 while :; do
   WHY=(); while IFS= read -r l; do [ -n "$l" ] && WHY+=("$l"); done < <(check)
   # reason KINDS only (first two words), so a changed sha or minute count does not re-wake an acked issue
   SIG="$(printf '%s\n' "${WHY[@]:-}" | awk 'NF {print $1,$2}' | sort -u | tr '\n' '|')"
-  if [ ${#WHY[@]} -gt 0 ] && [ "$SIG" != "$(cat "$ACK" 2>/dev/null)" ]; then
+  # G40a: acked by reason SUBSET: silent when EVERY current reason kind is in the ack (a cleared reason must not re-wake)
+  ACKED=1; ACKTXT="|$(tr -d '\n' < "$ACK" 2>/dev/null)"
+  while IFS= read -r k; do [ -n "$k" ] || continue; case "$ACKTXT" in *"|$k|"*) ;; *) ACKED=0 ;; esac; done < <(printf '%s\n' "${WHY[@]:-}" | awk 'NF {print $1,$2}' | sort -u)
+  if [ ${#WHY[@]} -gt 0 ] && [ "$ACKED" = 0 ]; then
     printf 'WATCHDOG %s (ack with: echo "%s" > %s)\n' "$(date -u +%H:%MZ)" "$SIG" "$ACK"
     printf ' - %s\n' ${WHY[@]+"${WHY[@]}"}
     exit 0

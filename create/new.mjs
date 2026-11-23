@@ -59,7 +59,7 @@ export async function createProduct(argv) {
   sh(out, 'git', ['-c', 'user.name=Ahmad Sharaf', '-c', 'user.email=ahmed0montaser@gmail.com', 'commit', '-qm', `chore: init ${name} from ebda-foundation ${lock.tag}`]);
   if (!argv.includes('--no-remote')) {
     sh(out, 'gh', ['repo', 'create', `Ebda-AI-Studio/${name}`, '--private', '--source', '.', '--remote', 'origin', '--push']);
-    sh(out, 'gh', ['variable', 'set', 'EBDA_RUNS_ON', '--repo', `Ebda-AI-Studio/${name}`, '--body', '["self-hosted","umbra-ebda"]']);
+    sh(out, 'gh', ['variable', 'set', 'EBDA_RUNS_ON', '--repo', `Ebda-AI-Studio/${name}`, '--body', '["self-hosted","ebda-mac"]']);
   }
   console.log(`\n${vars.displayEn} created at ${out} (foundation ${lock.tag})\nNext, before any customer: the foundation repo's checklists/launch.md and docs/new-product.md.`);
 }

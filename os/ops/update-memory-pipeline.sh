@@ -264,7 +264,7 @@ PYEOF
 #     on one Mac — exactly what the mirror's own README claims to prevent ("scoped
 #     Claude memory is local-only and lost if the machine is wiped"). Measured
 #     2026-09-14 before this fix: 50 of 387 scoped files were missing from the vault
-#     (umbra 11 local/1 mirrored, quote-studio 3/0, mypovonai-learn 11/0, store 218/208).
+#     (repo-a 11 local/1 mirrored, quote-studio 3/0, mypovonai-learn 11/0, store 218/208).
 #
 #     ADDITIVE ON PURPOSE — never --delete. Two scopes had MORE in the mirror than on
 #     disk (client-repo 9/10, ebda-whatsapp 63/64), because other machines

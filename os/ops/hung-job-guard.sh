@@ -2,8 +2,8 @@
 # Whisky AI OS — hung-job guard.
 #
 # WHY THIS EXISTS (2026-08-03). Two scheduled jobs were found wedged mid-run:
-#   • ci-runner-guard — 3 processes stuck 4h07m on one `umbra shell` (umbra's
-#     own ssh, no ConnectTimeout, stale cached port).
+#   • ci-runner-guard — 3 processes stuck 4h07m on one blocking
+#     probe (a guest ssh with no ConnectTimeout; that probe is gone, the rule stands).
 #   • gate-guard      — a single run started 24 DAYS earlier and never returned.
 #
 # launchd will not start a new run while one is in flight, so in both cases the
@@ -79,11 +79,11 @@ for p in "$HOME"/Library/LaunchAgents/${OS_LAUNCHD_PREFIX}.*.plist; do
   # forever is its correct behaviour — there is no "too long" to compare
   # against, so this guard has no business forming an opinion.
   #
-  # The first dry run proposed killing ${OS_LAUNCHD_PREFIX}.umbrad (up 15h) because
+  # The first dry run proposed killing a long-lived KeepAlive daemon (up 15h) because
   # KeepAlive can be a DICT (`{ SuccessfulExit = false; }`), which does not
   # equal the string "true" — the daemon test silently failed open and the
-  # fallback 3h ceiling applied. That would have killed the Umbra daemon that
-  # owns the CI guest. Any KeepAlive at all now means daemon, and the cadence
+  # fallback 3h ceiling applied. That would have killed a daemon that
+  # must run forever. Any KeepAlive at all now means daemon, and the cadence
   # requirement below is the real backstop.
   case "$(plist_val "$p" KeepAlive)" in "") : ;; *) continue ;; esac
   iv="$(plist_val "$p" StartInterval)"

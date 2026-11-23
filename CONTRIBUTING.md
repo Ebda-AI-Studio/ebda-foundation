@@ -9,3 +9,7 @@
 - Every rule override is written as a Ruling (`docs/rulings/<ID>.md`) with "cost if wrong".
 - Docs parity: README module table + CHANGELOG in the same PR.
 - Tests: `npm test` (module tests, CLI tests, and a fixture proving the parity template passes on a fresh sync and fails after a 1-byte edit). `sync` needs the foundation tree committed, so commit before running the CLI tests.
+
+## Changelog and rulings (no shared hand-edited lists)
+- Unreleased changes: add `changelog.d/<slug>.md` with ONE line `- ID (files): what changed`. Do not edit `CHANGELOG.md`'s `## Unreleased` (PR sanity fails a hand-written bullet). A release runs `os/ops/changelog-assemble.sh --release vX.Y.Z`.
+- Rulings: a new ruling is its own file `docs/rulings/<ID>.md`. `docs/RULINGS.md` is the historical ledger (`.gitattributes` keeps appends from two branches on a local merge).

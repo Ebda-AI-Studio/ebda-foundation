@@ -43,13 +43,13 @@ echo keep > "$H/home/.claude/skills/correct/mine.txt"
 # Negative control: from a linked worktree / feature branch the step must link NOTHING.
 G="$(OS_LINK_ANY_CHECKOUT=0 bash "$INST" --home "$H/home" 2>&1)"
 if [ "$(git -C "$ROOT" rev-parse --absolute-git-dir)" != "$(cd "$ROOT" && cd "$(git rev-parse --git-common-dir)" && pwd)" ] || [ "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)" != main ]; then
-  { printf '%s' "$G" | grep -q 'skip   agents + skills links' && [ ! -e "$H/home/.claude/skills/blast-radius" ]; } && ok "refuses to link from a worktree/feature branch" || no "linked from a non-main checkout"
+  { grep -q 'skip   agents + skills links' <<<"$G" && [ ! -e "$H/home/.claude/skills/blast-radius" ]; } && ok "refuses to link from a worktree/feature branch" || no "linked from a non-main checkout"
 fi
 export OS_LINK_ANY_CHECKOUT=1   # the remaining cases test link behaviour itself
 out="$(bash "$INST" --home "$H/home" 2>&1)"
 [ -f "$H/home/.claude/skills/correct/mine.txt" ] && [ ! -L "$H/home/.claude/skills/correct" ] \
   && ok "refuses to clobber a real dir" || no "real dir was clobbered"
-printf '%s' "$out" | grep -q 'WARN.*correct' && ok "warns on the skipped dir" || no "no warning for skipped dir"
+grep -q 'WARN.*correct' <<<"$out" && ok "warns on the skipped dir" || no "no warning for skipped dir"
 [ -L "$H/home/.claude/skills/blast-radius" ] && ok "links blast-radius as a symlink" || no "blast-radius not symlinked"
 [ "$(readlink "$H/home/.claude/skills/blast-radius")" = "$ROOT/skills/blast-radius" ] && ok "symlink targets the repo skill" || no "symlink target wrong"
 bash "$INST" --home "$H/home" >/dev/null 2>&1 && ok "idempotent re-run exits 0" || no "re-run failed"

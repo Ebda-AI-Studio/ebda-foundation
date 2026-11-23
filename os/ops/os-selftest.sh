@@ -39,6 +39,8 @@ cd "$(dirname "$0")" || exit 1
 # The backup project list + pause rule, shared with the backup jobs so the
 # checker cannot watch a narrower fleet than the writer writes.
 . ./lib/backup-projects.sh 2>/dev/null || . "$HOME/.claude/scripts/lib/backup-projects.sh" 2>/dev/null || true
+# G14: a job that exits non-zero opens a deduped review-finding issue with its log tail
+. ./lib/job-failure.sh 2>/dev/null || . "$HOME/.claude/scripts/lib/job-failure.sh" 2>/dev/null || true
 
 DRY_RUN="${DRY_RUN:-0}"
 NOTIFY=0
@@ -212,6 +214,18 @@ check_plist_freshness() {
   return 0
 }
 
+# G14: last exit code of each loaded job is REPORTED here (add_medium); the fixer issue is filed by sched-fail-watch.sh (2 consecutive
+# failures, one writer: form XOR page), so a single flaky exit never opens a fixer from this daily check.
+check_last_exit() {
+  local plist="$1" label rc
+  command -v jf_last_exit >/dev/null 2>&1 || return 0
+  label=$(basename "$plist" .plist)
+  rc="$(jf_last_exit "$label")"
+  [ -n "$rc" ] && [ "$rc" != "0" ] || return 0
+  add_medium "$label: last run exited non-zero (code $rc)"
+  _fail "$label: last exit code $rc"
+}
+
 if [ "$FRESHNESS_LIB_OK" = "0" ]; then
   _info "plist freshness: SKIPPED — lib/job-freshness.sh unavailable (reported as CRITICAL above)"
 elif [ -d "$LAUNCHD_DIR" ]; then
@@ -225,6 +239,7 @@ elif [ -d "$LAUNCHD_DIR" ]; then
     # process liveness like every other daemon. A job excluded from the only
     # loop that inspects it is not passing; it is unobserved.
     check_plist_freshness "$plist"
+    check_last_exit "$plist"
   done
 else
   add_low "launchd dir not found at $LAUNCHD_DIR — skipping freshness check"

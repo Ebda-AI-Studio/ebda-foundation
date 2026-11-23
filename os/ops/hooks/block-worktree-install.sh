@@ -7,7 +7,7 @@
 # for that lockfile, and tell the agent to run `wt-deps.sh` (APFS clone) instead.
 #
 # WHY (2026-10-25): every per-worktree install is ~2.3 GB; a clone is ~0.2 GB. 6 parallel agent worktrees filled
-# the Mac disk, and a full host disk corrupts the Umbra CI VM guest (feedback-umbra-sparse-disk-host-full-corrupts-guest).
+# the Mac disk, and a full host disk fails CI runner jobs.
 # A rule only in CLAUDE.md is a preference; this is the gate.
 #
 # What it must NOT do (false positives get a guard switched off):
@@ -77,7 +77,7 @@ bash "$WTD" --check "$treal" >/dev/null 2>&1 || exit 0              # cache MISS
 cat >&2 <<MSG
 BLOCKED: do not run a per-worktree install here - a complete dependency cache already exists for this lockfile.
 Run instead (wt-deps.sh):   bash $WTD $treal
-That APFS-clones the cached node_modules (~0.2 GB, seconds) instead of ~2.3 GB and minutes. A full host disk corrupts the Umbra CI VM.
+That APFS-clones the cached node_modules (~0.2 GB, seconds) instead of ~2.3 GB and minutes. A full host disk fails CI runner jobs.
 If node_modules is already populated and you really need to replace it: WT_DEPS_FORCE=1 bash $WTD $treal
 Only a genuine lockfile change (adding/removing a dependency) justifies a fresh install; for a deliberate one prefix the command with WT_ALLOW_INSTALL=1.
 MSG

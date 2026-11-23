@@ -8,7 +8,7 @@
 6. Data: D1/DO layout, migration registry, erasure registry entries from day 1.
 7. Guards: rate limits, request shape, Zod at the edge, PII masking before any LLM.
 8. Observability: Telegram + Sentry, Logpush >= 30 days, status-page probe.
-9. CI on Umbra: `EBDA_RUNS_ON`, workflow lint, pre-push gate, merge gate.
+9. CI on the native Mac runners: `EBDA_RUNS_ON`, workflow lint, pre-push gate, merge gate.
 10. Deploy and verify: deploy job green, `/health` commit equals main, live cron schedules (no weekday names), one scheduled tick.
 11. Legal: shared clauses plus the product's own documents, provisional markers.
 12. Launch checklist: `checklists/launch.md`; flags off until proven.
