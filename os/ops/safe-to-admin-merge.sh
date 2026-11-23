@@ -45,7 +45,7 @@ if [ -n "$required" ]; then
   neverran=""
   while IFS= read -r ctx; do
     [ -n "$ctx" ] || continue
-    printf '%s\n' "$passed" | grep -Fqx "$ctx" || neverran="${neverran}${ctx}"$'\n'
+    grep -Fqx "$ctx" < <(printf '%s\n' "$passed") || neverran="${neverran}${ctx}"$'\n'
   done <<< "$required"
   neverran=$(printf '%s' "$neverran" | sed '/^$/d')
   if [ -n "$neverran" ]; then

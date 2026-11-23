@@ -71,7 +71,7 @@ git clone -q "$EV" "$T/evil-clone" 2>/dev/null; git -C "$T/evil-clone" checkout 
 echo q > "$T/evil-clone/q"; git -C "$T/evil-clone" add q; git -C "$T/evil-clone" commit -qm q 2>/dev/null
 [ ! -e "$T/pwned" ] && ok "SECURITY: clone/checkout/worktree/commit of an untrusted repo with .husky executes nothing" || no "malicious .husky RAN"
 # and a repo's own node_modules/.bin is never on PATH for chained hooks
-grep -v '^[[:space:]]*#' "$OPS/git-hooks/dispatch.sh" | grep -q 'node_modules/.bin' && no "dispatcher references node_modules/.bin" || ok "dispatcher never touches the repo's node_modules/.bin"
+grep -q 'node_modules/.bin' < <(grep -v '^[[:space:]]*#' "$OPS/git-hooks/dispatch.sh") && no "dispatcher references node_modules/.bin" || ok "dispatcher never touches the repo's node_modules/.bin"
 
 # stdin passes through (pre-push gets ref lines on stdin)
 printf '#!/bin/sh\ncat > "%s/push.stdin"\nexit 0\n' "$T" > "$R/.git/hooks/pre-push"; chmod +x "$R/.git/hooks/pre-push"
@@ -131,7 +131,7 @@ M="$(cat "$T"/cache/trav/*/manifest 2>/dev/null)"
 grep -q '\.\.' <<<"$M" && no "manifest kept a '..' entry" || ok "newline-in-name dir (escape via '..') is dropped from the manifest"
 grep -q 'sub/node_modules' <<<"$M" && no "symlinked node_modules listed" || ok "symlinked node_modules pointing outside is not snapshotted"
 [ ! -e "$T/escaped" ] && ok "nothing created outside the worktree/cache" || no "escape dir created"
-find "$T/cache/trav" -name s 2>/dev/null | grep -q . && no "outside file copied into cache" || ok "outside symlink target never copied into the cache"
+grep -q . < <(find "$T/cache/trav" -name s 2>/dev/null) && no "outside file copied into cache" || ok "outside symlink target never copied into the cache"
 
 printf '#!/bin/sh\necho "$@" >> "%s/npm.calls"; mkdir -p node_modules/pkg; echo x > node_modules/pkg/i.js\n' "$T" > "$BIN/npm"   # restore the recording stub
 # every fallback in hook mode exits WITHOUT running an installer: force clone_in to fail via a symlinked parent in the worktree

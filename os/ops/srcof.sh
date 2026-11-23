@@ -73,7 +73,7 @@ if [ -n "$head" ]; then
   ref="$head"; how="npm gitHead (exact published commit)"
 else
   for cand in "$name@$ver" "v$ver" "$ver" "$(basename "$name")@$ver" "$(basename "$name")-v$ver"; do
-    if git ls-remote --tags "$repo" "refs/tags/$cand" 2>/dev/null | grep -q .; then
+    if grep -q . < <(git ls-remote --tags "$repo" "refs/tags/$cand" 2>/dev/null); then
       ref="$cand"; how="tag $cand (verified present upstream)"; break
     fi
   done

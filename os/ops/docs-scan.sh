@@ -30,7 +30,7 @@ findings=()
 for r in "${ALL_REPOS[@]}"; do
   d=$(resolve_repo_dir "$r" 2>/dev/null || echo "$PROJECTS/$r"); [ -d "$d" ] || continue
   # README somewhere
-  find "$d" -maxdepth 2 -iname 'README*' -not -path '*/node_modules/*' 2>/dev/null | grep -q . || findings+=("$r: no README")
+  grep -q . < <(find "$d" -maxdepth 2 -iname 'README*' -not -path '*/node_modules/*' 2>/dev/null) || findings+=("$r: no README")
   # stale hosting mentions in PRODUCT docs (skip meta-docs: audits/plans/superpowers are historical)
   hits=$(grep -rliE "$STALE" "$d"/*.md "$d"/docs 2>/dev/null | grep -viE 'node_modules|/\.|/audits/|/superpowers/|/plans/' | head -3)
   [ -n "$hits" ] && findings+=("$r: stale hosting term ($STALE) in $(echo "$hits" | sed "s#$d/##" | tr '\n' ' ')")
@@ -40,8 +40,8 @@ for r in "${FULL_REPOS[@]}"; do
   d="$PROJECTS/$r"; [ -d "$d" ] || continue
   # runbooks must exist AND live under docs/ (audit: store had DEPLOYMENT.md misplaced at root)
   for doc in DEPLOYMENT ROLLBACK SCALING; do
-    if ! find "$d/docs" -iname "${doc}.md" 2>/dev/null | grep -q .; then
-      if find "$d" -maxdepth 1 -iname "${doc}.md" 2>/dev/null | grep -q .; then
+    if ! grep -q . < <(find "$d/docs" -iname "${doc}.md" 2>/dev/null); then
+      if grep -q . < <(find "$d" -maxdepth 1 -iname "${doc}.md" 2>/dev/null); then
         findings+=("$r: ${doc}.md is at repo root — should be under docs/")
       else
         findings+=("$r: missing docs/${doc}.md runbook")

@@ -124,7 +124,7 @@ for ROOT in ${roots[@]+"${roots[@]}"}; do
     local tip heads
     tip="$(git -C "$ROOT" rev-parse "$1" 2>/dev/null)" || return 1
     heads="$(cd "$ROOT" && "${HYGIENE_GH:-gh}" pr list --head "$1" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null)" || return 1
-    printf '%s\n' "$heads" | grep -qx "$tip" && return 0
+    grep -qx "$tip" < <(printf '%s\n' "$heads") && return 0
     # G13: squash merge whose PR head moved after merge - content-identical to main counts as merged
     local slug; slug="$(git -C "$ROOT" remote get-url origin 2>/dev/null | sed -E 's#.*github.com[:/]##; s#\.git$##')"
     wt_squash_integrated "$ROOT" "$slug" "$1" "origin/$DEF" "$1"
@@ -166,7 +166,7 @@ for ROOT in ${roots[@]+"${roots[@]}"}; do
   while IFS= read -r b; do
     [ -z "$b" ] && continue
     case "$b" in "$DEF"|main|master|preview) continue;; esac
-    printf '%s\n' "$active" | grep -qx "$b" && continue
+    grep -qx "$b" < <(printf '%s\n' "$active") && continue
     if branch_merged "$b"; then
       git -C "$ROOT" branch -D "$b" >/dev/null 2>&1 && { echo "  deleted merged branch: $b"; n_br_deleted=$((n_br_deleted + 1)); }
     fi

@@ -74,7 +74,7 @@ DEF="$(git -C "$ROOT" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/d
 [ -z "$DEF" ] && DEF="$(git -C "$ROOT" remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p' | head -1)"
 if [ -z "$DEF" ]; then for b in main master; do git -C "$ROOT" show-ref --verify --quiet "refs/remotes/origin/$b" && { DEF="$b"; break; }; done; fi
 [ -z "$DEF" ] && DEF="main"
-if git -C "$ROOT" worktree list --porcelain | grep -qx "worktree $WT"; then
+if grep -qx "worktree $WT" < <(git -C "$ROOT" worktree list --porcelain); then
   echo "already exists: $WT"; exit 0
 fi
 # Reuse the branch if it already exists (e.g. resuming), else create off fresh default.

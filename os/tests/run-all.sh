@@ -9,6 +9,7 @@ T0=$SECONDS
 # `slow <section>`: a section that took >= SLOW_S seconds says so, as it finishes (a 25-minute CI timeout once left no clue where the time went).
 slow() { local d=$(( SECONDS - T0 )); [ "$d" -lt "$SLOW_S" ] || echo "  slow  $1 ${d}s"; return 0; }
 echo "== no-force-strings =="; T0=$SECONDS; bash "$ROOT/os/tests/no-force-strings.test.sh" || rc=1; slow "no-force-strings"
+echo "== no-pipe-grep-q =="; T0=$SECONDS; bash "$ROOT/os/tests/no-pipe-grep-q.test.sh" || rc=1; slow "no-pipe-grep-q"
 echo "== no-literal-config =="; T0=$SECONDS; bash "$ROOT/os/tests/no-literal-config.test.sh" || rc=1; slow "no-literal-config"
 echo "== standard-links =="; T0=$SECONDS; node "$ROOT/os/tests/standard-links.test.mjs" || rc=1; slow "standard-links"
 echo "== os-local-list =="; T0=$SECONDS; bash "$ROOT/os/tests/os-local-list.test.sh" || rc=1; slow "os-local-list"

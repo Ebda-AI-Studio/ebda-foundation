@@ -11,16 +11,16 @@ stub() { printf '#!/bin/bash\necho "$@" >> "$CALLS"\n%s\n' "$1" > "$T/notify.sh"
 
 stub 'echo "notify: sent (telegram ok:true message_id=4242)"'; rm -f "$CALLS" "$ALERT_DRILL_LOG"
 out="$(bash "$D" 2>&1)"; rc=$?
-[ $rc = 0 ] && printf '%s' "$out" | grep -q "DELIVERED.*path=telegram message_id=4242" && ok "telegram path: delivered with message id" || no "telegram path ($rc $out)"
+[ $rc = 0 ] && grep -q "DELIVERED.*path=telegram message_id=4242" <<<"$out" && ok "telegram path: delivered with message id" || no "telegram path ($rc $out)"
 [ "$(wc -l < "$CALLS" | tr -d " ")" = 1 ] && ok "exactly one message sent" || no "message count"
 grep -q '"delivered":true,"path":"telegram","messageId":4242' "$ALERT_DRILL_LOG" && ok "record written (JSON line)" || no "record: $(cat "$ALERT_DRILL_LOG" 2>&1)"
 grep -q "ALERT DRILL" "$CALLS" && grep -q "id=drill-" "$CALLS" && ok "message carries the drill id" || no "message body"
 
 stub 'echo "notify: sent via brain"'; out="$(bash "$D" 2>&1)"; rc=$?
-[ $rc = 0 ] && printf '%s' "$out" | grep -q "path=brain" && tail -n1 "$ALERT_DRILL_LOG" | grep -q '"path":"brain","messageId":null' && ok "brain fallback is reported as such" || no "brain path ($out)"
+[ $rc = 0 ] && grep -q "path=brain" <<<"$out" && grep -q '"path":"brain","messageId":null' < <(tail -n1 "$ALERT_DRILL_LOG") && ok "brain fallback is reported as such" || no "brain path ($out)"
 
 stub 'echo "notify: FAILED - both refused" >&2; exit 1'; out="$(bash "$D" 2>&1)"; rc=$?
-[ $rc = 1 ] && printf '%s' "$out" | grep -q "NOT DELIVERED" && tail -n1 "$ALERT_DRILL_LOG" | grep -q '"delivered":false' && ok "undelivered: exit 1, recorded false" || no "failure path ($rc $out)"
+[ $rc = 1 ] && grep -q "NOT DELIVERED" <<<"$out" && grep -q '"delivered":false' < <(tail -n1 "$ALERT_DRILL_LOG") && ok "undelivered: exit 1, recorded false" || no "failure path ($rc $out)"
 
 stub 'echo "something unexpected"'; bash "$D" >/dev/null 2>&1; rc=$?
 [ $rc = 1 ] && ok "exit 0 without a delivery line is NOT trusted" || no "false green ($rc)"

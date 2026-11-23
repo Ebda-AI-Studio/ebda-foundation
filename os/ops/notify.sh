@@ -50,7 +50,7 @@ local_send() {
   printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$token" > "$cfg"
   resp="$(curl -sS -m 15 -K "$cfg" --data-urlencode "chat_id=${chat}" --data-urlencode "disable_notification=${silent}" --data-urlencode "text=${msg}" 2>&1)"
   rm -f "$cfg"
-  if printf '%s' "$resp" | grep -q '"ok":[[:space:]]*true'; then
+  if grep -q '"ok":[[:space:]]*true' <<<"$resp"; then
     local mid; mid="$(printf '%s' "$resp" | sed -nE 's/.*"message_id":[[:space:]]*([0-9]+).*/\1/p' | head -n1)"
     echo "notify: sent (telegram ok:true${mid:+ message_id=$mid})"; return 0
   fi

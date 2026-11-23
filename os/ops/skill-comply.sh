@@ -36,7 +36,7 @@ for id in $ids; do
   fx=$(mktemp -d "/tmp/comply-$id.XXXXXX"); mk_fixture "$ftype" "$fx"
   echo "── testing rule: $id ──"
   stream=$( (cd "$fx" && timeout 120 "$CLAUDE_BIN" -p "$scen" --output-format stream-json --verbose 2>/dev/null </dev/null) || echo "" )
-  if printf '%s' "$stream" | grep -qiE "$expect" 2>/dev/null; then
+  if grep -qiE "$expect" < <(printf '%s' "$stream") 2>/dev/null; then
     echo "  ✅ FOLLOWED — expected behavior fired (/$expect/)"; pass=$((pass+1))
   else
     echo "  ❌ NOT followed — /$expect/ did not appear in the tool-call trace"; fail=$((fail+1))

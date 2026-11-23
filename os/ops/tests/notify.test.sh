@@ -31,7 +31,7 @@ reset() { rm -f "$CURL_URL" "$BRAIN_LOG"; unset KC_TOKEN KC_CHAT API_OK BRAIN_FA
 
 reset; KC_TOKEN=111:kctoken KC_CHAT=42 out="$(KC_TOKEN=111:kctoken KC_CHAT=42 run T b)"; rc=$?
 [ $rc = 0 ] && grep -q "bot111:kctoken" "$CURL_URL" && ok "token + chat id read from the Keychain" || no "keychain path ($out)"
-printf '%s' "$out" | grep -q kctoken && no "token leaked into output" || ok "token never printed"
+grep -q kctoken <<<"$out" && no "token leaked into output" || ok "token never printed"
 reset; out="$(TELEGRAM_BOT_TOKEN=222:envtoken TELEGRAM_ALERT_CHAT_ID=1 KC_TOKEN=111:kctoken KC_CHAT=42 run T b)"
 grep -q "bot222:envtoken" "$CURL_URL" && ok "environment beats the Keychain" || no "env precedence"
 reset; printf 'TELEGRAM_BOT_TOKEN=333:svctoken\nTELEGRAM_ALERT_CHAT_ID=7\n' > "$T/svc.env"; out="$(OS_SERVICES_ENV="$T/svc.env" run T b)"
@@ -41,5 +41,5 @@ reset; out="$(KC_TOKEN=111:bad KC_CHAT=42 API_OK=0 run T "b")"; rc=$?
 reset; out="$(run T b)"; rc=$?
 [ $rc = 0 ] && grep -q "brain: text" "$BRAIN_LOG" && ok "no local credentials at all -> brain fallback" || no "no-cred fallback ($out)"
 reset; out="$(BRAIN_FAIL=1 run T b)"; rc=$?
-[ $rc = 1 ] && printf '%s' "$out" | grep -q "NOT delivered" && ok "both paths failing exits 1 and says so" || no "silent failure ($rc $out)"
+[ $rc = 1 ] && grep -q "NOT delivered" <<<"$out" && ok "both paths failing exits 1 and says so" || no "silent failure ($rc $out)"
 echo "notify: $p passed, $f failed"; [ "$f" = 0 ]

@@ -89,7 +89,7 @@ read -r scope nproj <<<"$(row)"
 [ "$nproj" = "1" ] && ok "same remote via another path is the SAME project" || no "same remote via another path is the SAME project (got $nproj)"
 
 # --- the store is written atomically ---
-find "$H/.claude/instincts" -name 'store.jsonl.tmp.*' | grep -q . && no "no store temp files left behind" || ok "no store temp files left behind"
+grep -q . < <(find "$H/.claude/instincts" -name 'store.jsonl.tmp.*') && no "no store temp files left behind" || ok "no store temp files left behind"
 grep -q 'os.replace' "$SCRIPT" && ok "store write uses os.replace" || no "store write uses os.replace"
 
 rm -rf "$H"

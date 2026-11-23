@@ -30,7 +30,7 @@ jobs="$( { for p in "$OSD"/ops/launchd/*.plist; do [ -f "$p" ] && basename "$p" 
            grep -vE '^(#|[[:space:]]*$)' "$OSD/launchd/unported-jobs.list" 2>/dev/null; } | sort -u)"
 table="$(awk -F'|' '/^## Old-job dispositions/{on=1;next} on && /^\| /{gsub(/^ +| +$/,"",$2);gsub(/^ +| +$/,"",$3);gsub(/^ +| +$/,"",$4);gsub(/^ +| +$/,"",$5);print $2"\t"$3"\t"$4"\t"$5}' "$MAN" | grep -vE '^(Job|---)')"
 for j in $jobs; do
-  printf '%s\n' "$table" | cut -f1 | grep -qxF "$j" || say "old job '$j' has no disposition row"
+  grep -qxF "$j" < <(printf '%s\n' "$table" | cut -f1) || say "old job '$j' has no disposition row"
 done
 while IFS=$'\t' read -r job disp detail reason; do
   [ -n "$job" ] || continue
@@ -45,7 +45,7 @@ while IFS=$'\t' read -r job disp detail reason; do
     REPLACED-BY) [ -e "$OSD/$detail" ] || say "$job: REPLACED-BY target os/$detail does not exist" ;;
     KEEP-MAC)
       if [ "$detail" = pending-task-6 ]; then say "$job: KEEP-MAC but its script and launchd entry are not landed yet (Task 6)"
-      elif ! cut -f1 "$OSD/launchd/mac-local.list" | grep -qxF "$detail"; then say "$job: KEEP-MAC but '$detail' is not in launchd/mac-local.list"; fi ;;
+      elif ! grep -qxF "$detail" < <(cut -f1 "$OSD/launchd/mac-local.list"); then say "$job: KEEP-MAC but '$detail' is not in launchd/mac-local.list"; fi ;;
     DROP) { [ -n "$reason" ] && [ "$reason" != - ]; } || say "$job: DROP without a reason" ;;
     *) say "$job: unknown disposition '$disp'" ;;
   esac

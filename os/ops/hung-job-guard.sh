@@ -91,7 +91,7 @@ for p in "$HOME"/Library/LaunchAgents/${OS_LAUNCHD_PREFIX}.*.plist; do
   if [ -z "$iv" ] && [ -z "$cal" ]; then continue; fi
 
   info="$(launchctl print "gui/$(id -u)/$lbl" 2>/dev/null)" || continue
-  printf '%s' "$info" | grep -q "state = running" || continue
+  grep -q "state = running" < <(printf '%s' "$info") || continue
   pid="$(printf '%s' "$info" | grep -oE 'pid = [0-9]+' | head -1 | grep -oE '[0-9]+')"
   [ -n "${pid:-}" ] || continue
   et="$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')"

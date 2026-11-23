@@ -376,7 +376,7 @@ DETECTOR_JSON=""
 if [ -n "$AI_OUTPUT" ]; then
   _PM_RAW="$(printf '%s' "$AI_OUTPUT" | python3 "$WORK_DIR/extract_pm.py" 2>/dev/null || true)"
   # Only accept AI content that looks like a real postmortem (has ## headers)
-  if printf '%s' "$_PM_RAW" | grep -q "^##"; then
+  if grep -q "^##" < <(printf '%s' "$_PM_RAW"); then
     PM_CONTENT="$_PM_RAW"
     DETECTOR_JSON="$(printf '%s' "$AI_OUTPUT" | python3 "$WORK_DIR/extract_detector.py" 2>/dev/null || true)"
   fi

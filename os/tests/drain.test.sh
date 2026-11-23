@@ -91,7 +91,7 @@ reset; prs "$(pr 1 aaaaaaa1 green)"
 o1="$(run)"; o2="$(run)"
 [ "$(printf '%s\n%s\n' "$o1" "$o2" | grep -c 'not switched over')" = 1 ] && ok "off-by-default idle line logged once, not per tick" || no "idle line repeated ($o1 / $o2)"
 touch -t 202001010000 "$SD/r.idle-logged"; o3="$(run)"
-printf '%s' "$o3" | grep -q 'not switched over' && ok "idle line logged again once the 24h marker is stale" || no "no re-log after 24h"
+grep -q 'not switched over' <<<"$o3" && ok "idle line logged again once the 24h marker is stale" || no "no re-log after 24h"
 
 reset; on; prs "$(pr 1 aaaaaaa1 green)"
 run >/dev/null; [ "$(calls)" = 1 ] && grep -q "^1 aaaaaaa1 --repo $REPO_SLUG " "$GATE_LOG" && ok "green+mergeable PR goes through the gate, head pinned, --repo passed" || no "green PR not gated ($(cat "$GATE_LOG"))"
@@ -303,8 +303,8 @@ run >/dev/null; [ "$(calls)" = 1 ] && ok "main goes pending mid-cycle: the next 
 unset GATE_FLIP_MAIN
 # a wrong --main-workflow name (no run of that name = unknown) merges nothing, and says so after 3 cycles in a row
 reset; on; prs "$(pr 1 a1 green)"; echo '[]' > "$MAIN_RUNS"
-o1="$(run)"; o2="$(run)"; [ "$(calls)" = 0 ] && ! printf '%s\n%s\n' "$o1" "$o2" | grep -q "ALERT" && ok "two unreadable cycles: nothing merges, no alert yet" || no "alert too early or merged"
-o3="$(run)"; [ "$(calls)" = 0 ] && printf '%s' "$o3" | grep -q "ALERT: no main CI run could be read for 3 cycles" && ok "third unreadable cycle in a row: loud ALERT naming --main-workflow" || no "no ALERT after 3 unreadable cycles"
+o1="$(run)"; o2="$(run)"; [ "$(calls)" = 0 ] && ! grep -q "ALERT" < <(printf '%s\n%s\n' "$o1" "$o2") && ok "two unreadable cycles: nothing merges, no alert yet" || no "alert too early or merged"
+o3="$(run)"; [ "$(calls)" = 0 ] && grep -q "ALERT: no main CI run could be read for 3 cycles" <<<"$o3" && ok "third unreadable cycle in a row: loud ALERT naming --main-workflow" || no "no ALERT after 3 unreadable cycles"
 grep -q '"cycleRc":3' "$SD/r.heartbeat" && ok "the heartbeat records the unreadable cycle (rc 3)" || no "heartbeat missing"
 # starve: keyed by RUN ID with a hard cap and spacing (createdAt does not move on a re-run; the old attempt-keyed marker never matched, endless loop)
 reset; on; prs; echo "5 hs5" > "$T/fixes-list.txt"; wr hs5 "$(qr 55 2026-11-17T05:14:00Z)"

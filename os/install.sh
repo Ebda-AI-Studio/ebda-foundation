@@ -158,7 +158,7 @@ while IFS=$'\t' read -r name tmpl flag; do
       for _ in 1 2 3 4 5 6; do launchctl print "gui/$U/$label" >/dev/null 2>&1 || break; sleep 0.5; done
       if ! launchctl bootstrap "gui/$U" "$target" 2>/dev/null; then
         say "ERROR: bootstrap failed $label - retry: launchctl bootstrap gui/$U $target"; FAILS=$((FAILS+1))
-      elif ! launchctl print "gui/$U/$label" 2>/dev/null | grep -qF "$target"; then
+      elif ! grep -qF "$target" < <(launchctl print "gui/$U/$label" 2>/dev/null); then
         say "ERROR: $label is loaded but not from the new plist ($target)"; FAILS=$((FAILS+1))
       fi
     fi

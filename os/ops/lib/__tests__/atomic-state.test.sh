@@ -30,7 +30,7 @@ printf '' | atomic_write "$F" >/dev/null 2>&1 && no "empty payload refused" || o
 grep -q '1,2' "$F" && ok "empty payload did not truncate the target" || no "empty payload did not truncate the target"
 
 # no temp litter
-find "$H" -name '.*.tmp.*' | grep -q . && no "no temp files left behind" || ok "no temp files left behind"
+grep -q . < <(find "$H" -name '.*.tmp.*') && no "no temp files left behind" || ok "no temp files left behind"
 
 # ---- atomic_json_update ----
 atomic_json_update "$F" 'd["entries"].append(3)' && ok "atomic_json_update exits 0" || no "atomic_json_update exits 0"

@@ -13,7 +13,7 @@
 # ECONNREFUSED -> curl exit 7) and a local fixture server. Nothing here can
 # reach production or Telegram.
 set -uo pipefail
-cd "$(dirname "$0")/.."   # -> ops/
+cd "$(dirname "$0")/.." || exit 1   # -> ops/
 OPS="$(pwd)"
 
 TMP="$(mktemp -d)"
@@ -116,7 +116,7 @@ if [ "$NET_CLASS" = ok ] && [ "$NET_STATUS" = "200" ]; then
 else
   fail "healthy endpoint: class=$NET_CLASS status=$NET_STATUS (want ok/200)"
 fi
-printf '%s' "$NET_BODY" | grep -q '"status": "healthy"' \
+grep -q '"status": "healthy"' < <(printf '%s' "$NET_BODY") \
   && pass "net_probe captures the response body for callers that parse it" \
   || fail "NET_BODY did not carry the JSON body: '$NET_BODY'"
 

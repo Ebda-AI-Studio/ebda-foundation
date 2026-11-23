@@ -88,7 +88,7 @@ for j in d.get("jobs", []):
       printf '%s' "$logs" | grep -qim1 'no space left on device' && disk_hits+=("$repo #$runid")
       # G7 browser/toolchain corruption: a broken cached browser download the runner
       # keeps re-using — no code change clears it, only wiping the host cache does.
-      printf '%s' "$logs" | grep -qiE 'end of central directory record signature not found|Failed to set up chrome|Could not find (Chrome|Chromium|browser)|ECONNRESET.*(chrome|puppeteer)|puppeteer.*(install|download).*(fail|error)' \
+      grep -qiE 'end of central directory record signature not found|Failed to set up chrome|Could not find (Chrome|Chromium|browser)|ECONNRESET.*(chrome|puppeteer)|puppeteer.*(install|download).*(fail|error)' < <(printf '%s' "$logs") \
         && browser_hits+=("$repo #$runid")
     fi
   done

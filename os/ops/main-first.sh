@@ -238,7 +238,7 @@ sys.exit(0 if any(l.get("name")==os.environ["AL"] for l in json.load(sys.stdin))
   for e in "${todo[@]+"${todo[@]}"}"; do
     rid="${e%%:*}"; rest="${e#*:}"; sha="${rest%%:*}"; prn="${rest#*:}"
     if cancel_run "$repo" "$rid" "batch-first: cancel queued PR run $rid ($repo PR #$prn, head $sha): not in drain batch [$BATCH_PRS]"; then
-      [ "$DRY" = 1 ] || { cut -f1 "$ledger" | grep -qx "$rid" || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$NOW" >> "$ledger"; }
+      [ "$DRY" = 1 ] || { grep -qx "$rid" < <(cut -f1 "$ledger") || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$NOW" >> "$ledger"; }
     fi
   done
 }
@@ -299,7 +299,7 @@ fair_apply() {
       ledger="$STATE/$oslug.cancelled.tsv"; commented="$STATE/$oslug.commented"; touch "$ledger" "$commented"
       if cancel_run "$o" "$rid" "fairness: cancel queued PR run $rid ($o PR #$prn, head $sha) so $starved main CI $nid gets a runner"; then
         echo $((n + 1)) > "$FAIR_DIR/$oslug.taken"; taken=$((taken + 1))
-        [ "$DRY" = 1 ] || { cut -f1 "$ledger" | grep -qx "$rid" || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$NOW" >> "$ledger"; }
+        [ "$DRY" = 1 ] || { grep -qx "$rid" < <(cut -f1 "$ledger") || printf '%s\t%s\t%s\t%s\n' "$rid" "$prn" "$sha" "$NOW" >> "$ledger"; }
         if [ "$prn" != 0 ] && ! grep -qx "$prn:$sha" "$commented"; then
           if act "comment on $o#$prn (head $sha)" -X POST "repos/$o/issues/$prn/comments" -f "body=CI re-run deferred: main CI of $starved is waiting for a heavy runner and this repo shares the runner pool. The OS re-requests this run once this repo's main is green."; then
             [ "$DRY" = 1 ] || echo "$prn:$sha" >> "$commented"

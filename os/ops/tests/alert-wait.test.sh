@@ -34,7 +34,7 @@ grep -q sekret "$T/curl.args" && fail "password on the curl command line" || pas
 
 echo '[{"id":7,"source":"ebda-store/api","level":"p1","title":"old one","text":"old","at":1794300000000,"count":1},{"id":8,"source":"ebda-store/api","level":"p1","title":"Ebda Store nightly backup sweep FAILED","text":"sweep failed","at":1794360000000,"count":2},{"id":9,"source":"github/Ebda-AI-Studio/ebda-store","level":"p1","title":"CI failed on main","text":"CI failed","url":"https://github.com/x/actions/runs/1","at":1794360060000,"count":1}]' > "$T/db.json"
 run; rc=$?
-{ [ "$rc" = 0 ] && head -1 "$T/out" | grep -q '^#9 ' && grep -q '#8 .*backup sweep FAILED x2' "$T/out" && ! grep -q 'old one' "$T/out" && [ "$(cat "$T/last")" = 9 ]; } && pass "new alerts: printed newest first, only those after #7, state -> #9 (must fire)" || { fail "new alerts rc=$rc"; cat "$T/out" "$T/err"; }
+{ [ "$rc" = 0 ] && grep -q '^#9 ' < <(head -1 "$T/out") && grep -q '#8 .*backup sweep FAILED x2' "$T/out" && ! grep -q 'old one' "$T/out" && [ "$(cat "$T/last")" = 9 ]; } && pass "new alerts: printed newest first, only those after #7, state -> #9 (must fire)" || { fail "new alerts rc=$rc"; cat "$T/out" "$T/err"; }
 
 run --once; rc=$?
 [ "$rc" = 1 ] && pass "nothing new after #9: --once exits 1" || fail "nothing-new rc=$rc"

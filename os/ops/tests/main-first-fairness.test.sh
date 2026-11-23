@@ -52,7 +52,7 @@ order="$(posts | grep '/cancel$' | sed 's#.*/o/\(.\)/actions/runs/\([0-9]*\)/can
 [ "$(posts | grep -c '/cancel$')" = 5 ] && [ "$(posts | grep -c 'o/b/actions/runs/.*/cancel')" = 3 ] && [ "$(posts | grep -c 'o/c/actions/runs/.*/cancel')" = 2 ] \
   && pass "other repos' queued PR runs cancelled for a's starved main, capped 3 per repo ($order)" || fail "fair cancel ($order)"
 case "$order" in b*" c"*" b"*) pass "round-robin: repos alternate (not all of b first)";; *) fail "not round-robin: $order";; esac
-posts | grep -q 'actions/runs/90/cancel' && fail "main run was cancelled" || pass "main CI itself is never cancelled"
+grep -q 'actions/runs/90/cancel' < <(posts) && fail "main run was cancelled" || pass "main CI itself is never cancelled"
 # 2. total cap
 reset; prq b 101:fb1:s1:1 102:fb2:s2:2 103:fb3:s3:3; prq c 201:fc1:t1:11 202:fc2:t2:12 203:fc3:t3:13
 for i in 101 102 103 201 202 203; do queued_job $i "$NEW"; done
@@ -64,7 +64,7 @@ reset; wj a.main '{"workflow_runs":[{"id":90,"name":"CI","head_sha":"aaa","statu
 prq b 101:fb1:s1:1; queued_job 101 "$NEW"; run; [ -z "$(posts)" ] && pass "main not starved: other repos untouched" || fail "acted without starvation"
 # 4. cancelled runs land in the OWNING repo's ledger, with a comment on its PR
 reset; prq b 101:fb1:s1:1; queued_job 101 "$NEW"; run
-cut -f1 "$T/state/o__b.cancelled.tsv" 2>/dev/null | grep -qx 101 && posts | grep -q 'o/b/issues/1/comments' && pass "run recorded in b's ledger + comment on b's PR" || fail "ledger/comment"
+grep -qx 101 < <(cut -f1 "$T/state/o__b.cancelled.tsv" 2>/dev/null) && grep -q 'o/b/issues/1/comments' < <(posts) && pass "run recorded in b's ledger + comment on b's PR" || fail "ledger/comment"
 # 5. rotation: cursor advances each tick
 reset; run; c1="$(cat "$T/state/rr-cursor")"; run; c2="$(cat "$T/state/rr-cursor")"
 [ "$c1" = 1 ] && [ "$c2" = 2 ] && grep -q 'tick start' "$T/log" && pass "repo order cursor advances every tick" || fail "cursor $c1 $c2"

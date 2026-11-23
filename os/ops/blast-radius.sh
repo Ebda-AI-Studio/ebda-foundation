@@ -145,7 +145,7 @@ fi
 NOISE_PATTERN='(^node_modules($|/)|\.lock$|package-lock\.json$|yarn\.lock$|pnpm-lock\.yaml$|\.min\.js$|/\.next/|/dist/|/build/|graphify-out/)'
 FILTERED_FILES=()
 for f in ${CHANGED_FILES[@]+"${CHANGED_FILES[@]}"}; do
-  if ! echo "$f" | grep -qE "$NOISE_PATTERN"; then
+  if ! grep -qE "$NOISE_PATTERN" < <(echo "$f"); then
     FILTERED_FILES+=("$f")
   fi
 done
