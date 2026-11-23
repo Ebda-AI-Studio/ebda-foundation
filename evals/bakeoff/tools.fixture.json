@@ -1,0 +1,342 @@
+[
+ {
+  "name": "search_products",
+  "description": "Search the store's products by name or keyword (Ebda Store).",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string"
+    },
+    "limit": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "free"
+ },
+ {
+  "name": "list_orders",
+  "description": "List recent store orders, optionally filtered by status (Ebda Store).",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "status": {
+     "type": "string",
+     "enum": [
+      "pending",
+      "paid",
+      "shipped",
+      "delivered",
+      "cancelled"
+     ]
+    },
+    "limit": {
+     "type": "number"
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "policy": "free"
+ },
+ {
+  "name": "get_order",
+  "description": "Get one store order with its items, payment and shipping state by order id such as ENB-1042 (Ebda Store).",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "orderId": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "orderId"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "free"
+ },
+ {
+  "name": "create_coupon",
+  "description": "Create a percentage discount coupon (Ebda Store). Shows a preview before it is applied.",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "code": {
+     "type": "string"
+    },
+    "percent": {
+     "type": "number"
+    },
+    "endsAt": {
+     "type": "string",
+     "description": "ISO date the coupon ends"
+    }
+   },
+   "required": [
+    "code",
+    "percent"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "preview"
+ },
+ {
+  "name": "set_product_status",
+  "description": "Show or hide one product on the storefront (Ebda Store). Shows a preview before it is applied.",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "productId": {
+     "type": "string"
+    },
+    "status": {
+     "type": "string",
+     "enum": [
+      "active",
+      "hidden"
+     ]
+    }
+   },
+   "required": [
+    "productId",
+    "status"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "preview"
+ },
+ {
+  "name": "update_product_price",
+  "description": "Change the price of one product in EGP (Ebda Store). A price change always needs the merchant to confirm.",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "productId": {
+     "type": "string"
+    },
+    "price": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "productId",
+    "price"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "confirm"
+ },
+ {
+  "name": "delete_product",
+  "description": "Permanently delete one product (Ebda Store). Deletion always needs the merchant to confirm.",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "productId": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "productId"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "confirm"
+ },
+ {
+  "name": "bulk_discount",
+  "description": "Apply a percentage discount to every product in a collection (Ebda Store). Always needs the merchant to confirm.",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "collection": {
+     "type": "string"
+    },
+    "percent": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "collection",
+    "percent"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "confirm"
+ },
+ {
+  "name": "send_customer_message",
+  "description": "Send a message to the customer of an order (Ebda Store). Customer messaging always needs the merchant to confirm.",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "orderId": {
+     "type": "string"
+    },
+    "message": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "orderId",
+    "message"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "confirm"
+ },
+ {
+  "name": "list_templates",
+  "description": "List WhatsApp message templates, optionally by approval status (Ebda Chat).",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "status": {
+     "type": "string",
+     "enum": [
+      "approved",
+      "pending",
+      "rejected"
+     ]
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "policy": "free"
+ },
+ {
+  "name": "get_template",
+  "description": "Get one WhatsApp template by name and language (Ebda Chat).",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "language": {
+     "type": "string",
+     "enum": [
+      "ar",
+      "en"
+     ]
+    }
+   },
+   "required": [
+    "name",
+    "language"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "free"
+ },
+ {
+  "name": "create_template_draft",
+  "description": "Write a WhatsApp template draft for the merchant to review before submitting to Meta (Ebda Chat). Shows a preview.",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "category": {
+     "type": "string",
+     "enum": [
+      "MARKETING",
+      "UTILITY",
+      "AUTHENTICATION"
+     ]
+    },
+    "language": {
+     "type": "string",
+     "enum": [
+      "ar",
+      "en"
+     ]
+    },
+    "body": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "category",
+    "language",
+    "body"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "preview"
+ },
+ {
+  "name": "delete_template",
+  "description": "Delete a WhatsApp template by name and language (Ebda Chat). Deletion always needs the merchant to confirm.",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "language": {
+     "type": "string",
+     "enum": [
+      "ar",
+      "en"
+     ]
+    }
+   },
+   "required": [
+    "name",
+    "language"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "confirm"
+ },
+ {
+  "name": "search_contacts",
+  "description": "Search WhatsApp contacts by name, phone or tag (Ebda Chat).",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string"
+    },
+    "tag": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "free"
+ },
+ {
+  "name": "send_broadcast",
+  "description": "Send an approved template to every contact in a segment (Ebda Chat). Messaging customers always needs the merchant to confirm.",
+  "jsonSchema": {
+   "type": "object",
+   "properties": {
+    "segment": {
+     "type": "string"
+    },
+    "templateName": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "segment",
+    "templateName"
+   ],
+   "additionalProperties": false
+  },
+  "policy": "confirm"
+ }
+]
