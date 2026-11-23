@@ -18,7 +18,8 @@ filter, so it can never be required; when it does run, its checks still have to 
 `evaluate` judges the LATEST run of each check name: the rollup keeps superseded runs of the same name on the same
 head (a run cancelled by a concurrency group, then re-run green), and an old run must not decide the verdict.
 """
-import json, os, re, sys
+import json
+import re, os, re, sys
 
 # the fork guard skips only fork PRs, so on a same-repo PR the job always runs (same rule as ops/merge-gate-required.mjs)
 ALWAYS_IF = re.compile(
@@ -28,6 +29,12 @@ ALWAYS_IF = re.compile(
 # an aggregator that runs even when the jobs it needs were legitimately skipped: always required on a PR
 ALWAYS_RUN_IF = re.compile(r"^always\(\) && github\.event_name == 'pull_request'$")
 OK_CONCLUSIONS = ("SUCCESS", "SKIPPED", "NEUTRAL")
+
+# Ruling MQ-FULL-LANE-1 (2026-11-23): with --defer-heavy-to-merge-group a CANCELLED (never FAILED) heavy PR-lane check is accepted,
+# because the repo's merge queue runs the full lane on PR+main before anything merges. NOT deferrable: Lint and Type Check (they are
+# skipped in the merge_group run), every REQUIRED check (explicit SUCCESS), the light PR gates (Repo guards, PR body sections, Slop and
+# Capability baselines, AI review, Merge queue gate, gitleaks, CodeQL), and any FAILED check.
+DEFERRABLE_HEAVY = re.compile(r"^(Unit shard|Unit Tests|App builds?\b|Integration|E2E Tests|Builder E2E|Build$|Worker dry-run|Orphan test coverage|Security Audit|Tested tree check)")
 
 
 def parse_workflow(text):
@@ -198,7 +205,7 @@ def latest_runs(checks):
     return [c for _, c in sorted(best.values(), key=lambda b: b[0][1])]
 
 
-def evaluate(pr, want, required):
+def evaluate(pr, want, required, defer_heavy=False):
     checks = latest_runs(pr.get("statusCheckRollup") or [])
     head = pr.get("headRefOid") or ""
     name = _name
@@ -208,6 +215,11 @@ def evaluate(pr, want, required):
         # a conflicting PR can never go green: say so now instead of waiting hours (UNKNOWN is transient and still waits)
         return "refuse:rebase needed - this PR conflicts with main (mergeable=CONFLICTING) and can never go green; merge or rebase main, resolve, push, then run the gate again"
     cancelled = [name(c) for c in checks if _status(c) == "COMPLETED" and _conclusion(c) == "CANCELLED"]
+    if defer_heavy:
+        # deferred heavy checks are dropped from the verdict (they are re-proven by the merge_group run); required ones never are
+        deferred = {n for n in cancelled if DEFERRABLE_HEAVY.match(n) and n not in required}
+        cancelled = [n for n in cancelled if n not in deferred]
+        checks = [c for c in checks if name(c) not in deferred]
     if cancelled:
         # a cancelled run is infra or the controller (concurrency group, runner restart), not a defect in the code
         return "refuse:cancelled (infra or controller), re-run: " + ", ".join(cancelled)
@@ -235,6 +247,6 @@ if __name__ == "__main__":
     elif cmd == "secrets-exposure":
         print(json.dumps(secrets_exposure(sys.argv[2])))
     elif cmd == "evaluate":
-        print(evaluate(json.load(sys.stdin), sys.argv[2], json.loads(sys.argv[3])))
+        print(evaluate(json.load(sys.stdin), sys.argv[2], json.loads(sys.argv[3]), defer_heavy=("--defer-heavy" in sys.argv[4:])))
     else:
-        sys.exit("usage: merge_gate.py required <dir> | secrets-exposure <dir> | evaluate <sha> <required-json> < pr.json")
+        sys.exit("usage: merge_gate.py required <dir> | secrets-exposure <dir> | evaluate <sha> <required-json> [--defer-heavy] < pr.json")

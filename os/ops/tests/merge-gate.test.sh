@@ -311,4 +311,33 @@ $GE git -C "$XR" remote set-url origin https://github.com/Org-X/repo-x/
 ok "origin with a trailing slash still matches (0)" "$rc" "0"
 # the drain runs the gate from the TARGET checkout (launchd's cwd is /)
 grep -q '( cd "$DIR" && "$GATE"' "$OPS/drain.sh" && ok "drain.sh runs the gate from --dir" 1 1 || ok "drain.sh runs the gate from --dir" 0 1
+# MQ-FULL-LANE-1: --defer-heavy-to-merge-group accepts CANCELLED heavy PR-lane checks only; FAILED / Lint / Type Check / required / light gates still refuse
+dj(){ python3 -I - "$@" <<'PY'
+import json,sys
+checks=[]
+for spec in sys.argv[1:]:
+    n,c=spec.rsplit("=",1); checks.append({"__typename":"CheckRun","name":n,"status":"COMPLETED","conclusion":c,"startedAt":"2026-11-23T01:00:00Z"})
+print(json.dumps({"headRefOid":"abcdef1234567","mergeable":"MERGEABLE","statusCheckRollup":checks}))
+PY
+}
+REQ='["Gate","Lint"]'
+ev(){ python3 -I "$OPS/lib/merge_gate.py" evaluate abcdef1 "$REQ" "$@"; }
+ok "cancelled heavy (Unit shard) without the flag refuses"            "$(dj 'Gate=SUCCESS' 'Lint=SUCCESS' 'Unit shard 2/3 (affected)=CANCELLED' | ev | cut -d: -f1)" "refuse"
+ok "cancelled heavy with --defer-heavy is ok"                          "$(dj 'Gate=SUCCESS' 'Lint=SUCCESS' 'Unit shard 2/3 (affected)=CANCELLED' 'E2E Tests=CANCELLED' 'App build (web)=CANCELLED' | ev --defer-heavy)" "ok"
+ok "FAILED heavy with --defer-heavy still refuses"                     "$(dj 'Gate=SUCCESS' 'Lint=SUCCESS' 'Unit shard 2/3 (affected)=FAILURE' | ev --defer-heavy | cut -d: -f1)" "refuse"
+ok "cancelled Lint with --defer-heavy still refuses (skipped in merge_group)" "$(dj 'Gate=SUCCESS' 'Lint=CANCELLED' | ev --defer-heavy | cut -d: -f1)" "refuse"
+ok "cancelled Type Check with --defer-heavy still refuses"             "$(dj 'Gate=SUCCESS' 'Lint=SUCCESS' 'Type Check=CANCELLED' | ev --defer-heavy | cut -d: -f1)" "refuse"
+ok "cancelled light gate (Slop baselines) with --defer-heavy still refuses" "$(dj 'Gate=SUCCESS' 'Lint=SUCCESS' 'Slop baselines=CANCELLED' | ev --defer-heavy | cut -d: -f1)" "refuse"
+ok "cancelled REQUIRED check never deferred"                           "$(REQ='["Gate","Unit shard 1/3"]'; dj 'Gate=SUCCESS' 'Unit shard 1/3=CANCELLED' | python3 -I "$OPS/lib/merge_gate.py" evaluate abcdef1 "$REQ" --defer-heavy | cut -d: -f1)" "refuse"
+ok "zero checks with --defer-heavy still waits (never green)"          "$(echo '{"headRefOid":"abcdef1234567","mergeable":"MERGEABLE","statusCheckRollup":[]}' | ev --defer-heavy | cut -d: -f1)" "wait"
+# the gate script: the flag needs a merge queue on main, and each use is logged
+echo "$(dj 'Gate=SUCCESS' 'Lint=SUCCESS' 'Unit shard 2/3 (affected)=CANCELLED')" > "$TMP/defer.json"
+DL="$TMP/defer.log"; rm -f "$DL"
+( MERGE_GATE_MQ_ON=false MERGE_GATE_DEFER_LOG="$DL" MERGE_GATE_REQUIRED_JSON="$REQ" MERGE_GATE_VIEW_CMD="cat $TMP/defer.json" bash "$OPS/merge-gate.sh" 7 abcdef1 --repo o/r --defer-heavy-to-merge-group --interval 0 --polls 1 --dry-run >"$TMP/out" 2>&1 ); rc=$?
+ok "--defer-heavy-to-merge-group without a merge queue refuses (2)"   "$rc" "2"
+( MERGE_GATE_MQ_ON=true MERGE_GATE_DEFER_LOG="$DL" MERGE_GATE_REQUIRED_JSON="$REQ" MERGE_GATE_VIEW_CMD="cat $TMP/defer.json" bash "$OPS/merge-gate.sh" 7 abcdef1 --repo o/r --defer-heavy-to-merge-group --interval 0 --polls 1 --dry-run >"$TMP/out" 2>&1 ); rc=$?
+ok "--defer-heavy-to-merge-group with a merge queue passes (0)"        "$rc" "0"
+ok "  ...and the use is logged"                                        "$(grep -c 'DEFER-HEAVY used: o/r#7' "$DL")" "1"
+( MERGE_GATE_DEFER_LOG="$DL" MERGE_GATE_REQUIRED_JSON="$REQ" MERGE_GATE_VIEW_CMD="cat $TMP/defer.json" bash "$OPS/merge-gate.sh" 7 abcdef1 --repo o/r --interval 0 --polls 1 --dry-run >"$TMP/out" 2>&1 ); rc=$?
+ok "without the flag the same PR still refuses (1)"                   "$rc" "1"
 echo "---"; echo "merge-gate: $pass passed, $fail failed"; [ "$fail" = 0 ]
