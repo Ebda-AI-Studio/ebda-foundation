@@ -75,6 +75,15 @@ describe('rate limiting', () => {
     ];
     for (const [ip, want] of rows) expect(clientKey(ip), String(ip)).toBe(want);
   });
+  it('hostile long input is linear: 10k "%" and long garbage finish fast and key as raw', () => {
+    for (const ip of ['%'.repeat(10_000), '1.2.3.4' + '%'.repeat(10_000), ':'.repeat(10_000), 'a'.repeat(10_000)]) {
+      const t0 = performance.now();
+      const k = clientKey(ip);
+      expect(performance.now() - t0).toBeLessThan(50);
+      expect(k.startsWith('raw:')).toBe(true);
+    }
+    expect(clientKey('fe80::1%' + '%'.repeat(20))).toBe('fe80:0:0:0::/64');
+  });
   it('distinct mapped clients and distinct garbage never share a bucket', () => {
     expect(clientKey('::ffff:1.2.3.4')).not.toBe(clientKey('::ffff:1.2.3.5'));
     expect(clientKey('junk-a')).not.toBe(clientKey('junk-b'));

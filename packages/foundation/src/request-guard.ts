@@ -107,7 +107,9 @@ function ipv6Groups(ip: string): number[] | null {
 export function clientKey(ip: string | null): string {
   if (!ip) return 'unknown';
   const raw = ip;
-  const s = ip.trim().replace(/%.*$/, '').toLowerCase();
+  if (ip.length > 64) return `raw:${raw.slice(0, 128)}`; // no real address (with a zone) is this long; never parse hostile length
+  const z = ip.indexOf('%');
+  const s = (z === -1 ? ip : ip.slice(0, z)).trim().toLowerCase();
   if (V4.test(s)) return s;
   const g = s.includes(':') ? ipv6Groups(s) : null;
   if (!g) return `raw:${raw.slice(0, 128)}`;
