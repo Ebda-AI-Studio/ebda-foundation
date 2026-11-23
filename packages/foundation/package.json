@@ -17,6 +17,9 @@
     "./instapay-digest": "./src/instapay-digest.ts",
     "./instapay-extract": "./src/instapay-extract.ts",
     "./instapay-state": "./src/instapay-state.ts",
+    "./observe": "./src/observe/index.ts",
+    "./observe/mask": "./src/observe/mask.ts",
+    "./observe/url-scrub": "./src/observe/url-scrub.ts",
     "./phone": "./src/phone.ts",
     "./ratchet": "./src/ratchet.ts",
     "./self-service-routes": "./src/self-service-routes.ts",
@@ -25,7 +28,8 @@
     "./smart-layer-bypass": "./src/smart-layer-bypass.ts",
     "./text": "./src/text.ts",
     "./tokens": "./src/tokens.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./web/search": "./src/web/search/index.ts"
   },
   "peerDependencies": {
     "zod": "4.6.7"
