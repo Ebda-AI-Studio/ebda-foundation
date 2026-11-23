@@ -1,20 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { foldArabic, indexTokens, phoneDigits } from './text';
+import { foldArabic, foldArabicHamza, indexTextBoth, indexTokens, indexTokensHamza, phoneDigits, sameSearchTerm, searchTokens, searchTokensHamza, searchWordPairs } from './text';
 
-const v = JSON.parse(readFileSync(new URL('../../../vectors/arabic.json', import.meta.url), 'utf8')) as { cases: Array<{ in: string; out: string }>; equivalent: string[][]; distinct: string[][] };
+const v = JSON.parse(readFileSync(new URL('../../../vectors/arabic.json', import.meta.url), 'utf8')) as { cases: Array<{ in: string; out: string }> };
+
+const h = JSON.parse(readFileSync(new URL('../../../vectors/arabic-hamza.json', import.meta.url), 'utf8')) as { cases: Array<[string, string]>; equivalentA: string[][]; sameTerm: string[][]; differentTerm: string[][] };
 
 describe('text', () => {
   it('foldArabic matches every shared vector', () => {
-    expect(v.cases.length).toBe(52);
+    expect(v.cases.length).toBe(35);
     for (const c of v.cases) expect(foldArabic(c.in), JSON.stringify(c.in)).toBe(c.out);
-  });
-  it('equivalent spellings fold to one string; distinct words stay distinct (F7-HAMZA-1)', () => {
-    for (const g of v.equivalent) expect(new Set(g.map(foldArabic)).size, g.join(' = ')).toBe(1);
-    for (const [a, b] of v.distinct) expect(foldArabic(a!), `${a} != ${b}`).not.toBe(foldArabic(b!));
-  });
-  it('folding is idempotent on every vector', () => {
-    for (const c of v.cases) expect(foldArabic(foldArabic(c.in)), c.in).toBe(foldArabic(c.in));
   });
   it('indexTokens folds and replaces punctuation with a single space', () => {
     expect(indexTokens('أحذية، رياضية!! (جديدة)')).toBe('احذيه رياضيه جديده');
@@ -22,5 +17,38 @@ describe('text', () => {
   });
   it('phoneDigits', () => {
     expect(phoneDigits('+٢٠ ١٠٠-١٢٣')).toBe('20100123');
+  });
+  it('fold B is the ORIGINAL fold: the no-regression set (35 original vectors) still holds, and ئ still folds to ي', () => {
+    expect(foldArabic('رائع')).toBe('رايع');
+    expect(foldArabic('مسئول')).toBe('مسيول');
+    expect(foldArabic('مسؤول')).toBe('مسوول');
+    expect(foldArabic('\u2009x\u2009')).toBe('\u2009x\u2009'); // no NFKC in B
+  });
+  it('fold A matches every hamza vector', () => {
+    expect(h.cases.length).toBe(28);
+    for (const [i, o] of h.cases) expect(foldArabicHamza(i), JSON.stringify(i)).toBe(o);
+  });
+  it('fold A: equivalent spellings fold to one string; idempotent', () => {
+    for (const g of h.equivalentA) expect(new Set(g.map(foldArabicHamza)).size, g.join(' = ')).toBe(1);
+    for (const [i] of h.cases) expect(foldArabicHamza(foldArabicHamza(i)), i).toBe(foldArabicHamza(i));
+  });
+  it('sameSearchTerm = agree under B OR under A: every old B equivalence survives, hamza seats meet, distinct words stay apart', () => {
+    for (const [a, b] of h.sameTerm) expect(sameSearchTerm(a!, b!), `${a} ~ ${b}`).toBe(true);
+    for (const [a, b] of h.differentTerm) expect(sameSearchTerm(a!, b!), `${a} !~ ${b}`).toBe(false);
+    // no-regression: any two inputs that fold equal under the ORIGINAL vectors' B stay the same term
+    for (const c of v.cases) expect(sameSearchTerm(c.in, c.out), c.in).toBe(true);
+    // not transitive on purpose
+    expect(sameSearchTerm('مسيول', 'مسئول') && sameSearchTerm('مسئول', 'مسؤول') && !sameSearchTerm('مسيول', 'مسؤول')).toBe(true);
+  });
+  it('word pairs: one form when B and A agree, two when they differ; A alone when NFKC changes the word count', () => {
+    expect(searchWordPairs('احذيه رياضيه')).toEqual([['احذيه'], ['رياضيه']]);
+    expect(searchWordPairs('سائل مسئول')).toEqual([['سايل', 'ساول'], ['مسيول', 'مسول']]);
+    expect(searchWordPairs('a\u2009b')).toEqual([['a'], ['b']]);
+    expect(searchTokens('سائل')).toEqual(['سايل']);
+    expect(searchTokensHamza('سائل')).toEqual(['ساول']);
+  });
+  it('index text keeps both forms only when they differ', () => {
+    expect(indexTextBoth('شنطة جلد')).toBe(indexTokens('شنطة جلد'));
+    expect(indexTextBoth('مسئول الحسابات')).toBe(`${indexTokens('مسئول الحسابات')} ${indexTokensHamza('مسئول الحسابات')}`);
   });
 });
