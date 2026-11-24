@@ -21,27 +21,47 @@ except Exception:
 if d.get("tool_name") != "Bash":
     sys.exit(0)
 cmd = (d.get("tool_input") or {}).get("command") or ""
-try:
-    tokens = shlex.split(cmd)
-except ValueError:
-    sys.exit(0)
-SEPS = {";", "&&", "||", "|", "&"}
-segs, cur = [], []
-for t in tokens:
-    if t in SEPS:
-        if cur: segs.append(cur)
+import re
+def logical_lines(text):
+    # split on newlines, but keep lines joined while a quote is still open
+    out, buf = [], ""
+    for line in text.split("\n"):
+        buf = line if not buf else buf + "\n" + line
+        try:
+            shlex.split(buf); out.append(buf); buf = ""
+        except ValueError:
+            continue
+    if buf: out.append(buf)
+    return out
+def segments(text, depth=0):
+    if depth > 4: return []
+    res = []
+    # recurse into command substitutions: $( ... ) and backticks
+    for inner in re.findall(r"\$\(([^()]*)\)", text) + re.findall(r"`([^`]*)`", text):
+        res += segments(inner, depth + 1)
+    for line in logical_lines(text):
+        try:
+            lx = shlex.shlex(line, posix=True, punctuation_chars=True); lx.whitespace_split = True
+            tokens = list(lx)
+        except ValueError:
+            tokens = line.split()
         cur = []
-    else:
-        cur.append(t)
-if cur: segs.append(cur)
-for seg in segs:
-    while seg and (seg[0] in ("sudo", "env", "command", "nohup", "time") or ("=" in seg[0] and not seg[0].startswith("-"))):
+        for t in tokens:
+            if t and set(t) <= set(";&|()"):
+                if cur: res.append(cur)
+                cur = []
+            else:
+                cur.append(t)
+        if cur: res.append(cur)
+    return res
+for seg in segments(cmd):
+    while seg and (seg[0] in ("sudo", "env", "command", "nohup", "time", "exec", "{", "!") or ("=" in seg[0] and not seg[0].startswith("-"))):
         seg = seg[1:]
     if not seg:
         continue
     prog = seg[0].rsplit("/", 1)[-1]
     if prog in ("pkill", "killall"):
-        sys.stderr.write("BLOCKED: %s kills by pattern and can end other sessions processes. Kill only PIDs you started: kill <pid>.\n" % prog)
+        sys.stderr.write("BLOCKED: %s kills by pattern and can end other sessions processes. Kill only PIDs you started: kill <pid>, or touch the loop stop file (Ahmad 2026-11-23).\n" % prog)
         sys.exit(2)
     if prog in ("lockf", "flock") and "git" in seg and "push" in seg[seg.index("git"):]:
         sys.stderr.write("BLOCKED: wrapping git push in a lock deadlocks when the pre-push hook takes the same lock (3600 s). Run a plain git push.\n")
