@@ -25,7 +25,13 @@ case "$1 $2" in
   "run view") case "$*" in *"--json jobs"*) cat "$T/mgjob-$3.txt" 2>/dev/null; exit 0 ;; esac
     rs="$(cat "$T/rs-$3" 2>/dev/null || echo "completed 1")"; case "$*" in *status,attempt*) echo "$rs" ;; *"json status"*) echo "${rs% *}" ;; *"json attempt"*) [ -n "${RUNVIEW_FAIL_ATTEMPT:-}" ] && exit 1; echo "${rs#* }" ;; esac ;;
   "run list") [ -n "${MAIN_FAIL:-}" ] && exit 1
-    case "$*" in *"--workflow AI review"*) cat "$T/review-runs.json" 2>/dev/null || echo '[]'; exit 0 ;; esac
+    # like GitHub: --commit SHA filters server-side; otherwise only the newest --limit runs of the whole repo come back
+    case "$*" in *"--workflow AI review"*) c=""; l=20; a=("$@"); for ((i=0;i<${#a[@]};i++)); do [ "${a[i]}" = --commit ] && c="${a[i+1]}"; [ "${a[i]}" = --limit ] && l="${a[i+1]}"; done
+      python3 -I -c 'import json,sys
+rs=json.load(open(sys.argv[1])) if len(sys.argv)>1 and sys.argv[1] else []
+c,l=sys.argv[2],int(sys.argv[3])
+if c: rs=[r for r in rs if r.get("headSha")==c]
+print(json.dumps(rs[:l]))' "$T/review-runs.json" "$c" "$l" 2>/dev/null || echo '[]'; exit 0 ;; esac
     case "$*" in *"--event merge_group"*) [ -n "${MG_FAIL:-}" ] && exit 1; cat "$T/mg-runs.json" 2>/dev/null || echo '[]'; exit 0 ;; esac
     case "$*" in *--status*queued*) cat "$T/queued.json" 2>/dev/null || echo '[]'; exit 0 ;; esac
     sha=""; while [ $# -gt 0 ]; do [ "$1" = --commit ] && sha="$2"; shift; done
@@ -419,6 +425,13 @@ reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"; runs; run --hol
 reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"; runs "$(run1 sha1 '')"; run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "review run without a conclusion: held" || no "merged on unfinished review"
 reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"; runs "$(run1 oldsha success)"; run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "review success on ANOTHER sha does not count" || no "review of an old head counted"
 reset; on; prs "$(pr 1 sha1 green)"; runs; run --hold-risky >/dev/null; [ "$(calls)" = 1 ] && ok "a PR that is not risky-path needs no review run" || no "non-risky PR held for a review run"
+# an old PR's review run must not scroll out of a repo-wide window: 150 newer unrelated runs, the PR's own success is the 151st
+reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"
+{ echo '['; for i in $(seq 1 150); do echo "$(run1 other$i success),"; done; run1 sha1 success; echo ']'; } > "$T/review-runs.json"
+run --hold-risky >/dev/null; [ "$(calls)" = 1 ] && ok "review run found by commit even with 150 newer unrelated runs on the repo" || no "old PR held: its review run fell out of the window"
+reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"
+{ echo '['; for i in $(seq 1 150); do echo "$(run1 other$i success),"; done; echo "$(run1 sha1 failure),"; run1 sha1 success; echo ']'; } > "$T/review-runs.json"
+run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "a failed review run at head is still found past 150 unrelated runs: held" || no "failed review hidden by the window"
 # per-PR state lines + startup line
 reset; on; prs "$(pr 1 a1 green)" "$(pr 2 a2 red)" "$(pr 3 a3 none)" "$(pr 4 a4 pending)" "$(pr 5 a5 green '' CONFLICTING)" "$(pr 6 a6 green '' MERGEABLE draft)" "$(pr 7 a7 green hold)"; out="$(run)"
 printf '%s' "$out" | grep -q 'considering 7 PRs' && printf '%s' "$out" | grep -q 'PR #1 a1 ready' && printf '%s' "$out" | grep -q 'PR #2 a2 red' && printf '%s' "$out" | grep -q 'PR #3 a3 nochecks' \

@@ -125,7 +125,8 @@ list_states() { python3 -I "$HERE/lib/drain_eligible.py" --mode states ${ONLY_AR
 
 # review at HEAD by conclusion: >=1 success, none failed/cancelled/timed_out/action_required/startup_failure, none unfinished
 review_ok() { # $1 = head sha
-  gh run list --repo "$REPO" --workflow "$REVIEW_WF" --limit 100 --json conclusion,headSha 2>/dev/null | python3 -I -c '
+  # BY COMMIT, never repo-wide: a repo-wide `--limit 100` window lets an older PR's review run scroll out (a busy repo) and holds that PR forever
+  gh run list --repo "$REPO" --workflow "$REVIEW_WF" --commit "$1" --limit 100 --json conclusion,headSha 2>/dev/null | python3 -I -c '
 import json, sys
 sha = sys.argv[1]
 c = [(r.get("conclusion") or "").lower() for r in json.load(sys.stdin) if r.get("headSha") == sha]
