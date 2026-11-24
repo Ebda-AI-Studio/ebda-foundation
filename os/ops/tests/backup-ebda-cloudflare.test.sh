@@ -3,7 +3,7 @@
 # and exits non-zero; missing credentials FAIL LOUD. Nothing here touches R2 or Telegram: the bucket is a local
 # directory (EBDA_CF_BACKUP_SRC) and notify.sh is a recording stub.
 set -uo pipefail
-cd "$(dirname "$0")/.."; OPS="$(pwd)"
+cd "$(dirname "$0")/.." || exit 1; OPS="$(pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 _pass=0; _fail=0
 pass() { echo "PASS: $1"; _pass=$((_pass+1)); }
@@ -119,5 +119,59 @@ if cmp -s "$TMP/mut3.sh" "$OPS/backup-ebda-cloudflare.sh"; then fail "MC3 mutati
   echo '[999,"x"]' >> "$B/store-do-backups/s1/$D0/orders.ndjson"
   env BACKUP_CAFFEINATED=1 HOME="$TMP/home-m3" EBDA_CF_BACKUP_ROOT="$TMP/out-m3" EBDA_CF_BACKUP_SRC="$B" bash "$r/backup-ebda-cloudflare.sh" > "$TMP/log-m3b" 2>&1; unset SCRIPT
   grep -q "IMMUTABILITY VIOLATION" "$TMP/log-m3b" && fail "MC3 guard still fired" || pass "MC3 without the write-once branch the overwrite goes through silently (guard is what stops it)"; fi
+
+# ---- paged tables (manifest.tables[t].parts, Ebda Store P2-4) ----------------------------------------------------
+# mk_paged <dir> <table> <rows-per-part...>: writes <table>.part-NNNN.ndjson files and the Worker-shaped manifest entry
+mk_paged() {
+  local dir="$1" t="$2"; shift 2; local n=0 total=0 parts='[]' shas="" f r i psha
+  for r in "$@"; do
+    n=$((n+1)); f="$(printf '%s.part-%04d.ndjson' "$t" "$n")"
+    { echo '["id","v"]'; i=0; while [ "$i" -lt "$r" ]; do echo "[$((total+i)),\"p$n\"]"; i=$((i+1)); done; } > "$dir/$f"
+    psha="$(shasum -a 256 "$dir/$f" | awk '{print $1}')"; shas="${shas:+$shas$'\n'}$psha"; total=$((total+r))
+    parts="$(jq -c --arg f "$f" --argjson r "$r" --arg s "$psha" '.+[{file:$f,rows:$r,sha256:$s}]' <<<"$parts")"
+  done
+  jq --arg t "$t" --argjson rows "$total" --arg s "$(printf '%s' "$shas" | shasum -a 256 | awk '{print $1}')" --argjson p "$parts" \
+    '.tables[$t]={rows:$rows,sha256:$s,parts:$p}' "$dir/manifest.json" > "$dir/m.tmp" && mv "$dir/m.tmp" "$dir/manifest.json"
+}
+mk_paged_bucket() { # <name> -> healthy bucket whose D0 orders table is paged into 3 parts (30 rows)
+  local b; b="$(mk_bucket "$1")"; rm -f "$b/store-do-backups/s1/$D0/orders.ndjson"
+  mk_paged "$b/store-do-backups/s1/$D0" orders 10 12 8; printf '%s' "$b"
+}
+mkdir -p "$TMP"/home-{p1,p2,p3,p4,p5,p6,p7,p8,p9}
+
+B="$(mk_paged_bucket p1)"; run p1 "$B"
+[ "$RC" = 0 ] && [ "$N" = 0 ] && grep -q "ok store s1" "$TMP/log-p1" && pass "P1 a healthy paged table (3 parts) verifies and pages zero times" || { fail "P1 healthy paged (rc=$RC pages=$N)"; cat "$TMP/log-p1"; }
+
+B="$(mk_paged_bucket p2)"; rm "$B/store-do-backups/s1/$D0/orders.part-0002.ndjson"; run p2 "$B"
+[ "$RC" != 0 ] && [ "$N" = 1 ] && grep -q "manifest lists 3 parts but 2 part files" "$TMP/log-p2" && pass "P2 a missing part fails on the part count (the old script would not even look)" || { fail "P2 missing part (rc=$RC pages=$N)"; cat "$TMP/log-p2"; }
+
+B="$(mk_paged_bucket p3)"; echo '[999,"tamper"]' >> "$B/store-do-backups/s1/$D0/orders.part-0003.ndjson"; run p3 "$B"
+[ "$RC" != 0 ] && grep -q "part-0003.ndjson checksum differs" "$TMP/log-p3" && pass "P3 a tampered part fails its sha256" || { fail "P3 tampered part (rc=$RC)"; cat "$TMP/log-p3"; }
+
+B="$(mk_paged_bucket p4)"; cp "$B/store-do-backups/s1/$D0/orders.part-0001.ndjson" "$B/store-do-backups/s1/$D0/orders.part-0004.ndjson"; run p4 "$B"
+[ "$RC" != 0 ] && grep -q "lists 3 parts but 4 part files" "$TMP/log-p4" && pass "P4 an extra part file on disk fails" || { fail "P4 extra part (rc=$RC)"; cat "$TMP/log-p4"; }
+
+B="$(mk_paged_bucket p5)"; M="$B/store-do-backups/s1/$D0/manifest.json"; jq '.tables.orders.rows=31' "$M" > "$TMP/m" && mv "$TMP/m" "$M"; run p5 "$B"
+[ "$RC" != 0 ] && grep -q "parts hold 30 rows, manifest says 31" "$TMP/log-p5" && pass "P5 part rows that do not add up to the table rows fail" || { fail "P5 row sum (rc=$RC)"; cat "$TMP/log-p5"; }
+
+B="$(mk_paged_bucket p6)"; M="$B/store-do-backups/s1/$D0/manifest.json"; jq '.tables.orders.sha256=("a"*64)' "$M" > "$TMP/m" && mv "$TMP/m" "$M"; run p6 "$B"
+[ "$RC" != 0 ] && grep -q "table digest differs" "$TMP/log-p6" && pass "P6 a table digest that is not the digest of its parts fails" || { fail "P6 digest (rc=$RC)"; cat "$TMP/log-p6"; }
+
+B="$(mk_paged_bucket p7)"; M="$B/store-do-backups/s1/$D0/manifest.json"; jq '.tables.orders.parts[0].file="../x.ndjson"' "$M" > "$TMP/m" && mv "$TMP/m" "$M"; run p7 "$B"
+[ "$RC" != 0 ] && grep -q "unsafe part file name" "$TMP/log-p7" && pass "P7 a part file name that escapes the day folder is rejected" || { fail "P7 unsafe name (rc=$RC)"; cat "$TMP/log-p7"; }
+
+# P9: part 0002 is replaced by a second listing of part 0001; rows and table digest are recomputed so that ONLY the uniqueness check can catch it
+B="$(mk_paged_bucket p9)"; M="$B/store-do-backups/s1/$D0/manifest.json"
+jq '.tables.orders.parts[1]=.tables.orders.parts[0] | .tables.orders.rows=([.tables.orders.parts[].rows]|add)' "$M" > "$TMP/m" && mv "$TMP/m" "$M"
+jq --arg s "$(jq -j '[.tables.orders.parts[].sha256]|join("\n")' "$M" | shasum -a 256 | awk '{print $1}')" '.tables.orders.sha256=$s' "$M" > "$TMP/m" && mv "$TMP/m" "$M"
+run p9 "$B"
+[ "$RC" != 0 ] && grep -q "lists part 'orders.part-0001.ndjson' more than once" "$TMP/log-p9" && pass "P9 a manifest listing the same part twice fails on uniqueness (count, rows and digest were made consistent)" || { fail "P9 duplicate part (rc=$RC)"; cat "$TMP/log-p9"; }
+
+# mutation control: the OLD logic (hash only <table>.ndjson) cannot see a paged table at all
+sed 's/if \[ "\$(jq -r --arg t "\$t" .\.tables\[\$t\] | has("parts").*/if false; then/' "$OPS/backup-ebda-cloudflare.sh" > "$TMP/mut4.sh"
+if cmp -s "$TMP/mut4.sh" "$OPS/backup-ebda-cloudflare.sh"; then fail "MC4 mutation did not change the script"; else
+  B="$(mk_paged_bucket p8)"; rm "$B/store-do-backups/s1/$D0/orders.part-0002.ndjson"
+  SCRIPT="$TMP/mut4.sh" run p8 "$B"; unset SCRIPT
+  grep -q "part files" "$TMP/log-p8" && fail "MC4 part check still fired" || pass "MC4 without the parts branch a paged table is reported as a plain missing file (parts logic is what verifies it)"; fi
 
 echo; echo "passed=$_pass failed=$_fail"; [ "$_fail" = 0 ]
