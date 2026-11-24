@@ -25,6 +25,13 @@ case "$1 $2" in
   "run view") case "$*" in *"--json jobs"*) cat "$T/mgjob-$3.txt" 2>/dev/null; exit 0 ;; esac
     rs="$(cat "$T/rs-$3" 2>/dev/null || echo "completed 1")"; case "$*" in *status,attempt*) echo "$rs" ;; *"json status"*) echo "${rs% *}" ;; *"json attempt"*) [ -n "${RUNVIEW_FAIL_ATTEMPT:-}" ] && exit 1; echo "${rs#* }" ;; esac ;;
   "run list") [ -n "${MAIN_FAIL:-}" ] && exit 1
+    # like GitHub: --commit SHA filters server-side; otherwise only the newest --limit runs of the whole repo come back
+    case "$*" in *"--workflow AI review"*) c=""; l=20; a=("$@"); for ((i=0;i<${#a[@]};i++)); do [ "${a[i]}" = --commit ] && c="${a[i+1]}"; [ "${a[i]}" = --limit ] && l="${a[i+1]}"; done
+      python3 -I -c 'import json,sys
+rs=json.load(open(sys.argv[1])) if len(sys.argv)>1 and sys.argv[1] else []
+c,l=sys.argv[2],int(sys.argv[3])
+if c: rs=[r for r in rs if r.get("headSha")==c]
+print(json.dumps(rs[:l]))' "$T/review-runs.json" "$c" "$l" 2>/dev/null || echo '[]'; exit 0 ;; esac
     case "$*" in *"--event merge_group"*) [ -n "${MG_FAIL:-}" ] && exit 1; cat "$T/mg-runs.json" 2>/dev/null || echo '[]'; exit 0 ;; esac
     case "$*" in *--status*queued*) cat "$T/queued.json" 2>/dev/null || echo '[]'; exit 0 ;; esac
     sha=""; while [ $# -gt 0 ]; do [ "$1" = --commit ] && sha="$2"; shift; done
@@ -82,6 +89,9 @@ reset() { rm -rf "$SD" "$GATE_LOG" "$POST_LOG" "$RERUN_LOG" "$T/locks" "$HOME/.c
 on() { touch "$SD/r.enabled"; }
 # money fixtures (Ruling MONEY-SHA-1): the controller's commit status on a head sha. money_ok SHA [state] [created_at]
 money_ok() { echo "[{\"context\":\"controller/money-review\",\"state\":\"${2:-success}\",\"created_at\":\"${3:-2026-11-16T10:00:00Z}\",\"creator\":{\"login\":\"${4:-voidengineer-911}\"}}]" > "$T/status-$1.json"; }
+# review runs of the AI-review workflow (newest first): runs <json>... ; run1 <sha> <conclusion>
+runs() { { echo '['; local first=1; for j in "$@"; do [ "$first" = 1 ] || echo ','; echo "$j"; first=0; done; echo ']'; } > "$T/review-runs.json"; }
+run1() { echo "{\"headSha\":\"$1\",\"status\":\"completed\",\"conclusion\":\"$2\"}"; }
 calls() { wc -l < "$GATE_LOG" | tr -d ' '; }
 
 reset; prs "$(pr 1 aaaaaaa1 green)"
@@ -101,8 +111,8 @@ run >/dev/null; [ "$(calls)" = 0 ] && ok "pending / red / zero-check / conflicti
 
 reset; on; prs "$(pr 1 a1 green risky-path)"
 run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "risky PR without ai-review-passed is held" || no "risky PR gated unreviewed"
-prs "$(pr 1 a1 green risky-path,ai-review-passed)"
-run --hold-risky >/dev/null; [ "$(calls)" = 1 ] && ok "risky PR with ai-review-passed is gated" || no "reviewed risky PR not gated"
+prs "$(pr 1 a1 green risky-path,ai-review-passed)"; runs "$(run1 a1 success)"
+run --hold-risky >/dev/null; [ "$(calls)" = 1 ] && ok "risky PR with ai-review-passed (and a clean review run at head) is gated" || no "reviewed risky PR not gated"
 # money gate is UNCONDITIONAL: even without --hold-risky a risky PR lacking money-review-passed is never merged
 reset; on; prs "$(pr 1 a1 green risky,ai-review-passed)"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "no --hold-risky: risky PR without money-review-passed is NOT merged" || no "money gate bypassed without --hold-risky"
@@ -400,4 +410,38 @@ print(json.dumps({"total_count":len(jobs),"jobs":jobs}))' > "$T/njobs-902.json"
 run >/dev/null; [ "$(calls)" = 0 ] && ok "a 100-job (possibly truncated) list fails closed" || no "truncated job list counted as green"
 
 reset; on; run --bogus >/dev/null 2>&1; [ $? = 2 ] && ok "unknown flag exits 2" || no "unknown flag accepted"
+# ---- MERGE-NO-REFRESH-1: review = a clean CONCLUSION at head, explicit PR list, per-PR state lines ----
+# never refresh a branch (pins the ruling: the drain script has no update-branch / rebase call)
+drain_src="$(grep -v '^[[:space:]]*#' "$DRAIN")"
+if grep -qE 'update-branch|pr (update|rebase)' <<<"$drain_src"; then no "drain refreshes branches"; else ok "drain never calls update-branch"; fi
+reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"
+runs "$(run1 sha1 success)"; run --hold-risky >/dev/null; [ "$(calls)" = 1 ] && ok "label + review success at head: merges" || no "clean review not merged"
+reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"
+runs "$(run1 sha1 success)" "$(run1 sha1 failure)"; run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "label present but a review run FAILED at head: held" || no "merged despite failed review"
+for bad in cancelled timed_out action_required startup_failure; do
+  reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"; runs "$(run1 sha1 success)" "$(run1 sha1 $bad)"
+  run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "review run $bad at head: held" || no "merged with a $bad review run"
+done
+reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"; runs; run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "label alone, no review run on record: held" || no "label alone was enough"
+reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"; runs "$(run1 sha1 '')"; run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "review run without a conclusion: held" || no "merged on unfinished review"
+reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"; runs "$(run1 oldsha success)"; run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "review success on ANOTHER sha does not count" || no "review of an old head counted"
+reset; on; prs "$(pr 1 sha1 green)"; runs; run --hold-risky >/dev/null; [ "$(calls)" = 1 ] && ok "a PR that is not risky-path needs no review run" || no "non-risky PR held for a review run"
+# an old PR's review run must not scroll out of a repo-wide window: 150 newer unrelated runs, the PR's own success is the 151st
+reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"
+{ echo '['; for i in $(seq 1 150); do echo "$(run1 other$i success),"; done; run1 sha1 success; echo ']'; } > "$T/review-runs.json"
+run --hold-risky >/dev/null; [ "$(calls)" = 1 ] && ok "review run found by commit even with 150 newer unrelated runs on the repo" || no "old PR held: its review run fell out of the window"
+reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"
+{ echo '['; for i in $(seq 1 150); do echo "$(run1 other$i success),"; done; echo "$(run1 sha1 failure),"; run1 sha1 success; echo ']'; } > "$T/review-runs.json"
+run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "a failed review run at head is still found past 150 unrelated runs: held" || no "failed review hidden by the window"
+# per-PR state lines + startup line
+reset; on; prs "$(pr 1 a1 green)" "$(pr 2 a2 red)" "$(pr 3 a3 none)" "$(pr 4 a4 pending)" "$(pr 5 a5 green '' CONFLICTING)" "$(pr 6 a6 green '' MERGEABLE draft)" "$(pr 7 a7 green hold)"; out="$(run)"
+grep -q 'considering 7 PRs' <<<"$out" && grep -q 'PR #1 a1 ready' <<<"$out" && grep -q 'PR #2 a2 red' <<<"$out" && grep -q 'PR #3 a3 nochecks' <<<"$out" \
+  && grep -q 'PR #4 a4 pending' <<<"$out" && grep -q 'PR #5 a5 conflict' <<<"$out" && grep -q 'PR #6 a6 draft' <<<"$out" && grep -q 'PR #7 a7 hold' <<<"$out" \
+  && ok "'considering N PRs' + one state line per PR (ready/red/nochecks/pending/conflict/draft/hold)" || no "missing per-PR lines ($out)"
+# explicit PR list
+reset; on; prs "$(pr 1 a1 green)" "$(pr 2 a2 green)"; run 2 >/dev/null; [ "$(calls)" = 1 ] && grep -q '^2 a2 ' "$GATE_LOG" && ok "explicit PR list restricts the drain" || no "explicit list ignored"
+reset; on; prs "$(pr 1 a1 green)"; run "1 2 3" >/dev/null 2>&1; rc=$?; [ "$rc" = 2 ] && [ "$(calls)" = 0 ] && ok "one quoted list with spaces: exit 2, nothing skipped silently" || no "quoted list accepted (rc=$rc)"
+reset; on; prs "$(pr 1 a1 green)"; run "" >/dev/null 2>&1; rc=$?; [ "$rc" = 2 ] && ok "an empty PR argument (zero PRs parsed): exit 2" || no "empty PR list exited $rc"
+reset; on; prs "$(pr 1 a1 green)"; run 99 >/dev/null 2>&1; rc=$?; [ "$rc" = 4 ] && ok "explicit list with none open: exit 4, not a quiet 0" || no "none-open list exited $rc"
+reset; on; run abc >/dev/null 2>&1; [ $? = 2 ] && ok "non-numeric PR argument exits 2" || no "non-numeric PR accepted"
 echo "drain: $p passed, $f failed"; [ "$f" = 0 ]

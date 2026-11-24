@@ -22,7 +22,7 @@ New `os/config/delegation.json`, read by the brain classifier and the hands runn
 | docs, tests, lint, deps patch/minor with green CI, CI/infra reruns, flaky retry | ACT + report | `maxFilesActAlone`, `maxLinesActAlone` |
 | code in money paths (orders, payments, payouts, refunds, entitlements) | ACT only with independent AI review passed (`ai-review-passed`), else ASK | `moneyPaths` globs |
 | irreversible migration (drop/rename column, data delete, backfill on prod) | ASK | - |
-| real-client traffic switch (FWB pecanbee, wady aljuz; DNS, routing, flags that move live stores) | ASK | `realClientTargets` |
+| real-client traffic switch (DNS, routing, flags that move live stores) | ASK | `realClientTargets` |
 | purchase, payment, plan upgrade, any spend > `spendCapUsd` (default 0) | ASK | `spendCapUsd` |
 | anything needing Ahmad's login, 2FA or a new secret | ASK | - |
 | protected paths (`.github/**`, `wrangler*`, `migrations/**`) | PR only, ASK before merge | `protectedPaths` (already in `hands.ebda.json`) |
