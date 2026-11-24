@@ -1,7 +1,7 @@
 # merge-gate - never merge on "no checks"; the gate, not the merge button, is the line
 
 tags: [BOTH]
-sources: `ci-merge-gates-never-merge-on-no-checks`, `feedback-never-admin-merge-past-security-checks`, `feedback-gate-that-cannot-fail-reports-success`
+sources: `feedback-ci-merge-throughput-thin-runner-pool`, `ci-merge-gates-never-merge-on-no-checks`, `feedback-never-admin-merge-past-security-checks`, `feedback-gate-that-cannot-fail-reports-success`
 
 **Incident (2026-10-25).** ebda-store #223, a destructive DB migration, merged 6 seconds after it was opened with ZERO
 CI checks. The watcher read an empty `statusCheckRollup` as "all green", and `gh pr merge` merges happily when nothing has
@@ -76,6 +76,32 @@ workflow with no path filter and decide inside the job (the affected-workspace p
   exist (`amelia`) turned the status page red ("Storefronts down"). A probe hits a seeded resource we own and asserts a
   page-specific marker string, not merely HTTP 200 (see `deploy-verify.md`).
 
+## Thin runner pool: no refresh, main-red stop, batch PRs (2026-11-12)
+The June 2026 lesson (per-PR CI is slow because the queue is self-inflicted) recurred in November because it lived only in
+memory. A controller "refreshed" 33 reviewed Ebda PRs one at a time (update-branch, wait for review, wait for CI): 20 min to
+2 h each on two Mac runners, i.e. days. Measurement showed the Umbra VM was not even running and Ebda CI was already on the Mac;
+the bottleneck was the refresh, not the infrastructure.
+
+Ruling MERGE-NO-REFRESH-1 - Never call `update-branch` (or rebase) a reviewed PR before merging it; merge on last-run green + AI review at the head + `MERGEABLE`, and let main's push CI be the integration check (the drain's MAIN GATE, `main_gate()`, already merges nothing while main is not green). Evidence: 2026-11-12 Ebda, 33 reviewed PRs, the org ruleset never required up-to-date branches; `os/ops/drain.sh` (`--main-workflow`, default `CI`) pauses with "MAIN NOT GREEN <sha> - paused" before every pass and before every single merge; `os/tests/drain.test.sh` fails on the old drain (red, cancelled, unknown and mid-pass-red cases). Cost if wrong: two PRs that each pass alone can break main together, and the main-red stop then halts the queue until a fix lands.
+
+What the drain and its helper now enforce (`os/ops/drain.sh`, `os/ops/relabel-after-review.sh`):
+| Rule | Enforced as |
+|---|---|
+| No branch refresh | the drain never calls `update-branch` / rebase (a test pins it) |
+| Review = conclusion, at head | with `--hold-risky`, the label is not enough: `--review-workflow` (default `AI review`) needs >=1 `success` on the head sha and no failure / cancelled / timed_out / action_required / startup_failure run, none unfinished. `relabel-after-review.sh` re-applies the label only on the same test, fail closed (a FAILED review is `completed` too, so status alone is never enough). Residual: a fork PR whose `fork-gate` run failed before the maintainer labelled it keeps that failed run on the head and stays held by the drain; clear it with a manual review and merge |
+| A loop that did nothing is not running | every cycle logs `considering N PRs` and one `PR #n <sha> <state>` line per PR; a PR list passed as ONE quoted string (whitespace in an argument) exits 2, an empty list exits 2, an explicit list with none open exits 4. 2026-11-12: a refresher got its list as one quoted arg, logged one "skip" and exited 0, and was reported as running for 2 h |
+
+Operating rules that go with it:
+- **Batch PRs.** Ship ~10 small, already-reviewed PRs as ONE batch PR: one CI run and one review instead of ten. The diff must
+  stay under the AI-review limit (400 KB; larger fails the check, see AIR-5); an oversize PR is split or reviewed by hand. A batch
+  also separates real defects from stale infra reds (Ebda batch-1: 3 real fixes surfaced among 10 "red" PRs).
+- **Measure the bottleneck before changing infrastructure**: runner busy/queue (`gh run list`, `gh api .../actions/runners`) and
+  host load (`uptime`, `/proc/net/dev` on a VM) first. Closing a VM that is not running saves nothing.
+- **Subagent diffs are grepped for suppressions before acceptance**: `allow`, `ignore`, `disable`, `@ts-`, `eslint-disable`,
+  `as any` with a silencing comment. A batch agent once silenced a type error with an allow-comment; type it properly.
+- **A loop is "running" only after its first per-item log line**, never after the process started or exited 0.
+- **Status tables in docs are claims.** "How much is not built" comes from a plans-vs-main audit, not a register table.
+
 ## Grading (what an auditor checks)
 | # | Criterion | Check | Severity |
 |---|---|---|---|
@@ -85,6 +111,9 @@ workflow with no path filter and decide inside the job (the affected-workspace p
 | 2b | A path-filtered PR workflow is not required, and still blocks when it fails | same suite: "path-filtered pull_request ... is not required" and "path-filtered check ran and failed => refuse" pass | High |
 | 3 | PR secret scans are range-scoped | the gitleaks workflow's PR trigger does not scan `--all` refs | Medium |
 | 4 | No absolute-time budget gate on shared runners | perf gates compare to a same-job baseline | Medium |
+| 5 | The drain never refreshes a branch | `os/tests/drain.test.sh` ("never calls update-branch") passes | High |
+| 6 | Review means a clean conclusion at the head sha | `os/tests/drain.test.sh` (failed/cancelled review run => held) and `os/tests/relabel-after-review.test.sh` pass | High |
+| 7 | A loop given no PRs or one quoted list fails loudly | `os/tests/drain.test.sh` ("one quoted list", "empty PR argument", "none open") passes | Medium |
 
 Enforced by `ops/merge-gate.sh` + `ops/lib/merge_gate.py` (tests: `ops/tests/merge-gate.test.sh`); installed to
 `~/.claude/scripts/` by `ops/install.sh`. Composes with `cicd.md`, `gate-integrity.md`, `babysit-prs` (use the gate as its merge step).

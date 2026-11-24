@@ -14,8 +14,12 @@ eligible(pr, hold_risky, strict, require_passed) -> bool
     `risky` needs `money-review-passed` (per label, any repo),
     and with require_passed (stall alert: "approved") every PR needs `ai-review-passed`.
 
+    states: prints "<pr> <sha> <state>" for EVERY PR (after --only): draft | hold | conflict | nochecks | pending | red | ready. `ready` = classify() ok
+           (the drain's own verdict); drain.sh logs one line per PR so a loop that considered nothing is visible (2026-11-12).
+    --only N,N,...  (modes drain, states) restrict to an explicit PR list.
+
 CLI: python3 drain_eligible.py --mode drain|stall [--hold-risky]   (gh pr list --json number,mergeable,statusCheckRollup,isDraft,labels,headRefOid on stdin)
-    drain: prints "<pr> <sha> <risky 0|1> <passed 0|1> <fixes-main 0|1> <money-gated 0|1>" for every PR whose classify is ok (drain.sh applies the hold itself)
+    drain: prints "<pr> <sha> <risky 0|1> <passed 0|1> <fixes-main 0|1> <money-gated 0|1> <ai-review 0|1>" for every PR whose classify is ok (drain.sh applies the hold itself)
     stall: prints the number of eligible PRs
     heal:  prints "<pr> <sha>" for every PR that would be drain-eligible except that some check ended CANCELLED/TIMED_OUT (G47: a run
            cancelled by main-first or a hung job is not a failure; a real FAILURE anywhere excludes the PR)
@@ -98,6 +102,27 @@ def eligible(pr, hold_risky=True, strict=True, require_passed=False):
     if hold_risky and not review_ok(names):
         return False
     return True
+
+
+def state(pr):
+    """Why a PR is or is not ready for the drain (strict): consistent with classify(pr, True) == "ok" <=> "ready"."""
+    if pr.get("isDraft"):
+        return "draft"
+    if "hold" in _labels(pr):
+        return "hold"
+    if pr.get("mergeable") != "MERGEABLE":
+        return "conflict"
+    cs = pr.get("statusCheckRollup") or []
+    if not cs:
+        return "nochecks"
+    pending = False
+    for c in cs:
+        st, co = _check(c)
+        if st == "COMPLETED" and co in BAD:
+            return "red"
+        if st != "COMPLETED":
+            pending = True
+    return "pending" if pending else "ready"
 
 
 def classify_heal(pr):
@@ -250,7 +275,13 @@ def main(argv):
         creators = [c.strip() for c in (arg("--creators") if "--creators" in argv else "").split(",")]
         sys.exit(0 if status_ok(arg("--context"), data, creators) else 1)
     prs = json.load(sys.stdin)
-    if mode == "heal":
+    if "--only" in argv:
+        only = {x for x in argv[argv.index("--only") + 1].split(",") if x}
+        prs = [p for p in prs if str(p.get("number")) in only]
+    if mode == "states":
+        for p in prs:
+            print(p["number"], p["headRefOid"], state(p))
+    elif mode == "heal":
         for p in prs:
             if classify_heal(p):
                 print(p["number"], p["headRefOid"])
@@ -261,7 +292,7 @@ def main(argv):
                 if not money_ok(n):
                     continue   # never offered to the drain, so it cannot merge even without --hold-risky
                 # drain.sh holds (risky=1, passed=0) PRs; the verdict is review_ok(), the same function eligible() uses
-                print(p["number"], p["headRefOid"], int(needs_review(n)), int(review_ok(n)), int("fixes-main" in n), int("risky" in n))
+                print(p["number"], p["headRefOid"], int(needs_review(n)), int(review_ok(n)), int("fixes-main" in n), int("risky" in n), int("risky-path" in n))
     elif mode == "stall":
         print(sum(1 for p in prs if eligible(p, hold_risky=True, strict=True, require_passed=True)))
     else:
