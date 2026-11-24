@@ -412,7 +412,8 @@ run >/dev/null; [ "$(calls)" = 0 ] && ok "a 100-job (possibly truncated) list fa
 reset; on; run --bogus >/dev/null 2>&1; [ $? = 2 ] && ok "unknown flag exits 2" || no "unknown flag accepted"
 # ---- MERGE-NO-REFRESH-1: review = a clean CONCLUSION at head, explicit PR list, per-PR state lines ----
 # never refresh a branch (pins the ruling: the drain script has no update-branch / rebase call)
-if grep -v '^[[:space:]]*#' "$DRAIN" | grep -qE 'update-branch|pr (update|rebase)'; then no "drain refreshes branches"; else ok "drain never calls update-branch"; fi
+drain_src="$(grep -v '^[[:space:]]*#' "$DRAIN")"
+if grep -qE 'update-branch|pr (update|rebase)' <<<"$drain_src"; then no "drain refreshes branches"; else ok "drain never calls update-branch"; fi
 reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"
 runs "$(run1 sha1 success)"; run --hold-risky >/dev/null; [ "$(calls)" = 1 ] && ok "label + review success at head: merges" || no "clean review not merged"
 reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"
@@ -434,8 +435,8 @@ reset; on; prs "$(pr 1 sha1 green risky-path,ai-review-passed)"
 run --hold-risky >/dev/null; [ "$(calls)" = 0 ] && ok "a failed review run at head is still found past 150 unrelated runs: held" || no "failed review hidden by the window"
 # per-PR state lines + startup line
 reset; on; prs "$(pr 1 a1 green)" "$(pr 2 a2 red)" "$(pr 3 a3 none)" "$(pr 4 a4 pending)" "$(pr 5 a5 green '' CONFLICTING)" "$(pr 6 a6 green '' MERGEABLE draft)" "$(pr 7 a7 green hold)"; out="$(run)"
-printf '%s' "$out" | grep -q 'considering 7 PRs' && printf '%s' "$out" | grep -q 'PR #1 a1 ready' && printf '%s' "$out" | grep -q 'PR #2 a2 red' && printf '%s' "$out" | grep -q 'PR #3 a3 nochecks' \
-  && printf '%s' "$out" | grep -q 'PR #4 a4 pending' && printf '%s' "$out" | grep -q 'PR #5 a5 conflict' && printf '%s' "$out" | grep -q 'PR #6 a6 draft' && printf '%s' "$out" | grep -q 'PR #7 a7 hold' \
+grep -q 'considering 7 PRs' <<<"$out" && grep -q 'PR #1 a1 ready' <<<"$out" && grep -q 'PR #2 a2 red' <<<"$out" && grep -q 'PR #3 a3 nochecks' <<<"$out" \
+  && grep -q 'PR #4 a4 pending' <<<"$out" && grep -q 'PR #5 a5 conflict' <<<"$out" && grep -q 'PR #6 a6 draft' <<<"$out" && grep -q 'PR #7 a7 hold' <<<"$out" \
   && ok "'considering N PRs' + one state line per PR (ready/red/nochecks/pending/conflict/draft/hold)" || no "missing per-PR lines ($out)"
 # explicit PR list
 reset; on; prs "$(pr 1 a1 green)" "$(pr 2 a2 green)"; run 2 >/dev/null; [ "$(calls)" = 1 ] && grep -q '^2 a2 ' "$GATE_LOG" && ok "explicit PR list restricts the drain" || no "explicit list ignored"
